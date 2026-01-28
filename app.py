@@ -43,15 +43,30 @@ main_menu = st.sidebar.radio(
 # ==========================================
 if main_menu == "📊 자산 관리":
     st.sidebar.markdown("---")
-    st.sidebar.subheader("⚙️ 자산 DB 설정")
+    # ==========================================
+    # System Status / Setup
+    # ==========================================
+    from common.database import get_supabase_client
+    supabase = get_supabase_client()
+    
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🔌 시스템 상태")
+    if supabase:
+        st.sidebar.success("☁️ Cloud DB (Supabase) 연결됨")
+    else:
+        st.sidebar.warning("💻 Local DB (파일) 사용 중")
+        
+    st.sidebar.subheader("⚙️ 자산 DB 설정 (Local Only)")
     
     if os.path.exists(DB_FILE):
-        st.sidebar.success("🟢 DB 연결됨")
+        if not supabase:
+             st.sidebar.success("🟢 Local DB 연결됨")
         if "dfs" not in st.session_state:
             st.session_state["dfs"] = load_from_db()
     else:
-        st.sidebar.warning("🔴 DB 없음")
-        st.info("왼쪽 사이드바에서 엑셀 파일(ASSET_INFO.xlsx)을 업로드해주세요.")
+        if not supabase:
+             st.sidebar.warning("🔴 Local DB 없음")
+             st.info("왼쪽 사이드바에서 엑셀 파일(ASSET_INFO.xlsx)을 업로드해주세요.")
 
     uploaded_file = st.sidebar.file_uploader(
         "DB 초기화/재설정", type=["xlsx"], key="sidebar_uploader"
