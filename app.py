@@ -56,6 +56,7 @@ if main_menu == "📊 자산 관리":
     else:
         st.sidebar.warning("💻 Local DB (파일) 사용 중")
         
+
     st.sidebar.subheader("⚙️ 자산 DB 설정 (Local Only)")
     
     if os.path.exists(DB_FILE):

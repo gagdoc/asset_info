@@ -223,157 +223,114 @@ def render_new_hire_page(dfs):
 
 
 def render_laptop_selection(asset_df, selected_assets, asset_type):
-    """노트북 선택: 모델별 그룹화 → 모델 선택 → 시리얼 & 정보 표시"""
+    """노트북 선택: DataFrame에서 선택"""
     if asset_df.empty:
         st.info("할당 가능한 노트북이 없습니다.")
         return
 
-    # 모델별로 그룹화
-    model_groups = {}
-    for asset_idx, row in asset_df.iterrows():
-        model = str(row.get("Model", "Unknown"))
-        if model not in model_groups:
-            model_groups[model] = []
-        model_groups[model].append((asset_idx, row))
+    # 표시할 컬럼 정리
+    display_df = asset_df.copy()
+    
+    # 필요한 컬럼만 선택 및 정렬
+    cols_to_show = ["Model", "S/N", "Additional Information"]
+    display_df = display_df[[c for c in cols_to_show if c in display_df.columns]]
+    display_df = display_df.sort_values(by="Model")
 
-    # 모델 선택
-    models = sorted(list(model_groups.keys()))
-    selected_model = st.selectbox(
-        f"모델 선택", options=models, key=f"model_{asset_type}"
+    st.write("📋 목록에서 자산을 선택하세요 (행 클릭):")
+    event = st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key=f"df_{asset_type}",
     )
 
-    if selected_model:
-        items = model_groups[selected_model]
-
-        # 선택된 모델의 노트북 목록 표시
-        st.write(f"**{selected_model}의 사용 가능한 노트북:**")
-
-        option_list = []
-        for asset_idx, row in items:
-            sn = str(row.get("S/N", "N/A"))
-            additional = str(row.get("Additional Information", ""))
-
-            # 표시 텍스트
-            display_text = f"S/N: {sn}"
-            if additional and additional != "nan":
-                display_text += f" | {additional}"
-
-            option_list.append((display_text, asset_idx))
-
-        option_texts = [text for text, _ in option_list]
-        option_indices = [idx for _, idx in option_list]
-
-        selected_laptop = st.radio(
-            "노트북 선택",
-            options=option_texts,
-            key=f"radio_{asset_type}_{selected_model}",
-        )
-
-        if selected_laptop:
-            selected_idx = option_indices[option_texts.index(selected_laptop)]
-            selected_assets[asset_type] = selected_idx
+    if event.selection.rows:
+        selected_row_idx = event.selection.rows[0]
+        # display_df의 i번째 행의 인덱스를 찾아야 함 (display_df는 asset_df의 subset일 수 있음)
+        # 하지만 여기서는 asset_df와 display_df의 인덱스가 동일하게 유지됨 (copy만 했으므로)
+        # 단, sort_values를 했으므로 iloc으로 접근해야 함
+        
+        real_index = display_df.index[selected_row_idx]
+        
+        selected_row = asset_df.loc[real_index]
+        sn = selected_row.get("S/N", "N/A")
+        model = selected_row.get("Model", "N/A")
+        
+        st.success(f"✅ 선택됨: {model} (S/N: {sn})")
+        selected_assets[asset_type] = real_index
 
 
 def render_ipad_selection(asset_df, selected_assets, asset_type):
-    """아이패드 선택: S/N, Model, Date 정보 표시"""
+    """아이패드 선택: DataFrame에서 선택"""
     if asset_df.empty:
         st.info("할당 가능한 아이패드가 없습니다.")
         return
 
-    if len(asset_df) == 1:
-        asset_idx = asset_df.index[0]
-        row = asset_df.iloc[0]
-        sn = str(row.get("S/N", "N/A"))
-        model = str(row.get("Model", "N/A"))
-        date = str(row.get("date", ""))
+    display_df = asset_df.copy()
+    cols_to_show = ["Model", "S/N", "date"]
+    display_df = display_df[[c for c in cols_to_show if c in display_df.columns]]
+    display_df = display_df.sort_values(by="Model")
 
-        display_text = f"S/N: {sn} | Model: {model}"
-        if date and date != "nan":
-            display_text += f" | Date: {date}"
+    st.write("📋 목록에서 자산을 선택하세요 (행 클릭):")
+    event = st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key=f"df_{asset_type}",
+    )
 
-        st.info(f"✅ 자동으로 선택됨: {display_text}")
-        selected_assets[asset_type] = asset_idx
-    else:
-        option_list = []
-        for asset_idx, row in asset_df.iterrows():
-            sn = str(row.get("S/N", "N/A"))
-            model = str(row.get("Model", "N/A"))
-            date = str(row.get("date", ""))
-
-            display_text = f"S/N: {sn} | Model: {model}"
-            if date and date != "nan":
-                display_text += f" | Date: {date}"
-
-            option_list.append((display_text, asset_idx))
-
-        option_texts = [text for text, _ in option_list]
-        option_indices = [idx for _, idx in option_list]
-
-        selected_ipad = st.radio(
-            "아이패드 선택", options=option_texts, key=f"radio_{asset_type}"
-        )
-
-        if selected_ipad:
-            selected_idx = option_indices[option_texts.index(selected_ipad)]
-            selected_assets[asset_type] = selected_idx
+    if event.selection.rows:
+        selected_row_idx = event.selection.rows[0]
+        real_index = display_df.index[selected_row_idx]
+        
+        selected_row = asset_df.loc[real_index]
+        sn = selected_row.get("S/N", "N/A")
+        model = selected_row.get("Model", "N/A")
+        
+        st.success(f"✅ 선택됨: {model} (S/N: {sn})")
+        selected_assets[asset_type] = real_index
 
 
 def render_teams_selection(asset_df, selected_assets, asset_type):
-    """Teams 선택: Number, Business Title 정보 표시"""
+    """Teams 선택: DataFrame에서 선택"""
     if asset_df.empty:
         st.info("할당 가능한 Teams 번호가 없습니다.")
         return
 
-    # 컬럼명 정의
-    number_col = None
-    if "Number formated for Country" in asset_df.columns:
-        number_col = "Number formated for Country"
-    elif "Number" in asset_df.columns:
-        number_col = "Number"
+    display_df = asset_df.copy()
+    
+    # 컬럼명 정리 및 선택
+    cols_possible = ["Number formated for Country", "Number", "Business Title"]
+    cols_to_show = [c for c in cols_possible if c in display_df.columns]
+    
+    display_df = display_df[cols_to_show]
+    
+    st.write("📋 목록에서 번호를 선택하세요 (행 클릭):")
+    event = st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key=f"df_{asset_type}",
+    )
 
-    business_title_col = None
-    if "Business Title" in asset_df.columns:
-        business_title_col = "Business Title"
-
-    if len(asset_df) == 1:
-        asset_idx = asset_df.index[0]
-        row = asset_df.iloc[0]
-
-        number = str(row.get(number_col, "N/A")) if number_col else "N/A"
-        business_title = (
-            str(row.get(business_title_col, "")) if business_title_col else ""
-        )
-
-        display_text = f"Number: {number}"
-        if business_title and business_title != "nan":
-            display_text += f" | Business Title: {business_title}"
-
-        st.info(f"✅ 자동으로 선택됨: {display_text}")
-        selected_assets[asset_type] = asset_idx
-    else:
-        option_list = []
-        for asset_idx, row in asset_df.iterrows():
-            number = str(row.get(number_col, "N/A")) if number_col else "N/A"
-            business_title = (
-                str(row.get(business_title_col, "")) if business_title_col else ""
-            )
-
-            display_text = f"Number: {number}"
-            if business_title and business_title != "nan":
-                display_text += f" | Business Title: {business_title}"
-
-            option_list.append((display_text, asset_idx))
-
-        option_texts = [text for text, _ in option_list]
-        option_indices = [idx for _, idx in option_list]
-
-        selected_teams = st.radio(
-            "Teams 번호 선택", options=option_texts, key=f"radio_{asset_type}"
-        )
-
-        if selected_teams:
-            selected_idx = option_indices[option_texts.index(selected_teams)]
-            selected_assets[asset_type] = selected_idx
+    if event.selection.rows:
+        selected_row_idx = event.selection.rows[0]
+        real_index = display_df.index[selected_row_idx]
+        
+        selected_row = asset_df.loc[real_index]
+        
+        # Number 컬럼 찾기
+        number_col = next((c for c in ["Number formated for Country", "Number"] if c in selected_row.index), "Number")
+        number = selected_row.get(number_col, "N/A")
+        
+        st.success(f"✅ 선택됨: {number}")
+        selected_assets[asset_type] = real_index
 
 
 def render_monitor_selection(asset_df, selected_assets, asset_type):
