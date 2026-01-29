@@ -33,10 +33,12 @@ def normalize_email_local(df):
         )
     return df
 
-def sync_all_from_dataframe(dfs):
+def sync_all_from_dataframe(dfs, replace_mode=False):
     """
     Takes a dict of DataFrames (keys matching SHEET_MAPPING keys) 
     and upserts them to Supabase tables.
+    
+    If replace_mode=True, deletes existing data first for a complete replacement.
     """
     supabase = get_supabase_client()
     if not supabase:
@@ -44,6 +46,14 @@ def sync_all_from_dataframe(dfs):
         return
 
     st.toast("☁️ Syncing data to Supabase...", icon="🔄")
+    
+    # Helper function to delete all rows from a table
+    def clear_table(table_name):
+        try:
+            # Delete all rows (using a condition that matches all)
+            supabase.table(table_name).delete().neq("email", "IMPOSSIBLE_VALUE_12345").execute()
+        except Exception as e:
+            st.warning(f"Could not clear {table_name}: {e}")
     
     # 1. Users (All_User)
     if "All_User" in dfs and not dfs["All_User"].empty:
@@ -58,12 +68,13 @@ def sync_all_from_dataframe(dfs):
             
             records = df.to_dict(orient="records")
             if records:
-                response = supabase.table("users").upsert(records).execute()
-                synced_count = len(response.data) if response.data else 0
-                if synced_count == 0:
-                     st.warning(f"⚠️ Users 테이블 동기화 실패: {len(records)}건 전송했으나 0건 반영됨 (권한 문제 가능성)")
+                if replace_mode:
+                    clear_table("users")
+                    response = supabase.table("users").insert(records).execute()
                 else:
-                     st.toast(f"✅ Users: {synced_count}건 동기화 완료")
+                    response = supabase.table("users").upsert(records).execute()
+                synced_count = len(response.data) if response.data else 0
+                st.toast(f"✅ Users: {synced_count}건 동기화 완료")
         except Exception as e:
             st.error(f"Failed to sync Users: {e}")
 
@@ -84,9 +95,12 @@ def sync_all_from_dataframe(dfs):
             
             records = df.to_dict(orient="records")
             if records:
-                response = supabase.table("assets_lease").upsert(records).execute()
-                if not response.data:
-                    st.warning(f"⚠️ Lease Data not reflected ({len(records)} sent)")
+                if replace_mode:
+                    clear_table("assets_lease")
+                    response = supabase.table("assets_lease").insert(records).execute()
+                else:
+                    response = supabase.table("assets_lease").upsert(records).execute()
+                st.toast(f"✅ Lease: {len(response.data) if response.data else 0}건")
         except Exception as e:
             st.error(f"Failed to sync Lease: {e}")
             
@@ -101,7 +115,12 @@ def sync_all_from_dataframe(dfs):
             
             records = df.to_dict(orient="records")
             if records:
-                response = supabase.table("assets_ipad").upsert(records).execute()
+                if replace_mode:
+                    clear_table("assets_ipad")
+                    response = supabase.table("assets_ipad").insert(records).execute()
+                else:
+                    response = supabase.table("assets_ipad").upsert(records).execute()
+                st.toast(f"✅ iPad: {len(response.data) if response.data else 0}건")
         except Exception as e:
             st.error(f"Failed to sync iPad: {e}")
 
@@ -122,11 +141,16 @@ def sync_all_from_dataframe(dfs):
                 
                 records = df.to_dict(orient="records")
                 if records:
-                    response = supabase.table("assets_teams").upsert(records).execute()
+                    if replace_mode:
+                        clear_table("assets_teams")
+                        response = supabase.table("assets_teams").insert(records).execute()
+                    else:
+                        response = supabase.table("assets_teams").upsert(records).execute()
+                    st.toast(f"✅ Teams: {len(response.data) if response.data else 0}건")
         except Exception as e:
             st.error(f"Failed to sync Teams: {e}")
             
-     # 7. Resign
+    # 5. Resign
     if "Resign" in dfs and not dfs["Resign"].empty:
         try:
             df = dfs["Resign"].copy()
@@ -136,16 +160,16 @@ def sync_all_from_dataframe(dfs):
                 "노트북", "아이패드", "모니터", "복합기", "Teams", "추가사항"
             ]
             df = clean_dataframe(df, target_cols)
-            df = df[df["email"] != ""] # PK
+            df = df[df["email"] != ""]  # PK
             
             records = df.to_dict(orient="records")
             if records:
-                response = supabase.table("Resign").upsert(records).execute()
-                synced_count = len(response.data) if response.data else 0
-                if synced_count > 0:
-                    st.toast(f"✅ 퇴사자 {synced_count}명 동기화 완료")
+                if replace_mode:
+                    clear_table("Resign")
+                    response = supabase.table("Resign").insert(records).execute()
                 else:
-                    st.warning("⚠️ 퇴사자 데이터 동기화 실패 (0건 반영)")
+                    response = supabase.table("Resign").upsert(records).execute()
+                st.toast(f"✅ 퇴사자: {len(response.data) if response.data else 0}명")
         except Exception as e:
             st.error(f"Failed to sync Resign: {e}")
 

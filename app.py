@@ -57,7 +57,7 @@ if main_menu == "📊 자산 관리":
         st.sidebar.warning("💻 Local DB (파일) 사용 중")
         
 
-    st.sidebar.subheader("⚙️ 자산 DB 설정 (Local Only)")
+    st.sidebar.subheader("⚙️ 데이터 관리")
     
     if os.path.exists(DB_FILE):
         if not supabase:
@@ -70,9 +70,9 @@ if main_menu == "📊 자산 관리":
              st.info("왼쪽 사이드바에서 엑셀 파일(ASSET_INFO.xlsx)을 업로드해주세요.")
 
     uploaded_file = st.sidebar.file_uploader(
-        "DB 초기화/재설정", type=["xlsx"], key="sidebar_uploader"
+        "📂 엑셀 파일 선택", type=["xlsx"], key="sidebar_uploader"
     )
-    if uploaded_file and st.sidebar.button("DB 생성 및 초기화", key="sidebar_btn"):
+    if uploaded_file and st.sidebar.button("🔄 데이터 초기화 및 업데이트", key="sidebar_btn"):
         save_excel_to_db(uploaded_file)
         st.session_state["dfs"] = load_from_db()
         st.rerun()

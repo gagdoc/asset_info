@@ -112,8 +112,8 @@ def save_excel_to_db(uploaded_file):
                     pass
             conn.close()
             
-            sync_all_from_dataframe(current_dfs)
-            st.success("✅ Supabase 동기화 완료!")
+            sync_all_from_dataframe(current_dfs, replace_mode=True)
+            st.success("✅ Supabase 동기화 완료! (기존 데이터 초기화 후 교체)")
             
     except Exception as e:
         st.error(f"❌ 파일 로드 중 오류 발생: {str(e)}")
