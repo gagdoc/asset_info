@@ -125,6 +125,7 @@ def load_from_db():
                 "Teams": "assets_teams",
                 "Monitor": "assets_monitor",
                 "Printer": "assets_printer",
+                "Resign": "Resign",
                 # Dept_Config? We didn't create a table for it yet in migrate script. 
                 # If missing, it will be empty.
             }

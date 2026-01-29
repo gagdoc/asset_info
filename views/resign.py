@@ -22,11 +22,18 @@ def render_resign_page(dfs):
             df, num_rows="dynamic", use_container_width=True, key="resign_edit"
         )
 
-        if st.button("💾 저장 및 자산정보 채우기", key="save_resign"):
-            enriched = enrich_data_with_assets(edited_df)
-            update_db(data_key, enriched)
-            st.success("✅ 저장 완료!")
-            st.rerun()
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("💾 변경사항 저장 (Excel 그대로)", key="save_resign"):
+                update_db(data_key, edited_df)
+                st.success("✅ 저장 완료!")
+                st.rerun()
+        with col2:
+             if st.button("🪄 자산 정보 자동 채우기", key="enrich_resign"):
+                enriched = enrich_data_with_assets(edited_df)
+                update_db(data_key, enriched)
+                st.success("✅ 자산 정보 업데이트 완료!")
+                st.rerun()
     with tab2:
         st.download_button(
             "📥 다운로드", df.to_csv(index=False).encode("utf-8-sig"), f"{data_key}.csv"
