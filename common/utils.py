@@ -71,10 +71,8 @@ def save_excel_to_db(uploaded_file):
     supabase = get_supabase_client()
     if supabase:
         st.info("☁️ Supabase에 데이터 업로드 중...")
-        # Reuse migration logic here would be best. 
-        # For this turn, I will just keep local DB update to avoid breaking flow 
-        # until migration script is fully tested.
-        # But eventually this should call a supabase-aware save function.
+        # Import sync logic here to avoid top-level circular imports if any
+        from common.sync_supabase import sync_all_from_dataframe
     
     try:
         conn = get_connection()
@@ -96,7 +94,26 @@ def save_excel_to_db(uploaded_file):
         st.success("✅ 초기 데이터가 DB에 생성되었습니다! (Local)")
         
         if supabase:
-            st.warning("⚠️ Supabase가 설정되어 있습니다. 데이터 동기화를 위해 마이그레이션 스크립트를 실행해주세요.")
+            # Sync to Supabase
+            # We need to reload the dfs from local DB (or pass what we just read)
+            # Efficient way: read again or accumulate `dfs` during the loop above.
+            # Rereading from local DB is safer to ensure what is in DB matches Cloud.
+            
+            # Reconstruct dfs dict
+            current_dfs = {}
+            conn = get_connection()
+            for key in SHEET_MAPPING.keys():
+                try:
+                    df = pd.read_sql(f"SELECT * FROM {key}", conn)
+                    if key != "Dept_Config":
+                        df = normalize_email(df)
+                    current_dfs[key] = df
+                except:
+                    pass
+            conn.close()
+            
+            sync_all_from_dataframe(current_dfs)
+            st.success("✅ Supabase 동기화 완료!")
             
     except Exception as e:
         st.error(f"❌ 파일 로드 중 오류 발생: {str(e)}")
@@ -198,8 +215,10 @@ def update_db(key, df):
         
         # Supabase Update
         if supabase:
-             st.warning("☁️ Supabase 업데이트는 아직 구현되지 않았습니다. (마이그레이션 스크립트 사용 권장)")
-             # TODO: Implement upsert logic here for specific tables
+             from common.sync_supabase import sync_all_from_dataframe
+             # Sync just this table
+             # We create a mini dfs dict for just this key
+             sync_all_from_dataframe({key: df}) 
         
         if "dfs" in st.session_state:
             st.session_state["dfs"][key] = df
