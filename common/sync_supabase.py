@@ -54,14 +54,16 @@ def sync_all_from_dataframe(dfs):
             
             target_cols = ["email", "NO", "NAME", "KorName", "ROLE", "BU", "SKL분류"]
             df = clean_dataframe(df, target_cols)
-            # Remove rows without email if PK is email? 
-            # Schema says email PK.
             df = df[df["email"] != ""]
             
             records = df.to_dict(orient="records")
             if records:
-                supabase.table("users").upsert(records).execute()
-                # st.toast(f"✅ Users synced: {len(records)}")
+                response = supabase.table("users").upsert(records).execute()
+                synced_count = len(response.data) if response.data else 0
+                if synced_count == 0:
+                     st.warning(f"⚠️ Users 테이블 동기화 실패: {len(records)}건 전송했으나 0건 반영됨 (권한 문제 가능성)")
+                else:
+                     st.toast(f"✅ Users: {synced_count}건 동기화 완료")
         except Exception as e:
             st.error(f"Failed to sync Users: {e}")
 
@@ -70,7 +72,6 @@ def sync_all_from_dataframe(dfs):
         try:
             df = dfs["Lease"].copy()
             df = normalize_email_local(df)
-            # Rename if needed
             if "lease Date" in df.columns:
                 df = df.rename(columns={"lease Date": "Lease Date"})
                 
@@ -83,7 +84,9 @@ def sync_all_from_dataframe(dfs):
             
             records = df.to_dict(orient="records")
             if records:
-                supabase.table("assets_lease").upsert(records).execute()
+                response = supabase.table("assets_lease").upsert(records).execute()
+                if not response.data:
+                    st.warning(f"⚠️ Lease Data not reflected ({len(records)} sent)")
         except Exception as e:
             st.error(f"Failed to sync Lease: {e}")
             
@@ -98,7 +101,7 @@ def sync_all_from_dataframe(dfs):
             
             records = df.to_dict(orient="records")
             if records:
-                supabase.table("assets_ipad").upsert(records).execute()
+                response = supabase.table("assets_ipad").upsert(records).execute()
         except Exception as e:
             st.error(f"Failed to sync iPad: {e}")
 
@@ -108,7 +111,6 @@ def sync_all_from_dataframe(dfs):
             df = dfs["Teams"].copy()
             df = normalize_email_local(df)
             
-            # Handle aliases
             cols = df.columns
             actual_number_col = next((c for c in ["Number formated for Country", "Number", "전화번호", "LineURI"] if c in cols), None)
             
@@ -120,33 +122,11 @@ def sync_all_from_dataframe(dfs):
                 
                 records = df.to_dict(orient="records")
                 if records:
-                    supabase.table("assets_teams").upsert(records).execute()
+                    response = supabase.table("assets_teams").upsert(records).execute()
         except Exception as e:
             st.error(f"Failed to sync Teams: {e}")
-
-    # 5. Assets (Monitor)
-    if "Monitor" in dfs and not dfs["Monitor"].empty:
-        try:
-            df = dfs["Monitor"].copy()
-            df = normalize_email_local(df)
-            target_cols = ["email", "Model", "할당일"]
-            df = clean_dataframe(df, target_cols)
             
-            # For SERIAL PK, we insert? upsert might duplicate if NO PK provided in record.
-            # Monitor table has id SERIAL PK.
-            # Ideally we should truncate and re-insert if we want "Sync".
-            # Or match by some other unique key.
-            # For now, let's keep logic simple: maybe just insert?
-            # But duplicate inserts will happen if we don't have ID.
-            # Warning: This is tricky without unique constraints on other cols.
-            # Currently migration script just does insert. 
-            pass 
-        except Exception as e:
-             st.error(f"Failed to sync Monitor: {e}")
-
-    # 6. Assets (Printer) - Same issue as Monitor
-    
-    # 7. Resign
+     # 7. Resign
     if "Resign" in dfs and not dfs["Resign"].empty:
         try:
             df = dfs["Resign"].copy()
@@ -160,7 +140,12 @@ def sync_all_from_dataframe(dfs):
             
             records = df.to_dict(orient="records")
             if records:
-                supabase.table("Resign").upsert(records).execute()
+                response = supabase.table("Resign").upsert(records).execute()
+                synced_count = len(response.data) if response.data else 0
+                if synced_count > 0:
+                    st.toast(f"✅ 퇴사자 {synced_count}명 동기화 완료")
+                else:
+                    st.warning("⚠️ 퇴사자 데이터 동기화 실패 (0건 반영)")
         except Exception as e:
             st.error(f"Failed to sync Resign: {e}")
 
