@@ -55,6 +55,8 @@ def create_tables(supabase: Client):
         "S/N" TEXT PRIMARY KEY,
         "Model" TEXT,
         "Date" TEXT,
+        "전화 번호" TEXT,
+        "애플펜슬 2세대" TEXT,
         "BU" TEXT,
         "Role" TEXT,
         "User" TEXT,
@@ -90,6 +92,7 @@ def create_tables(supabase: Client):
         "BU" TEXT,
         "ROLE" TEXT,
         "email" TEXT,
+        "Additional Information 2" TEXT,
         "카트리지 사용 내역" TEXT
     );
 
