@@ -88,7 +88,7 @@ def sync_all_from_dataframe(dfs, replace_mode=False):
                 
             target_cols = [
                 "Model", "종류", "SNOW Tag", "S/N", "Lease Date", 
-                "BU", "User", "email", "Additional Information"
+                "BU", "User", "email", "Additional Information", "참고"
             ]
             df = clean_dataframe(df, target_cols)
             df = df[df["S/N"].notna() & (df["S/N"] != "")]
@@ -108,8 +108,11 @@ def sync_all_from_dataframe(dfs, replace_mode=False):
     if "iPad" in dfs and not dfs["iPad"].empty:
         try:
             df = dfs["iPad"].copy()
-            df = normalize_email_local(df)
-            target_cols = ["S/N", "email", "Model", "할당일"]
+            target_cols = [
+                "S/N", "Model", "Date", "전화 번호", "애플펜슬 2세대", 
+                "BU", "Role", "User", "email", "Additional Information", 
+                "해지유무", "참고"
+            ]
             df = clean_dataframe(df, target_cols)
             df = df[df["S/N"].notna() & (df["S/N"] != "")]
             
@@ -135,7 +138,7 @@ def sync_all_from_dataframe(dfs, replace_mode=False):
             
             if actual_number_col:
                 df = df.rename(columns={actual_number_col: "Number"})
-                target_cols = ["Number", "email", "할당일"]
+                target_cols = ["Number", "email", "Extension", "LineURI", "Business Title", "ID"]
                 df = clean_dataframe(df, target_cols)
                 df = df[df["Number"].notna() & (df["Number"] != "")]
                 
@@ -149,8 +152,49 @@ def sync_all_from_dataframe(dfs, replace_mode=False):
                     st.toast(f"✅ Teams: {len(response.data) if response.data else 0}건")
         except Exception as e:
             st.error(f"Failed to sync Teams: {e}")
+
+    # 5. Monitor
+    if "Monitor" in dfs and not dfs["Monitor"].empty:
+        try:
+            df = dfs["Monitor"].copy()
+            df = normalize_email_local(df)
+            target_cols = ["email", "Model", "Date", "User", "Additional Information"]
+            df = clean_dataframe(df, target_cols)
             
-    # 5. Resign
+            records = df.to_dict(orient="records")
+            if records:
+                if replace_mode:
+                    clear_table("assets_monitor")
+                    response = supabase.table("assets_monitor").insert(records).execute()
+                else:
+                    response = supabase.table("assets_monitor").upsert(records).execute()
+                st.toast(f"✅ Monitor: {len(response.data) if response.data else 0}건")
+        except Exception as e:
+            st.error(f"Failed to sync Monitor: {e}")
+
+    # 6. Printer
+    if "Printer" in dfs and not dfs["Printer"].empty:
+        try:
+            df = dfs["Printer"].copy()
+            df = normalize_email_local(df)
+            target_cols = [
+                "email", "Model", "date", "User", "BU", "ROLE", 
+                "Additional Information 2", "카트리지 사용 내역"
+            ]
+            df = clean_dataframe(df, target_cols)
+            
+            records = df.to_dict(orient="records")
+            if records:
+                if replace_mode:
+                    clear_table("assets_printer")
+                    response = supabase.table("assets_printer").insert(records).execute()
+                else:
+                    response = supabase.table("assets_printer").upsert(records).execute()
+                st.toast(f"✅ Printer: {len(response.data) if response.data else 0}건")
+        except Exception as e:
+            st.error(f"Failed to sync Printer: {e}")
+            
+    # 7. Resign
     if "Resign" in dfs and not dfs["Resign"].empty:
         try:
             df = dfs["Resign"].copy()

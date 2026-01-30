@@ -365,6 +365,71 @@ def enrich_data_with_assets(target_df):
     return target_df
 
 
+def process_asset_return(email):
+    """
+    Finds all assets assigned to this email, clears the assignment,
+    and updates the asset status (BU='IT', ROLE/AddInfo='STOCK' for Lease).
+    """
+    email = str(email).strip().lower()
+    if not email:
+        return False, "이메일이 없습니다."
+
+    # fresh load to be safe
+    dfs = load_from_db()
+    updated_tables = []
+
+    # 1. Lease (노트북)
+    if "Lease" in dfs and not dfs["Lease"].empty and "email" in dfs["Lease"].columns:
+        mask = dfs["Lease"]["email"].str.strip().str.lower() == email
+        if mask.any():
+            dfs["Lease"].loc[mask, "email"] = ""
+            dfs["Lease"].loc[mask, "User"] = ""
+            if "BU" in dfs["Lease"].columns:
+                dfs["Lease"].loc[mask, "BU"] = "IT"
+            # Using 'Additional Information' for 'STOCK' status as discussed
+            if "Additional Information" in dfs["Lease"].columns:
+                dfs["Lease"].loc[mask, "Additional Information"] = "STOCK"
+            update_db("Lease", dfs["Lease"])
+            updated_tables.append("PC/노트북")
+
+    # 2. iPad
+    if "iPad" in dfs and not dfs["iPad"].empty and "email" in dfs["iPad"].columns:
+        mask = dfs["iPad"]["email"].str.strip().str.lower() == email
+        if mask.any():
+            dfs["iPad"].loc[mask, "email"] = ""
+            update_db("iPad", dfs["iPad"])
+            updated_tables.append("아이패드")
+
+    # 3. Teams (전화번호)
+    if "Teams" in dfs and not dfs["Teams"].empty and "email" in dfs["Teams"].columns:
+        mask = dfs["Teams"]["email"].str.strip().str.lower() == email
+        if mask.any():
+            dfs["Teams"].loc[mask, "email"] = ""
+            update_db("Teams", dfs["Teams"])
+            updated_tables.append("팀즈 번호")
+
+    # 4. Monitor
+    if "Monitor" in dfs and not dfs["Monitor"].empty and "email" in dfs["Monitor"].columns:
+        mask = dfs["Monitor"]["email"].str.strip().str.lower() == email
+        if mask.any():
+            dfs["Monitor"].loc[mask, "email"] = ""
+            update_db("Monitor", dfs["Monitor"])
+            updated_tables.append("모니터")
+
+    # 5. Printer
+    if "Printer" in dfs and not dfs["Printer"].empty and "email" in dfs["Printer"].columns:
+        mask = dfs["Printer"]["email"].str.strip().str.lower() == email
+        if mask.any():
+            dfs["Printer"].loc[mask, "email"] = ""
+            update_db("Printer", dfs["Printer"])
+            updated_tables.append("프린터")
+
+    if updated_tables:
+        return True, f"✅ 반납 처리 완료: {', '.join(updated_tables)}"
+    else:
+        return False, "ℹ️ 해당 이메일로 할당된 자산이 없습니다."
+
+
 def get_unassigned_assets():
     """
     할당되지 않은 자산(이메일이 없는)들의 목록을 반환

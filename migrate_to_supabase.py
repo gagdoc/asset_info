@@ -47,34 +47,50 @@ def create_tables(supabase: Client):
         "BU" TEXT,
         "User" TEXT,
         "email" TEXT,
-        "Additional Information" TEXT
+        "Additional Information" TEXT,
+        "참고" TEXT
     );
 
     CREATE TABLE IF NOT EXISTS assets_ipad (
         "S/N" TEXT PRIMARY KEY,
-        email TEXT,
         "Model" TEXT,
-        "할당일" TEXT
+        "Date" TEXT,
+        "BU" TEXT,
+        "Role" TEXT,
+        "User" TEXT,
+        "email" TEXT,
+        "Additional Information" TEXT,
+        "해지유무" TEXT,
+        "참고" TEXT
     );
     
     CREATE TABLE IF NOT EXISTS assets_teams (
         "Number" TEXT PRIMARY KEY,
-        email TEXT,
-        "할당일" TEXT
+        "email" TEXT,
+        "Extension" TEXT,
+        "LineURI" TEXT,
+        "Business Title" TEXT,
+        "ID" TEXT
     );
     
     CREATE TABLE IF NOT EXISTS assets_monitor (
         id SERIAL PRIMARY KEY,
-        email TEXT,
         "Model" TEXT,
-        "할당일" TEXT
+        "Date" TEXT,
+        "User" TEXT,
+        "email" TEXT,
+        "Additional Information" TEXT
     );
     
     CREATE TABLE IF NOT EXISTS assets_printer (
         id SERIAL PRIMARY KEY,
-        email TEXT,
         "Model" TEXT,
-        "할당일" TEXT
+        "date" TEXT,
+        "User" TEXT,
+        "BU" TEXT,
+        "ROLE" TEXT,
+        "email" TEXT,
+        "카트리지 사용 내역" TEXT
     );
 
     -- [NEW] Resign Table
