@@ -368,8 +368,10 @@ def enrich_data_with_assets(target_df):
 def process_asset_return(email):
     """
     Finds all assets assigned to this email, clears the assignment,
-    and updates the asset status (BU='IT', ROLE/AddInfo='STOCK' for Lease).
+    and updates the asset status with detailed formatting.
     """
+    from datetime import datetime
+    today_str = datetime.now().strftime("%Y%m%d")
     email = str(email).strip().lower()
     if not email:
         return False, "이메일이 없습니다."
@@ -377,18 +379,25 @@ def process_asset_return(email):
     # fresh load to be safe
     dfs = load_from_db()
     updated_tables = []
+    
+    # Get user info for Teams return (English Name)
+    eng_name = "Unknown"
+    if "All_User" in dfs and not dfs["All_User"].empty:
+        user_row = dfs["All_User"][dfs["All_User"]["email"].str.strip().str.lower() == email]
+        if not user_row.empty:
+            eng_name = str(user_row.iloc[0].get("NAME", "Unknown")).strip()
 
     # 1. Lease (노트북)
     if "Lease" in dfs and not dfs["Lease"].empty and "email" in dfs["Lease"].columns:
         mask = dfs["Lease"]["email"].str.strip().str.lower() == email
         if mask.any():
             dfs["Lease"].loc[mask, "email"] = ""
-            dfs["Lease"].loc[mask, "User"] = ""
+            dfs["Lease"].loc[mask, "User"] = "STOCK"
             if "BU" in dfs["Lease"].columns:
                 dfs["Lease"].loc[mask, "BU"] = "IT"
-            # Using 'Additional Information' for 'STOCK' status as discussed
+            # Format: 20260122/kale.lee@stryker.com/반납
             if "Additional Information" in dfs["Lease"].columns:
-                dfs["Lease"].loc[mask, "Additional Information"] = "STOCK"
+                dfs["Lease"].loc[mask, "Additional Information"] = f"{today_str}/{email}/반납"
             update_db("Lease", dfs["Lease"])
             updated_tables.append("PC/노트북")
 
@@ -397,6 +406,14 @@ def process_asset_return(email):
         mask = dfs["iPad"]["email"].str.strip().str.lower() == email
         if mask.any():
             dfs["iPad"].loc[mask, "email"] = ""
+            dfs["iPad"].loc[mask, "User"] = "STOCK"
+            if "BU" in dfs["iPad"].columns:
+                dfs["iPad"].loc[mask, "BU"] = "IT"
+            if "Role" in dfs["iPad"].columns:
+                dfs["iPad"].loc[mask, "Role"] = "IT"
+            # Format: 20260122/kale.lee@stryker.com/반납
+            if "Additional Information" in dfs["iPad"].columns:
+                dfs["iPad"].loc[mask, "Additional Information"] = f"{today_str}/{email}/반납"
             update_db("iPad", dfs["iPad"])
             updated_tables.append("아이패드")
 
@@ -405,6 +422,10 @@ def process_asset_return(email):
         mask = dfs["Teams"]["email"].str.strip().str.lower() == email
         if mask.any():
             dfs["Teams"].loc[mask, "email"] = ""
+            # Format: [English Name]사용한 번호
+            target_col = "Business Title" # As per our Supabase schema
+            if target_col in dfs["Teams"].columns:
+                dfs["Teams"].loc[mask, target_col] = f"{eng_name}사용한 번호"
             update_db("Teams", dfs["Teams"])
             updated_tables.append("팀즈 번호")
 

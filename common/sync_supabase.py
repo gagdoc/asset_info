@@ -200,7 +200,7 @@ def sync_all_from_dataframe(dfs, replace_mode=False):
             df = dfs["Resign"].copy()
             df = normalize_email_local(df)
             target_cols = [
-                "email", "F", "월", "날짜", "NAME", "설명", "BU", 
+                "F", "월", "날짜", "NAME", "email", "설명", "BU", 
                 "노트북", "아이패드", "모니터", "복합기", "Teams", "추가사항"
             ]
             df = clean_dataframe(df, target_cols)

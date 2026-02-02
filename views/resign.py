@@ -18,6 +18,13 @@ def render_resign_page(dfs):
     data_key = "Resign"
     df = dfs[data_key]
 
+    # Reorder columns to match Excel if they exist
+    excel_order = ["F", "월", "날짜", "NAME", "email", "설명", "BU", "노트북", "아이패드", "모니터", "복합기", "Teams", "추가사항"]
+    cols_to_show = [c for c in excel_order if c in df.columns]
+    # Add any other columns that might be in df but not in excel_order (if any)
+    other_cols = [c for c in df.columns if c not in excel_order]
+    df = df[cols_to_show + other_cols]
+
     tab1, tab2 = st.tabs(["📝 리스트 편집", "📂 대량 업데이트"])
     with tab1:
         # Enable row selection

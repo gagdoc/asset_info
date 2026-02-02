@@ -78,7 +78,7 @@ DEFAULT_SCHEMAS = {
     "Teams": ["NO", "email", "Number", "할당일"],
     "Printer": ["NO", "email", "Model", "할당일"],
     "Monitor": ["NO", "email", "Model", "할당일"],
-    "Resign": ["NO", "이름", "email", "퇴사정보", "노트북", "아이패드", "모니터", "Teams", "복합기"],
+    "Resign": ["F", "월", "날짜", "NAME", "email", "설명", "BU", "노트북", "아이패드", "모니터", "복합기", "Teams", "추가사항"],
     "NewHire": ["NO", "이름", "NAME", "email", "BU", "ROLE", "노트북", "아이패드", "모니터", "Teams", "복합기"],
     "Dept_Config": ["BU", "ROLE"],
 }
