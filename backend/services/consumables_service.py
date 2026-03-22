@@ -116,3 +116,59 @@ def get_estimate(month: str):
     except Exception as e:
         print(f"Error reading estimate: {e}")
         return []
+
+def add_outbound(month: str, data: dict) -> bool:
+    """월별 출고 시트 왼쪽 A~D열의 빈 칸 맨 아래에 데이터를 기록합니다."""
+    _, ss = _get_consumables_client()
+    if not ss: return False
+    try:
+        ws = ss.worksheet(month)
+        col_A = ws.col_values(1) # A열 (날짜) 데이터들
+        next_row = len(col_A) + 1 # 최초로 빈 행
+        
+        # update() 메서드를 활용하여 A~D 열에 값 대입
+        ws.update(f"A{next_row}:D{next_row}", [[
+            data.get('date', ''), 
+            data.get('item_name', ''), 
+            data.get('quantity', ''), 
+            data.get('user_name', '')
+        ]])
+        return True
+    except Exception as e:
+        print(f"Error adding outbound: {e}")
+        return False
+
+def save_item(data: dict) -> bool:
+    """품목리스트 시트 A~C열에 새로운 품목을 추가하거나 기존 품목(B열 기준)을 수정합니다."""
+    _, ss = _get_consumables_client()
+    if not ss: return False
+    try:
+        ws = ss.worksheet("품목리스트")
+        col_B = ws.col_values(2) # B열 (품명) 기준
+        target_item = data.get('item_name', '').strip()
+        
+        row_idx = None
+        for i, val in enumerate(col_B):
+            if val.strip() == target_item:
+                row_idx = i + 1
+                break
+                
+        if row_idx:
+            # 존재하면 해당 행 A~C 덮어쓰기
+            ws.update(f"A{row_idx}:C{row_idx}", [[
+                data.get('category', ''), 
+                data.get('item_name', ''), 
+                data.get('price', '')
+            ]])
+        else:
+            # 없으면 맨 아래(B열 비어있는 곳 기준) A~C 추가
+            next_row = len(col_B) + 1
+            ws.update(f"A{next_row}:C{next_row}", [[
+                data.get('category', ''), 
+                data.get('item_name', ''), 
+                data.get('price', '')
+            ]])
+        return True
+    except Exception as e:
+        print(f"Error saving item: {e}")
+        return False

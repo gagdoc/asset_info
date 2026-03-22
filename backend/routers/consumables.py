@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Query
-from backend.services.consumables_service import get_available_months, get_items_list, get_outbound_history, get_estimate
+from fastapi import APIRouter, HTTPException, Query, Body
+from backend.services.consumables_service import get_available_months, get_items_list, get_outbound_history, get_estimate, add_outbound, save_item
 from typing import List, Dict, Any
 
 router = APIRouter(
@@ -31,3 +31,26 @@ async def get_month_estimate(month: str = Query(..., description="조회할 월 
     """선택한 월의 견적서 데이터 반환"""
     estimate = get_estimate(month)
     return estimate
+
+@router.post("/outbound")
+async def create_outbound(data: Dict[str, Any] = Body(...)):
+    """월별 출고 데이터 추가"""
+    month = data.get("month")
+    if not month:
+        raise HTTPException(status_code=400, detail="Month is required")
+        
+    success = add_outbound(month, data)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add outbound record")
+    return {"status": "success"}
+
+@router.post("/items")
+async def create_or_update_item(data: Dict[str, Any] = Body(...)):
+    """품목 마스터 리스트 추가/수정"""
+    if not data.get("item_name"):
+        raise HTTPException(status_code=400, detail="Item name is required")
+        
+    success = save_item(data)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to save item")
+    return {"status": "success"}
