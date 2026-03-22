@@ -14,17 +14,10 @@ def main():
     client = gspread.authorize(creds)
     spreadsheet = client.open_by_key(SPREADSHEET_ID)
     
-    # 3월 시트 확인
-    ws_mar = spreadsheet.worksheet("3월")
-    rows = ws_mar.get_values("A1:K15")
-    print("--- 3월 시트 상위 15행 ---")
+    ws_apr = spreadsheet.worksheet("4월")
+    rows = ws_apr.get_values("A1:L10")
+    print("--- 4월 시트 전체(A~L) 구조 파악 ---")
     for row in rows:
-        print(row)
-        
-    print("\n--- 품목리스트 시트 상위 10행 ---")
-    ws_items = spreadsheet.worksheet("품목리스트")
-    rows_items = ws_items.get_values("A1:H10")
-    for row in rows_items:
         print(row)
 
 if __name__ == "__main__":

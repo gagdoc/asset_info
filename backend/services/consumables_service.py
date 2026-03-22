@@ -90,32 +90,77 @@ def get_outbound_history(month: str):
         return []
 
 def get_estimate(month: str):
-    _, ss = _get_consumables_client()
-    if not ss: return []
-    try:
-        ws = ss.worksheet(month)
-        # F부터 L열 (NO, ITEM, 품목, 총수, 사용자, 단가, 견적비용)
-        # 견적비용이 L열이나 K뒤 어딘가에 있다고 가정하고 넉넉히 가져옴
-        records = ws.get_values("F2:L")
-        estimate = []
-        for r in records:
-            if not r or not str(r[0]).strip() or not str(r[0]).strip().isdigit(): 
-                continue # NO 열이 비어있거나 숫자가 아니면 스킵
-            
-            # 사용자 데이터가 없는 경우를 대비
-            estimate.append({
-                "no": str(r[0]).strip() if len(r) > 0 else "",
-                "category": str(r[1]).strip() if len(r) > 1 else "",
-                "item_name": str(r[2]).strip() if len(r) > 2 else "",
-                "total_qty": str(r[3]).strip() if len(r) > 3 else "",
-                "users": str(r[4]).strip() if len(r) > 4 else "",
-                "unit_price": str(r[5]).strip() if len(r) > 5 else "",
-                "total_price": str(r[6]).strip() if len(r) > 6 else ""
-            })
-        return estimate
-    except Exception as e:
-        print(f"Error reading estimate: {e}")
+    """
+    해당 월의 출고 데이터(A~D열)와 품목 리스트 데이터를 조합해
+    파이썬 백엔드에서 그룹별로 수량을 합산하여 견적서를 직접 생성합니다.
+    (사용자 요청: 시트의 F 이후 단은 사용하지 않음)
+    """
+    history = get_outbound_history(month)
+    if not history:
         return []
+
+    # 1. 품목 단가 딕셔너리 생성
+    items = get_items_list()
+    item_dict = {}
+    for it in items:
+        raw_p = it.get('price', '0').replace(',', '').strip()
+        price = int(raw_p) if raw_p.isdigit() else 0
+        item_dict[it['item_name']] = {
+            'category': it.get('category', ''),
+            'price': price
+        }
+
+    # 2. 아이템별 그룹화 (수량 합산, 사용자별 수량 병합)
+    agg = {}
+    for h in history:
+        i_name = h.get('item_name', '').strip()
+        if not i_name: continue
+        
+        qty_str = str(h.get('quantity', '0')).replace(',', '').strip()
+        qty = int(qty_str) if qty_str.isdigit() else 0
+        user = str(h.get('user_name', '')).strip()
+
+        if i_name not in agg:
+            agg[i_name] = {'total_qty': 0, 'users': {}}
+
+        agg[i_name]['total_qty'] += qty
+        
+        if user:
+            if user in agg[i_name]['users']:
+                agg[i_name]['users'][user] += qty
+            else:
+                agg[i_name]['users'][user] = qty
+
+    # 3. 견적서 형태 리스트로 변환
+    estimate = []
+    no = 1
+    for i_name, data in agg.items():
+        # 사용자 문자열 만들기 (ex: "홍길동(2), 김철수")
+        user_list = []
+        for u, q in data['users'].items():
+            if q > 1:
+                user_list.append(f"{u}({q})")
+            else:
+                user_list.append(u)
+        users_str = ", ".join(user_list)
+
+        info = item_dict.get(i_name, {'category': '', 'price': 0})
+        cat = info['category']
+        u_price = info['price']
+        t_price = data['total_qty'] * u_price
+
+        estimate.append({
+            "no": str(no),
+            "category": cat,
+            "item_name": i_name,
+            "total_qty": str(data['total_qty']),
+            "users": users_str,
+            "unit_price": format(u_price, ","),
+            "total_price": format(t_price, ",")
+        })
+        no += 1
+
+    return estimate
 
 def add_outbound(month: str, data: dict) -> bool:
     """월별 출고 시트 왼쪽 A~D열의 빈 칸 맨 아래에 데이터를 기록합니다."""
