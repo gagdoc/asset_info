@@ -11,6 +11,7 @@ CONSUMABLES_DB_FILE = "consumables.db"
 # ── Google Sheets 설정 ──────────────────────────────
 # Google Sheets Spreadsheet ID (URL에서 /d/ 뒤 부분)
 SPREADSHEET_ID = "1__8NXfK6ruhlQtnomhIi_sjdkHgLD0C2N1Mw4P3GW7g"
+CONSUMABLES_SPREADSHEET_ID = "1A4RvrDn_I3wev6UaqEGBRoADYRYwtQty0TPo-x6ehtw"
 
 # Service Account JSON 키 파일 (로컬용)
 GOOGLE_CREDENTIALS_FILE = "data/st-asset-project-8000c6bb9905.json"
