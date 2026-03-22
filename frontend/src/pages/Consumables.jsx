@@ -256,7 +256,7 @@ const OutboundTab = ({ month }) => {
 const ItemsTab = () => {
     const queryClient = useQueryClient()
     const [showForm, setShowForm] = useState(false)
-    const [formData, setFormData] = useState({ category: '', item_name: '', price: '' })
+    const [formData, setFormData] = useState({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '' })
 
     const { data: items, isLoading } = useQuery({
         queryKey: ['consumables-items'],
@@ -273,7 +273,7 @@ const ItemsTab = () => {
         onSuccess: () => {
             queryClient.invalidateQueries(['consumables-items'])
             setShowForm(false)
-            setFormData({ category: '', item_name: '', price: '' })
+            setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '' })
             alert("품목이 저장되었습니다.")
         },
         onError: () => alert("오류가 발생했습니다. 구글 시트를 확인하세요.")
@@ -289,7 +289,7 @@ const ItemsTab = () => {
     }
 
     const startEdit = (item) => {
-        setFormData({ category: item.category, item_name: item.item_name, price: item.price })
+        setFormData({ category: item.category, item_name: item.item_name, price: item.price, is_tracked: item.is_tracked || false, base_qty: item.base_qty || '' })
         setShowForm(true)
     }
 
@@ -299,7 +299,7 @@ const ItemsTab = () => {
         <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <h3>소모품 마스터 리스트 (단가표)</h3>
-                <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ category: '', item_name: '', price: '' }); }}>
+                <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '' }); }}>
                     {showForm ? '닫기' : '+ 품목 추가'}
                 </button>
             </div>
@@ -308,20 +308,33 @@ const ItemsTab = () => {
                 <form onSubmit={handleSubmit} style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>대분류 (Category)</label>
-                        <input type="text" placeholder="예: USB, Mouse..." value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} style={{ padding: '8px' }} required />
+                        <input type="text" placeholder="예: USB, Mouse..." value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} style={{ padding: '8px', width: '120px' }} required />
                     </div>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>품목명</label>
-                        <input type="text" placeholder="로지텍 마우스 M185" value={formData.item_name} onChange={e => setFormData({...formData, item_name: e.target.value})} style={{ padding: '8px', minWidth: '250px' }} required />
+                        <input type="text" placeholder="로지텍 마우스 M185" value={formData.item_name} onChange={e => setFormData({...formData, item_name: e.target.value})} style={{ padding: '8px', minWidth: '200px' }} required />
                     </div>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>단가 (원)</label>
-                        <input type="text" placeholder="18,000" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} style={{ padding: '8px' }} required />
+                        <input type="text" placeholder="18,000" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} style={{ padding: '8px', width: '100px' }} required />
                     </div>
-                    <button type="submit" className="btn btn-primary" disabled={mutation.isLoading}>
+
+                    <div style={{ marginLeft: '10px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#1976d2', fontWeight: 'bold' }}>재고 추적 🎯</label>
+                        <input type="checkbox" checked={formData.is_tracked} onChange={e => setFormData({...formData, is_tracked: e.target.checked})} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
+                    </div>
+
+                    {formData.is_tracked && (
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#1976d2', fontWeight: 'bold' }}>초기 재고 (개)</label>
+                            <input type="number" min="1" placeholder="100" value={formData.base_qty} onChange={e => setFormData({...formData, base_qty: e.target.value})} style={{ padding: '8px', width: '80px', border: '1px solid #1976d2' }} required />
+                        </div>
+                    )}
+
+                    <button type="submit" className="btn btn-primary" disabled={mutation.isLoading} style={{ marginLeft: 'auto' }}>
                         {mutation.isLoading ? '저장 중...' : '저장하기'}
                     </button>
-                    <div style={{ fontSize: '0.8em', color: '#666', marginTop: '5px', width: '100%' }}>* 품목명이 기존과 같을 경우 '수정' 처리되고, 다를 경우 '추가' 됩니다.</div>
+                    <div style={{ fontSize: '0.8em', color: '#666', marginTop: '5px', width: '100%' }}>* 품목명이 같을 경우 수정되고, 다를 경우 덧붙여집니다. 재고 추적을 켜고 기준 수량을 입력하시면 재고가 부족할 때 사이트에서 알려줍니다.</div>
                 </form>
             )}
 
@@ -330,22 +343,49 @@ const ItemsTab = () => {
                     <tr>
                         <th>대분류 (Category)</th>
                         <th>소모품명 (Item Name)</th>
-                        <th>정상 단가(₩)</th>
+                        <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
+                        <th style={{ textAlign: 'center' }}>상태(재고현황)</th>
                         <th style={{ textAlign: 'center' }}>관리</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {items?.length > 0 ? items.map((item, idx) => (
-                        <tr key={idx}>
-                            <td>{item.category}</td>
-                            <td><strong>{item.item_name}</strong></td>
-                            <td style={{ textAlign: 'right' }}>{item.price}</td>
-                            <td style={{ textAlign: 'center' }}>
-                                <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => startEdit(item)}>수정</button>
-                            </td>
-                        </tr>
-                    )) : (
-                        <tr><td colSpan="4" style={{ textAlign: 'center' }}>등록된 품목이 없습니다.</td></tr>
+                    {items?.length > 0 ? items.map((item, idx) => {
+                        let statusBadge = <span style={{ color: '#aaa', fontSize: '0.85em' }}>추적안함 (-)</span>
+                        if (item.is_tracked) {
+                            const current = item.current_stock || 0
+                            const base = item.base_qty || 1
+                            const ratio = (current / base) * 100
+                            const isLow = ratio < 10
+                            
+                            statusBadge = (
+                                <span style={{ 
+                                    padding: '3px 8px', 
+                                    borderRadius: '12px', 
+                                    fontSize: '0.85em', 
+                                    fontWeight: 'bold',
+                                    display: 'inline-block',
+                                    backgroundColor: isLow ? '#ffebee' : '#e8f5e9',
+                                    color: isLow ? '#d32f2f' : '#2e7d32',
+                                    border: `1px solid ${isLow ? '#ffcdd2' : '#c8e6c9'}`
+                                }}>
+                                    {isLow ? `🚨 부족 (잔여: ${current}개)` : `✅ 양호 (잔여: ${current}개)`}
+                                </span>
+                            )
+                        }
+
+                        return (
+                            <tr key={idx}>
+                                <td>{item.category}</td>
+                                <td><strong>{item.item_name}</strong></td>
+                                <td style={{ textAlign: 'right' }}>{item.price}</td>
+                                <td style={{ textAlign: 'center' }}>{statusBadge}</td>
+                                <td style={{ textAlign: 'center' }}>
+                                    <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => startEdit(item)}>수정</button>
+                                </td>
+                            </tr>
+                        )
+                    }) : (
+                        <tr><td colSpan="5" style={{ textAlign: 'center' }}>등록된 품목이 없습니다.</td></tr>
                     )}
                 </tbody>
             </table>
