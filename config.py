@@ -2,9 +2,20 @@
 # 앱 전역 설정 (Asset Management System Config)
 # =====================================================
 
+import os
+
 # 데이터베이스 설정
 DB_FILE = "asset_database.db"
 CONSUMABLES_DB_FILE = "consumables.db"
+
+# ── Google Sheets 설정 ──────────────────────────────
+# Google Sheets Spreadsheet ID (URL에서 /d/ 뒤 부분)
+SPREADSHEET_ID = "1__8NXfK6ruhlQtnomhIi_sjdkHgLD0C2N1Mw4P3GW7g"
+
+# Service Account JSON 키 파일 (로컬용)
+GOOGLE_CREDENTIALS_FILE = "data/st-asset-project-8000c6bb9905.json"
+# Cloud Run 등 클라우드 배포용 환경 변수 (JSON 문자열)
+GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON")
 
 # Excel 시트 매핑 (Excel 파일의 실제 시트명)
 SHEET_MAPPING = {

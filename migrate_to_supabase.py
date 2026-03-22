@@ -31,7 +31,12 @@ def create_tables(supabase: Client):
         "KorName" TEXT,
         "ROLE" TEXT,
         "BU" TEXT,
-        "SKL분류" TEXT
+        "SKL분류" TEXT,
+        "Lease_List" TEXT,
+        "Ipad_List" TEXT,
+        "TeamsNum" TEXT,
+        "Printer" TEXT,
+        "Monitor" TEXT
     );
 
     -- 2. Asset Tables
@@ -187,7 +192,10 @@ def migrate_assets(supabase: Client):
         df = normalize_email(df)
         df = df.rename(columns={"이름": "KorName"})
         
-        target_cols = ["email", "NO", "NAME", "KorName", "ROLE", "BU", "SKL분류"]
+        target_cols = [
+            "email", "NO", "NAME", "KorName", "ROLE", "BU", "SKL분류",
+            "Lease_List", "Ipad_List", "TeamsNum", "Printer", "Monitor"
+        ]
         df = clean_dataframe(df, target_cols)
         
         records = df.to_dict(orient="records")

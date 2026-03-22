@@ -149,29 +149,42 @@ def load_from_db():
             
             for key in SHEET_MAPPING.keys():
                 table_name = supa_map.get(key)
+                df = pd.DataFrame() # Default empty
+                
                 if table_name:
                     try:
                         res = supabase.table(table_name).select("*").execute()
                         if res.data:
                             df = pd.DataFrame(res.data)
-                        else:
-                            df = pd.DataFrame()
-                        
-                        # Fix column names if they differ?
-                        # Our migration script kept them mostly same (quoted).
-                        # Expect complications with "이름" -> "KorName" if we renamed it.
-                        # For All_User, we renamed 이름 -> KorName in migration.
-                        if key == "All_User":
-                             df.rename(columns={"KorName": "이름"}, inplace=True)
+                            if key == "Resign":
+                                # debug_msg = ... # Removed
+                                pass
+                    except:
+                        pass
+                
+                # PER-TABLE FALLBACK: If Supabase returned empty, try local for this table
+                if df.empty:
+                    try:
+                        conn = get_connection()
+                        df = pd.read_sql(f"SELECT * FROM {key}", conn)
+                        conn.close()
+                    except:
+                        df = pd.DataFrame()
+                
+                if not df.empty:
+                    # Fix column names if they differ
+                    if key == "All_User":
+                         df.rename(columns={"KorName": "이름"}, inplace=True)
 
-                        if key != "Dept_Config":
-                            df = normalize_email(df)
-                        data[key] = df
-                    except Exception as e:
-                         # Table might not exist or empty
-                        data[key] = pd.DataFrame()
-                else:
-                    data[key] = pd.DataFrame() # Dept_Config etc
+                    if key != "Dept_Config":
+                        df = normalize_email(df)
+                    
+                    if key == "Resign":
+                        df = df.sort_values(by=["F", "월", "날짜", "NAME"], ascending=[False, False, False, True], na_position='last')
+                    elif key == "All_User":
+                        df = df.sort_values(by="NAME", na_position='last')
+                        
+                data[key] = df
 
             return data
         except Exception as e:
@@ -261,86 +274,127 @@ def style_resigned_rows(row):
 
 
 def enrich_data_with_assets(target_df):
-    # Load from whatever the source is (Cached in session_state usually, or fresh load)
-    # The original code called load_from_db() inside here which is expensive if called often.
-    # But for now, we follow the pattern.
+    """
+    Given a DataFrame (like Resign or NewHire), find assets associated with 
+    the 'email' in each row and fill in the missing columns (NAME, Lease, iPad, etc.)
+    """
     dfs = load_from_db() 
-    
     target_df = normalize_email(target_df)
-    asset_map = {"노트북": {}, "아이패드": {}, "모니터": {}, "Teams": {}, "복합기": {}}
-
-    # ... (Rest of logic is logic-only, no DB calls) ...
-    # We copy the existing logic below
     
-    if not dfs["Lease"].empty and "email" in dfs["Lease"].columns:
-        target_col = "S/N" if "S/N" in dfs["Lease"].columns else dfs["Lease"].columns[3]
-        asset_map["노트북"] = (
-            dfs["Lease"][["email", target_col]]
-            .dropna()
-            .set_index("email")[target_col]
-            .to_dict()
-        )
+    # Initialize asset_map including 'NAME' and 'BU'
+    asset_map = {
+        "NAME": {},
+        "BU": {},
+        "노트북": {}, 
+        "아이패드": {}, 
+        "모니터": {}, 
+        "Teams": {}, 
+        "복합기": {}
+    }
 
-    if not dfs["iPad"].empty and "email" in dfs["iPad"].columns:
-        target_col = "S/N" if "S/N" in dfs["iPad"].columns else "Model"
-        asset_map["아이패드"] = (
-            dfs["iPad"][["email", target_col]]
-            .dropna()
-            .set_index("email")[target_col]
-            .to_dict()
-        )
+    def robust_to_dict(df, email_col, val_col):
+        """Helper to create a dict where multiple values for same email are joined by comma"""
+        if df.empty or email_col not in df.columns or val_col not in df.columns:
+            return {}
+        # Basic cleaning
+        df_clean = df[[email_col, val_col]].dropna().copy()
+        df_clean[email_col] = df_clean[email_col].astype(str).str.strip().str.lower()
+        
+        # Clean the value (remove leading =)
+        df_clean[val_col] = df_clean[val_col].astype(str).str.strip().str.lstrip("=")
+        
+        # Filter out "없음", "-", "." etc
+        placeholders = ["", "-", "nan", "None", ".", "0", "없음"]
+        df_clean = df_clean[~df_clean[val_col].isin(placeholders)]
+        
+        if df_clean.empty:
+            return {}
+            
+        # Group and join multiple assets
+        agg = df_clean.groupby(email_col)[val_col].apply(lambda x: ", ".join(sorted(list(set(x))))).to_dict()
+        return agg
 
-    if not dfs["Monitor"].empty and "email" in dfs["Monitor"].columns:
-        asset_map["모니터"] = (
-            dfs["Monitor"][["email", "Model"]]
-            .dropna()
-            .set_index("email")["Model"]
-            .to_dict()
-        )
+    # 0. User Names and BU (from All_User)
+    if not dfs["All_User"].empty:
+        # We need the 'NAME' and 'BU' columns
+        df_users = dfs["All_User"].dropna(subset=["email"])
+        if "NAME" in df_users.columns:
+            asset_map["NAME"] = {str(k).strip().lower(): v for k, v in df_users.set_index("email")["NAME"].to_dict().items()}
+        if "BU" in df_users.columns:
+            asset_map["BU"] = {str(k).strip().lower(): v for k, v in df_users.set_index("email")["BU"].to_dict().items()}
+            
+        # Fallback asset info from All_User columns
+        def clean_map_from_alluser(col_name):
+            if col_name in df_users.columns:
+                return {
+                    str(k).strip().lower(): v for k, v in 
+                    df_users.set_index("email")[col_name].dropna().to_dict().items() 
+                    if str(v).strip() not in ["", "-", "nan", "None", ".", "0", "없음"]
+                }
+            return {}
 
-    if not dfs["Teams"].empty and "email" in dfs["Teams"].columns:
+        asset_map["노트북"].update(clean_map_from_alluser("Lease_List"))
+        asset_map["아이패드"].update(clean_map_from_alluser("Ipad_List"))
+        asset_map["Teams"].update(clean_map_from_alluser("TeamsNum"))
+        asset_map["복합기"].update(clean_map_from_alluser("Printer"))
+        asset_map["모니터"].update(clean_map_from_alluser("Monitor"))
+
+    # 1. Lease (노트북)
+    if not dfs["Lease"].empty:
+        cols = dfs["Lease"].columns
+        target_col = "S/N" if "S/N" in cols else (cols[3] if len(cols) > 3 else cols[0])
+        asset_map["노트북"].update(robust_to_dict(dfs["Lease"], "email", target_col))
+
+    # 2. iPad
+    if not dfs["iPad"].empty:
+        cols = dfs["iPad"].columns
+        target_col = "S/N" if "S/N" in cols else ("Model" if "Model" in cols else cols[0])
+        asset_map["아이패드"].update(robust_to_dict(dfs["iPad"], "email", target_col))
+
+    # 3. Monitor
+    if not dfs["Monitor"].empty:
+        cols = dfs["Monitor"].columns
+        target_col = "Model" if "Model" in cols else (cols[0])
+        asset_map["모니터"].update(robust_to_dict(dfs["Monitor"], "email", target_col))
+
+    # 4. Teams (전화번호)
+    if not dfs["Teams"].empty:
         cols = dfs["Teams"].columns
+        # USER REQUEST: Prioritize LineURI
         target_col = next(
-            (
-                c
-                for c in [
-                    "Number formated for Country",
-                    "Number",
-                    "전화번호",
-                    "LineURI",
-                ]
-                if c in cols
-            ),
-            None,
+            (c for c in ["LineURI", "Number", "전화번호", "Number formated for Country"] if c in cols),
+            None
         )
-        if target_col:
-            asset_map["Teams"] = (
-                dfs["Teams"][["email", target_col]]
-                .dropna()
-                .set_index("email")[target_col]
-                .to_dict()
-            )
+        if not target_col:
+             target_col = next((c for c in cols if c != "email"), cols[0])
+             
+        asset_map["Teams"].update(robust_to_dict(dfs["Teams"], "email", target_col))
 
+    # 5. Printer (복합기)
     if not dfs["Printer"].empty and "email" in dfs["Printer"].columns:
         cols = dfs["Printer"].columns
-        target_col = (
-            "Model"
-            if "Model" in cols
-            else (
-                "Additional Information 2"
-                if "Additional Information 2" in cols
-                else ("프린터정보" if "프린터정보" in cols else None)
-            )
+        target_col = next(
+            (c for c in ["Model", "Additional Information 2", "프린터정보"] if c in cols),
+            None
         )
-        if target_col:
-            asset_map["복합기"] = (
-                dfs["Printer"][["email", target_col]]
-                .dropna()
-                .set_index("email")[target_col]
-                .to_dict()
-            )
+        if not target_col:
+             target_col = next((c for c in cols if c != "email"), cols[0])
 
-    for col in ["노트북", "아이패드", "모니터", "Teams", "복합기"]:
+        asset_map["복합기"].update(robust_to_dict(dfs["Printer"], "email", target_col))
+
+    # Map Resign/NewHire columns to asset_map keys
+    enrich_cols = {
+        "NAME": "NAME",
+        "BU": "BU",
+        "노트북": "노트북",
+        "아이패드": "아이패드",
+        "모니터": "모니터",
+        "Teams": "Teams",
+        "복합기": "복합기"
+    }
+
+    # Ensure columns exist in target_df
+    for col in enrich_cols.keys():
         if col not in target_df.columns:
             target_df[col] = None
 
@@ -350,25 +404,27 @@ def enrich_data_with_assets(target_df):
             continue
 
         def is_empty(val):
-            return pd.isna(val) or str(val).strip() == "" or str(val).lower() == "nan"
+            return pd.isna(val) or str(val).strip() in ["", "-", "nan", "None", ".", "0"]
 
-        if is_empty(target_df.at[idx, "노트북"]):
-            target_df.at[idx, "노트북"] = asset_map["노트북"].get(email, "-")
-        if is_empty(target_df.at[idx, "아이패드"]):
-            target_df.at[idx, "아이패드"] = asset_map["아이패드"].get(email, "-")
-        if is_empty(target_df.at[idx, "모니터"]):
-            target_df.at[idx, "모니터"] = asset_map["모니터"].get(email, "-")
-        if is_empty(target_df.at[idx, "Teams"]):
-            target_df.at[idx, "Teams"] = asset_map["Teams"].get(email, "-")
-        if is_empty(target_df.at[idx, "복합기"]):
-            target_df.at[idx, "복합기"] = asset_map["복합기"].get(email, "-")
+        for df_col, map_key in enrich_cols.items():
+            if is_empty(target_df.at[idx, df_col]):
+                new_val = asset_map[map_key].get(email)
+                if new_val:
+                    target_df.at[idx, df_col] = str(new_val)
+                else:
+                    target_df.at[idx, df_col] = "-"
+                    
     return target_df
 
 
-def process_asset_return(email):
+def process_asset_return(email, asset_type=None, name=None, bu=None):
     """
-    Finds all assets assigned to this email, clears the assignment,
-    and updates the asset status with detailed formatting.
+    Finds all assets (or a specific type) assigned to this email, 
+    clears the assignment, and updates the asset status with detailed formatting.
+    
+    asset_type: "Lease", "iPad", "Teams", "Monitor", "Printer" or None (all)
+    name: Optional name of the user (to avoid lookup failure)
+    bu: Optional BU of the user
     """
     from datetime import datetime
     today_str = datetime.now().strftime("%Y%m%d")
@@ -380,75 +436,159 @@ def process_asset_return(email):
     dfs = load_from_db()
     updated_tables = []
     
-    # Get user info for Teams return (English Name)
-    eng_name = "Unknown"
-    if "All_User" in dfs and not dfs["All_User"].empty:
-        user_row = dfs["All_User"][dfs["All_User"]["email"].str.strip().str.lower() == email]
+    # Get user info for Teams return (English Name and BU)
+    eng_name = name if name else "Unknown"
+    user_bu = bu if bu else "Unknown"
+    
+    if (eng_name == "Unknown" or user_bu == "Unknown") and "All_User" in dfs and not dfs["All_User"].empty:
+        # Better matching: strip and lower both sides deeply
+        clean_email = email.split('@')[0] if '@' in email else email
+        mask = dfs["All_User"]["email"].str.strip().str.lower().str.contains(clean_email, na=False)
+        user_row = dfs["All_User"][mask]
         if not user_row.empty:
-            eng_name = str(user_row.iloc[0].get("NAME", "Unknown")).strip()
+            if eng_name == "Unknown":
+                eng_name = str(user_row.iloc[0].get("NAME", "Unknown")).strip()
+            if user_bu == "Unknown":
+                user_bu = str(user_row.iloc[0].get("BU", "Unknown")).strip()
+    
+    if eng_name == "Unknown":
+        eng_name = email.split('@')[0] # Fallback to email ID
+    
+    # Final format for Teams: "Name/BU 사용한 번호"
+    teams_label = f"{eng_name}/{user_bu}" if user_bu != "Unknown" else eng_name
 
-    # 1. Lease (노트북)
-    if "Lease" in dfs and not dfs["Lease"].empty and "email" in dfs["Lease"].columns:
-        mask = dfs["Lease"]["email"].str.strip().str.lower() == email
-        if mask.any():
-            dfs["Lease"].loc[mask, "email"] = ""
-            dfs["Lease"].loc[mask, "User"] = "STOCK"
-            if "BU" in dfs["Lease"].columns:
-                dfs["Lease"].loc[mask, "BU"] = "IT"
-            # Format: 20260122/kale.lee@stryker.com/반납
-            if "Additional Information" in dfs["Lease"].columns:
-                dfs["Lease"].loc[mask, "Additional Information"] = f"{today_str}/{email}/반납"
-            update_db("Lease", dfs["Lease"])
-            updated_tables.append("PC/노트북")
+    def process_lease():
+        if "Lease" in dfs and not dfs["Lease"].empty and "email" in dfs["Lease"].columns:
+            mask = dfs["Lease"]["email"].str.strip().str.lower() == email
+            if mask.any():
+                dfs["Lease"].loc[mask, "email"] = ""
+                dfs["Lease"].loc[mask, "User"] = "STOCK"
+                if "BU" in dfs["Lease"].columns:
+                    dfs["Lease"].loc[mask, "BU"] = "IT"
+                if "Additional Information" in dfs["Lease"].columns:
+                    dfs["Lease"].loc[mask, "Additional Information"] = f"{today_str}/{email}/반납"
+                update_db("Lease", dfs["Lease"])
+                return "PC/노트북"
+        return None
 
-    # 2. iPad
-    if "iPad" in dfs and not dfs["iPad"].empty and "email" in dfs["iPad"].columns:
-        mask = dfs["iPad"]["email"].str.strip().str.lower() == email
-        if mask.any():
-            dfs["iPad"].loc[mask, "email"] = ""
-            dfs["iPad"].loc[mask, "User"] = "STOCK"
-            if "BU" in dfs["iPad"].columns:
-                dfs["iPad"].loc[mask, "BU"] = "IT"
-            if "Role" in dfs["iPad"].columns:
-                dfs["iPad"].loc[mask, "Role"] = "IT"
-            # Format: 20260122/kale.lee@stryker.com/반납
-            if "Additional Information" in dfs["iPad"].columns:
-                dfs["iPad"].loc[mask, "Additional Information"] = f"{today_str}/{email}/반납"
-            update_db("iPad", dfs["iPad"])
-            updated_tables.append("아이패드")
+    def process_ipad():
+        if "iPad" in dfs and not dfs["iPad"].empty and "email" in dfs["iPad"].columns:
+            mask = dfs["iPad"]["email"].str.strip().str.lower() == email
+            if mask.any():
+                dfs["iPad"].loc[mask, "email"] = ""
+                dfs["iPad"].loc[mask, "User"] = "STOCK"
+                if "BU" in dfs["iPad"].columns:
+                    dfs["iPad"].loc[mask, "BU"] = "IT"
+                if "Role" in dfs["iPad"].columns:
+                    dfs["iPad"].loc[mask, "Role"] = "IT"
+                if "Additional Information" in dfs["iPad"].columns:
+                    dfs["iPad"].loc[mask, "Additional Information"] = f"{today_str}/{email}/반납"
+                update_db("iPad", dfs["iPad"])
+                return "아이패드"
+        return None
 
-    # 3. Teams (전화번호)
-    if "Teams" in dfs and not dfs["Teams"].empty and "email" in dfs["Teams"].columns:
-        mask = dfs["Teams"]["email"].str.strip().str.lower() == email
-        if mask.any():
-            dfs["Teams"].loc[mask, "email"] = ""
-            # Format: [English Name]사용한 번호
-            target_col = "Business Title" # As per our Supabase schema
-            if target_col in dfs["Teams"].columns:
-                dfs["Teams"].loc[mask, target_col] = f"{eng_name}사용한 번호"
-            update_db("Teams", dfs["Teams"])
-            updated_tables.append("팀즈 번호")
+    def process_teams():
+        if "Teams" in dfs and not dfs["Teams"].empty and "email" in dfs["Teams"].columns:
+            mask = dfs["Teams"]["email"].str.strip().str.lower() == email
+            if mask.any():
+                dfs["Teams"].loc[mask, "email"] = ""
+                target_col = "Business Title"
+                if target_col in dfs["Teams"].columns:
+                    dfs["Teams"].loc[mask, target_col] = f"{teams_label} 사용한 번호"
+                update_db("Teams", dfs["Teams"])
+                return "팀즈 번호"
+        return None
 
-    # 4. Monitor
-    if "Monitor" in dfs and not dfs["Monitor"].empty and "email" in dfs["Monitor"].columns:
-        mask = dfs["Monitor"]["email"].str.strip().str.lower() == email
-        if mask.any():
-            dfs["Monitor"].loc[mask, "email"] = ""
-            update_db("Monitor", dfs["Monitor"])
-            updated_tables.append("모니터")
+    def process_monitor():
+        if "Monitor" in dfs and not dfs["Monitor"].empty and "email" in dfs["Monitor"].columns:
+            mask = dfs["Monitor"]["email"].str.strip().str.lower() == email
+            if mask.any():
+                dfs["Monitor"].loc[mask, "email"] = ""
+                update_db("Monitor", dfs["Monitor"])
+                return "모니터"
+        return None
 
-    # 5. Printer
-    if "Printer" in dfs and not dfs["Printer"].empty and "email" in dfs["Printer"].columns:
-        mask = dfs["Printer"]["email"].str.strip().str.lower() == email
-        if mask.any():
-            dfs["Printer"].loc[mask, "email"] = ""
-            update_db("Printer", dfs["Printer"])
-            updated_tables.append("프린터")
+    def process_printer():
+        if "Printer" in dfs and not dfs["Printer"].empty and "email" in dfs["Printer"].columns:
+            mask = dfs["Printer"]["email"].str.strip().str.lower() == email
+            if mask.any():
+                dfs["Printer"].loc[mask, "email"] = ""
+                update_db("Printer", dfs["Printer"])
+                return "프린터"
+        return None
+
+    # Execute based on asset_type
+    if asset_type == "Lease":
+        res = process_lease()
+        if res: updated_tables.append(res)
+    elif asset_type == "iPad":
+        res = process_ipad()
+        if res: updated_tables.append(res)
+    elif asset_type == "Teams":
+        res = process_teams()
+        if res: updated_tables.append(res)
+    elif asset_type == "Monitor":
+        res = process_monitor()
+        if res: updated_tables.append(res)
+    elif asset_type == "Printer":
+        res = process_printer()
+        if res: updated_tables.append(res)
+    else: # None = All
+        for func in [process_lease, process_ipad, process_teams, process_monitor, process_printer]:
+            res = func()
+            if res: updated_tables.append(res)
 
     if updated_tables:
         return True, f"✅ 반납 처리 완료: {', '.join(updated_tables)}"
     else:
         return False, "ℹ️ 해당 이메일로 할당된 자산이 없습니다."
+
+
+def delete_user_from_master(email):
+    """
+    Permanently removes a user from the master user list (All_User).
+    This handles both Supabase and local SQLite.
+    """
+    email = str(email).strip().lower()
+    if not email:
+        return False, "이메일이 없습니다."
+
+    supabase = get_supabase_client()
+    success_msg = []
+    
+    deleted_count = 0
+    
+    # 1. Delete from Supabase
+    if supabase:
+        try:
+            res = supabase.table("users").delete().eq("email", email).execute()
+            if res.data:
+                success_msg.append(f"Supabase: {len(res.data)}명 삭제됨")
+                deleted_count += len(res.data)
+            else:
+                success_msg.append("Supabase: 대상 없음")
+        except Exception as e:
+            return False, f"Supabase 삭제 오류: {str(e)}"
+
+    # 2. Delete from local SQLite
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("DELETE FROM All_User WHERE LOWER(email) = ?", (email,))
+        if c.rowcount > 0:
+            success_msg.append(f"Local DB: {c.rowcount}명 삭제됨")
+            deleted_count += c.rowcount
+        else:
+            success_msg.append("Local DB: 대상 없음")
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        return False, f"로컬 DB 삭제 오류: {str(e)}"
+
+    if deleted_count > 0:
+        return True, " / ".join(success_msg)
+    else:
+        return False, "삭제할 데이터가 DB에 없습니다. (이미 삭제되었거나 이메일 불일치)"
 
 
 def get_unassigned_assets():

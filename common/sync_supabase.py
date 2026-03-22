@@ -62,7 +62,10 @@ def sync_all_from_dataframe(dfs, replace_mode=False):
             df = normalize_email_local(df)
             df = df.rename(columns={"이름": "KorName"})
             
-            target_cols = ["email", "NO", "NAME", "KorName", "ROLE", "BU", "SKL분류"]
+            target_cols = [
+                "email", "NO", "NAME", "KorName", "ROLE", "BU", "SKL분류",
+                "Lease_List", "Ipad_List", "TeamsNum", "Printer", "Monitor"
+            ]
             df = clean_dataframe(df, target_cols)
             df = df[df["email"] != ""]
             

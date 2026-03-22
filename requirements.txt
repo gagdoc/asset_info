@@ -3,3 +3,9 @@ pandas
 openpyxl
 xlsxwriter
 supabase
+fastapi
+uvicorn
+python-multipart
+pydantic
+gspread
+google-auth
