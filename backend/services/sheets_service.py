@@ -143,26 +143,57 @@ def _df_to_rows(df: pd.DataFrame) -> list:
 # ── 읽기 (내부 - 타임아웃 래퍼 없음) ────────────────────────
 
 def _load_sheets_internal() -> dict | None:
-    """실제 Sheets 읽기 로직 (별도 스레드에서 실행됨)"""
+    """실제 Sheets 읽기 로직 (초고속 Batch Get 적용으로 1건의 API만 호출)"""
     _, spreadsheet = _get_client()
     if not spreadsheet:
         return None
 
     data = {}
-    for key, sheet_name in SHEET_MAPPING.items():
-        try:
-            ws = spreadsheet.worksheet(sheet_name)
-            df = _sheet_to_df(ws)
-            data[key] = df
-        except gspread.WorksheetNotFound:
-            print(f"⚠️  시트 탭 '{sheet_name}' 없음 → 빈 DataFrame 사용")
-            data[key] = pd.DataFrame()
-        except Exception as e:
-            print(f"⚠️  시트 '{sheet_name}' 로드 오류: {e}")
-            data[key] = pd.DataFrame()
+    keys = list(SHEET_MAPPING.keys())
+    ranges = [f"{sheet_name}!A:Z" for sheet_name in SHEET_MAPPING.values()]
 
-    print("✅ Google Sheets 데이터 로드 완료")
-    return data
+    try:
+        # 단일 번들 요청(Batch Get)으로 9개 시트를 1~2초 내에 한꺼번에 가져옴
+        batch_results = spreadsheet.values_batch_get(ranges)
+        valueRanges = batch_results.get('valueRanges', [])
+
+        for idx, res in enumerate(valueRanges):
+            key = keys[idx]
+            values = res.get('values', [])
+            if values:
+                # 첫 번째 행을 컬럼명으로 취급 (공백 제거)
+                header = [str(x).strip() for x in values[0]]
+                # 중복 컬럼명 방지 (예: '', '', '')
+                seen = set()
+                new_header = []
+                for c in header:
+                    if c in seen or not c:
+                        new_col = f"Unnamed_{len(new_header)}"
+                        while new_col in seen:
+                            new_col += "_"
+                        new_header.append(new_col)
+                        seen.add(new_col)
+                    else:
+                        new_header.append(c)
+                        seen.add(c)
+                        
+                max_cols = len(new_header)
+                padded_values = []
+                for idx_row in range(1, len(values)):
+                    row = values[idx_row]
+                    padded_row = row + [''] * (max_cols - len(row))
+                    padded_values.append(padded_row[:max_cols])
+
+                df = pd.DataFrame(padded_values, columns=new_header)
+                data[key] = df
+            else:
+                data[key] = pd.DataFrame()
+
+        print("✅ Google Sheets 데이터 로드 완료 (Batch Get 최적화)")
+        return data
+    except Exception as e:
+        print(f"⚠️  시트 'Batch Get' 로드 오류: {e}")
+        return None
 
 
 # ── 쓰기 (내부 - 타임아웃 래퍼 없음) ────────────────────────
