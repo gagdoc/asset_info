@@ -22,6 +22,24 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
+import time
+
+_CACHE = {}
+_CACHE_TTL = 30  # 30초 캐싱 (잦은 API 호출 방지용)
+
+def _get_cached(key, func, *args):
+    now = time.time()
+    if key in _CACHE:
+        val, exp = _CACHE[key]
+        if now < exp:
+            return val
+    val = func(*args)
+    _CACHE[key] = (val, now + _CACHE_TTL)
+    return val
+
+def _invalidate_cache():
+    _CACHE.clear()
+
 def _get_consumables_client():
     creds = None
     if GOOGLE_CREDENTIALS_JSON:
@@ -42,6 +60,9 @@ def _get_consumables_client():
         return None, None
 
 def get_available_months():
+    return _get_cached("months", _get_available_months_impl)
+
+def _get_available_months_impl():
     _, ss = _get_consumables_client()
     if not ss: return []
     # "월"로 끝나는 시트 이름 반환
@@ -49,6 +70,9 @@ def get_available_months():
     return months
 
 def get_items_list():
+    return _get_cached("items", _get_items_list_impl)
+
+def _get_items_list_impl():
     _, ss = _get_consumables_client()
     if not ss: return []
     try:
@@ -123,6 +147,9 @@ def get_items_list():
         return []
 
 def get_outbound_history(month: str):
+    return _get_cached(f"outbound_{month}", _get_outbound_history_impl, month)
+
+def _get_outbound_history_impl(month: str):
     _, ss = _get_consumables_client()
     if not ss: return []
     try:
@@ -233,6 +260,7 @@ def add_outbound(month: str, data: dict) -> bool:
             data.get('quantity', ''), 
             data.get('user_name', '')
         ]])
+        _invalidate_cache()
         return True
     except Exception as e:
         print(f"Error adding outbound: {e}")
@@ -250,6 +278,7 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
             data.get('quantity', ''), 
             data.get('user_name', '')
         ]])
+        _invalidate_cache()
         return True
     except Exception as e:
         print(f"Error updating outbound: {e}")
@@ -262,6 +291,7 @@ def delete_outbound_history(month: str, row_index: int) -> bool:
     try:
         ws = ss.worksheet(month)
         ws.delete_rows(row_index)
+        _invalidate_cache()
         return True
     except Exception as e:
         print(f"Error deleting outbound: {e}")
@@ -307,6 +337,7 @@ def save_item(data: dict) -> bool:
                 base_qty_str,
                 order_qty_str
             ]])
+        _invalidate_cache()
         return True
     except Exception as e:
         print(f"Error saving item: {e}")

@@ -9,37 +9,37 @@ router = APIRouter(
 )
 
 @router.get("/months")
-async def list_months():
+def list_months():
     """사용 가능한 월(시트) 목록 반환"""
     months = get_available_months()
     return {"months": months}
 
 @router.get("/items")
-async def list_items():
+def list_items():
     """품목 리스트 반환 ('품목리스트' 시트)"""
     items = get_items_list()
     return items
 
 @router.get("/items/{item_name}/outbound")
-async def list_item_outbounds(item_name: str = Path(..., description="조회할 품목 이름")):
+def list_item_outbounds(item_name: str = Path(..., description="조회할 품목 이름")):
     """선택한 단일 품목의 전체 시트(월) 기준 과거 출고 이력 조회"""
     history = get_item_outbound_history(item_name)
     return history
 
 @router.get("/outbound")
-async def list_outbound(month: str = Query(..., description="조회할 월 (예: '3월')")):
+def list_outbound(month: str = Query(..., description="조회할 월 (예: '3월')")):
     """선택한 월의 출고 이력 반환"""
     history = get_outbound_history(month)
     return history
 
 @router.get("/estimate")
-async def get_month_estimate(month: str = Query(..., description="조회할 월 (예: '3월')")):
+def get_month_estimate(month: str = Query(..., description="조회할 월 (예: '3월')")):
     """선택한 월의 견적서 데이터 반환"""
     estimate = get_estimate(month)
     return estimate
 
 @router.post("/outbound")
-async def create_outbound(data: Dict[str, Any] = Body(...)):
+def create_outbound(data: Dict[str, Any] = Body(...)):
     """월별 출고 데이터 추가"""
     month = data.get("month")
     if not month:
@@ -51,7 +51,7 @@ async def create_outbound(data: Dict[str, Any] = Body(...)):
     return {"status": "success"}
 
 @router.post("/items")
-async def create_or_update_item(data: Dict[str, Any] = Body(...)):
+def create_or_update_item(data: Dict[str, Any] = Body(...)):
     """품목 마스터 리스트 추가/수정"""
     if not data.get("item_name"):
         raise HTTPException(status_code=400, detail="Item name is required")
@@ -62,7 +62,7 @@ async def create_or_update_item(data: Dict[str, Any] = Body(...)):
     return {"status": "success"}
 
 @router.put("/outbound")
-async def update_outbound(data: Dict[str, Any] = Body(...)):
+def update_outbound(data: Dict[str, Any] = Body(...)):
     """월별 출고 개별 데이터 수정"""
     month = data.get("month")
     row_index = data.get("row_index")
@@ -75,7 +75,7 @@ async def update_outbound(data: Dict[str, Any] = Body(...)):
     return {"status": "success"}
 
 @router.delete("/outbound")
-async def delete_outbound(month: str = Query(...), row_index: int = Query(...)):
+def delete_outbound(month: str = Query(...), row_index: int = Query(...)):
     """월별 출고 개별 데이터 삭제"""
     success = delete_outbound_history(month, row_index)
     if not success:

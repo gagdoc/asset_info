@@ -54,7 +54,7 @@ class BuRoleEntry(BaseModel):
 
 # ── Dashboard ────────────────────────────────────────
 @router.get("/dashboard")
-async def get_dashboard_data():
+def get_dashboard_data():
     dfs = load_from_db()
     summary = {}
     
@@ -80,7 +80,7 @@ async def get_dashboard_data():
     return summary
 
 @router.get("/dashboard/integrated")
-async def get_dashboard_integrated():
+def get_dashboard_integrated():
     """
     Returns the merged 'All Employee Info' view:
     All_User + Lease + iPad + Monitor + Teams + Printer + Resign info
@@ -198,7 +198,7 @@ async def get_dashboard_integrated():
 
 # ── Asset List (Read) ────────────────────────────────
 @router.get("/{asset_type}")
-async def get_asset_list(asset_type: str):
+def get_asset_list(asset_type: str):
     dfs = load_from_db()
     if asset_type not in dfs:
         raise HTTPException(status_code=404, detail=f"Asset type '{asset_type}' not found")
@@ -219,7 +219,7 @@ async def upload_excel(file: UploadFile = File(...)):
 
 # ── CSV Download ─────────────────────────────────────
 @router.get("/{asset_type}/download")
-async def download_asset_csv(asset_type: str):
+def download_asset_csv(asset_type: str):
     dfs = load_from_db()
     if asset_type not in dfs:
         raise HTTPException(status_code=404, detail=f"Asset type '{asset_type}' not found")
@@ -234,7 +234,7 @@ async def download_asset_csv(asset_type: str):
 
 # ── Row Update (inline editing) ──────────────────────
 @router.put("/row/update")
-async def update_row(req: RowUpdateRequest):
+def update_row(req: RowUpdateRequest):
     dfs = load_from_db()
     if req.asset_type not in dfs:
         raise HTTPException(status_code=404, detail=f"Asset type '{req.asset_type}' not found")
@@ -252,7 +252,7 @@ async def update_row(req: RowUpdateRequest):
 
 # ── Row Delete ───────────────────────────────────────
 @router.delete("/row/delete")
-async def delete_rows(req: RowDeleteRequest):
+def delete_rows(req: RowDeleteRequest):
     dfs = load_from_db()
     if req.asset_type not in dfs:
         raise HTTPException(status_code=404, detail=f"Asset type '{req.asset_type}' not found")
@@ -265,7 +265,7 @@ async def delete_rows(req: RowDeleteRequest):
 
 # ── Add Row ──────────────────────────────────────────
 @router.post("/row/add")
-async def add_row(asset_type: str, row_data: Dict[str, Any]):
+def add_row(asset_type: str, row_data: Dict[str, Any]):
     dfs = load_from_db()
     if asset_type not in dfs:
         raise HTTPException(status_code=404, detail=f"Asset type '{asset_type}' not found")
@@ -294,7 +294,7 @@ async def replace_table(asset_type: str, file: UploadFile = File(...)):
 
 # ── Save Entire Table ────────────────────────────────
 @router.post("/{asset_type}/save")
-async def save_table(asset_type: str, data: List[Dict[str, Any]]):
+def save_table(asset_type: str, data: List[Dict[str, Any]]):
     dfs = load_from_db()
     if asset_type not in dfs and asset_type not in ["NewHire", "Resign", "All_User", "Dept_Config"]:
         raise HTTPException(status_code=404, detail=f"Asset type '{asset_type}' not found")
@@ -305,7 +305,7 @@ async def save_table(asset_type: str, data: List[Dict[str, Any]]):
 
 # ── New Hire: Register ───────────────────────────────
 @router.post("/newhire/register")
-async def register_new_hire(entry: NewHireEntry):
+def register_new_hire(entry: NewHireEntry):
     dfs = load_from_db()
     df = dfs.get("NewHire", pd.DataFrame())
     
@@ -368,7 +368,7 @@ async def register_new_hire(entry: NewHireEntry):
 
 # ── New Hire: Sync to All_User ───────────────────────
 @router.post("/newhire/sync")
-async def sync_newhire_to_alluser():
+def sync_newhire_to_alluser():
     """Sync NewHire list to All_User master table."""
     dfs = load_from_db()
     new_hire_df = dfs.get("NewHire", pd.DataFrame())
@@ -445,7 +445,7 @@ async def sync_newhire_to_alluser():
 
 # ── Unassigned Assets ────────────────────────────────
 @router.get("/unassigned/list")
-async def get_unassigned_assets():
+def get_unassigned_assets():
     dfs = load_from_db()
     result = {}
     
@@ -462,7 +462,7 @@ async def get_unassigned_assets():
 
 # ── Resign: Register ─────────────────────────────────
 @router.post("/resign/register")
-async def register_resign(entry: ResignEntry):
+def register_resign(entry: ResignEntry):
     dfs = load_from_db()
     df = dfs.get("Resign", pd.DataFrame())
     
@@ -543,7 +543,7 @@ async def register_resign(entry: ResignEntry):
 
 # ── Asset Return ─────────────────────────────────────
 @router.post("/resign/return")
-async def process_asset_return_endpoint(req: AssetReturnRequest):
+def process_asset_return_endpoint(req: AssetReturnRequest):
     email = req.email.strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="이메일이 없습니다.")
@@ -619,7 +619,7 @@ async def process_asset_return_endpoint(req: AssetReturnRequest):
 
 # ── Delete from Master ───────────────────────────────
 @router.post("/resign/delete-master")
-async def delete_from_master(req: DeleteFromMasterRequest):
+def delete_from_master(req: DeleteFromMasterRequest):
     email = req.email.strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="이메일이 없습니다.")
@@ -640,7 +640,7 @@ async def delete_from_master(req: DeleteFromMasterRequest):
 
 # ── BU/ROLE Config ───────────────────────────────────
 @router.get("/config/dept")
-async def get_dept_config():
+def get_dept_config():
     dfs = load_from_db()
     df = dfs.get("Dept_Config", pd.DataFrame())
     if df.empty:
@@ -651,7 +651,7 @@ async def get_dept_config():
     return {"bu_list": bu_list, "data": df.to_dict(orient="records")}
 
 @router.post("/config/dept/add")
-async def add_dept_config(entry: BuRoleEntry):
+def add_dept_config(entry: BuRoleEntry):
     dfs = load_from_db()
     df = dfs.get("Dept_Config", pd.DataFrame())
     
@@ -665,7 +665,7 @@ async def add_dept_config(entry: BuRoleEntry):
     return {"message": f"'{entry.BU}' / '{entry.ROLE}' 추가 완료"}
 
 @router.post("/config/dept/delete")
-async def delete_dept_config(entry: BuRoleEntry):
+def delete_dept_config(entry: BuRoleEntry):
     dfs = load_from_db()
     df = dfs.get("Dept_Config", pd.DataFrame())
     
@@ -679,7 +679,7 @@ async def delete_dept_config(entry: BuRoleEntry):
 
 # ── Data Integrity Check ─────────────────────────────
 @router.get("/{asset_type}/integrity")
-async def check_integrity(asset_type: str):
+def check_integrity(asset_type: str):
     dfs = load_from_db()
     if asset_type not in dfs:
         raise HTTPException(status_code=404, detail="Not found")
