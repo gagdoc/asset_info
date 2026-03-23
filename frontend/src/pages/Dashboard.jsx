@@ -7,11 +7,8 @@ const Dashboard = () => {
     const [searchTerm, setSearchTerm] = useState('')
     
     // 모달 제어 상태
-    const [showNewHireModal, setShowNewHireModal] = useState(false)
+    // 모달 제어 상태
     const [showResignModal, setShowResignModal] = useState(false)
-    
-    // 신규 입사자 폼
-    const [newHireForm, setNewHireForm] = useState({ join_date: '', NAME: '', korean_name: '', email: '', BU: '', ROLE: '' })
     
     // 퇴사자 폼
     const [resignForm, setResignForm] = useState({ email: '', resign_date: '' })
@@ -40,18 +37,6 @@ const Dashboard = () => {
         }
     })
 
-    const newHireMutation = useMutation({
-        mutationFn: async (newData) => await axios.post('/api/assets/newhire/register', newData),
-        onSuccess: () => {
-            queryClient.invalidateQueries(['dashboardIntegrated'])
-            queryClient.invalidateQueries(['dashboardSummary'])
-            setShowNewHireModal(false)
-            setNewHireForm({ join_date: '', NAME: '', korean_name: '', email: '', BU: '', ROLE: '' })
-            alert('✅ 신규 입사자 등록 및 대시보드 동기화 성공!')
-        },
-        onError: (err) => alert('오류: ' + err.message)
-    })
-
     const resignMutation = useMutation({
         mutationFn: async (newData) => await axios.post('/api/assets/resign/register', newData),
         onSuccess: () => {
@@ -63,15 +48,6 @@ const Dashboard = () => {
         },
         onError: (err) => alert('오류: ' + err.message)
     })
-
-    const handleNewHireSubmit = (e) => {
-        e.preventDefault()
-        if (!newHireForm.email || !newHireForm.join_date || (!newHireForm.NAME && !newHireForm.korean_name)) {
-            alert('이메일, 입사 일자, 이름 중 하나는 필수입니다.')
-            return
-        }
-        newHireMutation.mutate(newHireForm)
-    }
 
     const handleResignSubmit = (e) => {
         e.preventDefault()
@@ -124,64 +100,11 @@ const Dashboard = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h1>📊 통합 자산 현황 (대시보드)</h1>
                 <div style={{ display: 'flex', gap: '10px' }}>
-                    <button className="btn btn-primary" style={{ backgroundColor: '#10b981', borderColor: '#10b981' }} onClick={() => setShowNewHireModal(true)}>
-                        ➕ 신규 입사자 등록
-                    </button>
                     <button className="btn btn-danger" onClick={() => setShowResignModal(true)}>
                         👋 퇴사자 처리
                     </button>
                 </div>
             </div>
-
-            {/* 신규 입사자 모달 */}
-            {showNewHireModal && (
-                <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-                    <div className="modal-content card" style={{ padding: '2rem', width: '500px', backgroundColor: '#fff' }}>
-                        <h2 style={{ marginTop: 0 }}>➕ 신규 입사자 등록</h2>
-                        <form onSubmit={handleNewHireSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                            <div>
-                                <label style={{ fontWeight: 'bold' }}>입사 일자 <span style={{color: 'red'}}>*</span></label>
-                                <input type="date" className="form-input" value={newHireForm.join_date} onChange={e => setNewHireForm({...newHireForm, join_date: e.target.value})} required />
-                            </div>
-                            <div>
-                                <label style={{ fontWeight: 'bold' }}>영어 이름 (NAME)</label>
-                                <input className="form-input" value={newHireForm.NAME} onChange={e => setNewHireForm({...newHireForm, NAME: e.target.value})} placeholder="예: John Doe" />
-                            </div>
-                            <div>
-                                <label style={{ fontWeight: 'bold' }}>한국 이름 (이름)</label>
-                                <input className="form-input" value={newHireForm.korean_name} onChange={e => setNewHireForm({...newHireForm, korean_name: e.target.value})} placeholder="예: 홍길동" />
-                            </div>
-                            <div>
-                                <label style={{ fontWeight: 'bold' }}>Company Email <span style={{color: 'red'}}>*</span></label>
-                                <input type="email" className="form-input" value={newHireForm.email} onChange={e => setNewHireForm({...newHireForm, email: e.target.value})} required placeholder="john.doe@stryker.com" />
-                            </div>
-                            <div>
-                                <label style={{ fontWeight: 'bold' }}>BU (부서)</label>
-                                <select className="form-input" value={newHireForm.BU} onChange={e => setNewHireForm({...newHireForm, BU: e.target.value})}>
-                                    <option value="">소속 부서 선택</option>
-                                    {deptConfig?.bu_list?.map(b => <option key={b} value={b}>{b}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label style={{ fontWeight: 'bold' }}>ROLE (직무)</label>
-                                <select className="form-input" value={newHireForm.ROLE} onChange={e => setNewHireForm({...newHireForm, ROLE: e.target.value})}>
-                                    <option value="">직무 선택</option>
-                                    {newHireForm.BU && deptConfig?.data?.filter(d => d.BU === newHireForm.BU).map(d => (
-                                        <option key={d.ROLE} value={d.ROLE}>{d.ROLE}</option>
-                                    ))}
-                                    {!newHireForm.BU && <option value="" disabled>먼저 BU를 선택하세요</option>}
-                                </select>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                                <button type="button" className="btn btn-secondary" onClick={() => setShowNewHireModal(false)}>취소</button>
-                                <button type="submit" className="btn btn-primary" disabled={newHireMutation.isLoading}>
-                                    {newHireMutation.isLoading ? '동기화 중...' : '등록 및 대시보드 추가'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
 
             {/* 퇴사자 처리 모달 */}
             {showResignModal && (

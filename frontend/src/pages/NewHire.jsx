@@ -86,7 +86,7 @@ const NewHire = () => {
 // ── 등록 폼 ─────────────────────────────────────────────
 const RegisterForm = ({ deptConfig, queryClient, addToast }) => {
     const [form, setForm] = useState({
-        NAME: '', korean_name: '', email: '', BU: '', ROLE: ''
+        join_date: '', NAME: '', korean_name: '', email: '', BU: '', ROLE: ''
     })
 
     const buList = deptConfig?.bu_list || []
@@ -96,14 +96,14 @@ const RegisterForm = ({ deptConfig, queryClient, addToast }) => {
 
     const handleSubmit = async (e) => {
         e.preventDefault()
-        if (!form.email) {
-            addToast('이메일을 입력해주세요.', 'error')
+        if (!form.email || !form.join_date) {
+            addToast('이메일과 입사 일자를 입력해주세요.', 'error')
             return
         }
         try {
             await axios.post('/api/assets/newhire/register', form)
             addToast(`✅ ${form.email} 등록 완료`, 'success')
-            setForm({ NAME: '', korean_name: '', email: '', BU: '', ROLE: '' })
+            setForm({ join_date: '', NAME: '', korean_name: '', email: '', BU: '', ROLE: '' })
             queryClient.invalidateQueries(['assets', 'NewHire'])
         } catch (err) {
             addToast('등록 실패: ' + (err.response?.data?.detail || err.message), 'error')
@@ -115,6 +115,16 @@ const RegisterForm = ({ deptConfig, queryClient, addToast }) => {
             <h3>➕ 새 입사자 등록</h3>
             <form onSubmit={handleSubmit}>
                 <div className="form-row">
+                    <div className="form-group">
+                        <label className="form-label">입사 일자 *</label>
+                        <input
+                            type="date"
+                            className="form-input"
+                            value={form.join_date}
+                            onChange={e => setForm({ ...form, join_date: e.target.value })}
+                            required
+                        />
+                    </div>
                     <div className="form-group">
                         <label className="form-label">영문 이름 (NAME)</label>
                         <input
