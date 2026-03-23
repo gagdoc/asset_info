@@ -62,6 +62,7 @@ def get_items_list():
             if not r or not str(r[0]).strip(): continue
             is_tracked = False
             base_qty = 0
+            order_qty = 0
             
             if len(r) > 3 and str(r[3]).strip().upper() == "O":
                 is_tracked = True
