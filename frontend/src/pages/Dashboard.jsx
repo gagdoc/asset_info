@@ -1,9 +1,20 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 
 const Dashboard = () => {
+    const queryClient = useQueryClient()
     const [searchTerm, setSearchTerm] = useState('')
+    
+    // 모달 제어 상태
+    const [showNewHireModal, setShowNewHireModal] = useState(false)
+    const [showResignModal, setShowResignModal] = useState(false)
+    
+    // 신규 입사자 폼
+    const [newHireForm, setNewHireForm] = useState({ NAME: '', korean_name: '', email: '', BU: '', ROLE: '' })
+    
+    // 퇴사자 폼
+    const [resignForm, setResignForm] = useState({ email: '', resign_date: '' })
 
     const { data: summary, isLoading: isSummaryLoading } = useQuery({
         queryKey: ['dashboardSummary'],
@@ -20,6 +31,56 @@ const Dashboard = () => {
             return data
         }
     })
+
+    const { data: deptConfig } = useQuery({
+        queryKey: ['deptConfig'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/assets/config/dept')
+            return data
+        }
+    })
+
+    const newHireMutation = useMutation({
+        mutationFn: async (newData) => await axios.post('/api/assets/newhire/register', newData),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['dashboardIntegrated'])
+            queryClient.invalidateQueries(['dashboardSummary'])
+            setShowNewHireModal(false)
+            setNewHireForm({ NAME: '', korean_name: '', email: '', BU: '', ROLE: '' })
+            alert('✅ 신규 입사자 등록 및 대시보드 동기화 성공!')
+        },
+        onError: (err) => alert('오류: ' + err.message)
+    })
+
+    const resignMutation = useMutation({
+        mutationFn: async (newData) => await axios.post('/api/assets/resign/register', newData),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['dashboardIntegrated'])
+            queryClient.invalidateQueries(['dashboardSummary'])
+            setShowResignModal(false)
+            setResignForm({ email: '', resign_date: '' })
+            alert('👋 퇴사자 처리 완료 (자산반납 명단 이동 및 대시보드 삭제)')
+        },
+        onError: (err) => alert('오류: ' + err.message)
+    })
+
+    const handleNewHireSubmit = (e) => {
+        e.preventDefault()
+        if (!newHireForm.email || (!newHireForm.NAME && !newHireForm.korean_name)) {
+            alert('이메일과 이름 중 하나는 필수입니다.')
+            return
+        }
+        newHireMutation.mutate(newHireForm)
+    }
+
+    const handleResignSubmit = (e) => {
+        e.preventDefault()
+        if (!resignForm.email || !resignForm.resign_date) {
+            alert('이메일과 퇴사 예정일을 선택해주세요.')
+            return
+        }
+        resignMutation.mutate(resignForm)
+    }
 
     if (isSummaryLoading) return <div className="loading"><div className="spinner" /> 데이터 로딩중...</div>
 
@@ -56,9 +117,117 @@ const Dashboard = () => {
         { key: '퇴사정보', label: '비고' },
     ]
 
+    const selectedResignUser = integratedData?.find(u => u.email === resignForm.email)
+
     return (
         <div>
-            <h1>📊 통합 자산 현황</h1>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h1>📊 통합 자산 현황 (대시보드)</h1>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                    <button className="btn btn-primary" style={{ backgroundColor: '#10b981', borderColor: '#10b981' }} onClick={() => setShowNewHireModal(true)}>
+                        ➕ 신규 입사자 등록
+                    </button>
+                    <button className="btn btn-danger" onClick={() => setShowResignModal(true)}>
+                        👋 퇴사자 처리
+                    </button>
+                </div>
+            </div>
+
+            {/* 신규 입사자 모달 */}
+            {showNewHireModal && (
+                <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+                    <div className="modal-content card" style={{ padding: '2rem', width: '500px', backgroundColor: '#fff' }}>
+                        <h2 style={{ marginTop: 0 }}>➕ 신규 입사자 등록</h2>
+                        <form onSubmit={handleNewHireSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                            <div>
+                                <label style={{ fontWeight: 'bold' }}>영어 이름 (NAME)</label>
+                                <input className="form-input" value={newHireForm.NAME} onChange={e => setNewHireForm({...newHireForm, NAME: e.target.value})} placeholder="예: John Doe" />
+                            </div>
+                            <div>
+                                <label style={{ fontWeight: 'bold' }}>한국 이름 (이름)</label>
+                                <input className="form-input" value={newHireForm.korean_name} onChange={e => setNewHireForm({...newHireForm, korean_name: e.target.value})} placeholder="예: 홍길동" />
+                            </div>
+                            <div>
+                                <label style={{ fontWeight: 'bold' }}>Company Email <span style={{color: 'red'}}>*</span></label>
+                                <input type="email" className="form-input" value={newHireForm.email} onChange={e => setNewHireForm({...newHireForm, email: e.target.value})} required placeholder="john.doe@stryker.com" />
+                            </div>
+                            <div>
+                                <label style={{ fontWeight: 'bold' }}>BU (부서)</label>
+                                <select className="form-input" value={newHireForm.BU} onChange={e => setNewHireForm({...newHireForm, BU: e.target.value})}>
+                                    <option value="">소속 부서 선택</option>
+                                    {deptConfig?.bu_list?.map(b => <option key={b} value={b}>{b}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label style={{ fontWeight: 'bold' }}>ROLE (직무)</label>
+                                <select className="form-input" value={newHireForm.ROLE} onChange={e => setNewHireForm({...newHireForm, ROLE: e.target.value})}>
+                                    <option value="">직무 선택</option>
+                                    {newHireForm.BU && deptConfig?.data?.filter(d => d.BU === newHireForm.BU).map(d => (
+                                        <option key={d.ROLE} value={d.ROLE}>{d.ROLE}</option>
+                                    ))}
+                                    {!newHireForm.BU && <option value="" disabled>먼저 BU를 선택하세요</option>}
+                                </select>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                                <button type="button" className="btn btn-secondary" onClick={() => setShowNewHireModal(false)}>취소</button>
+                                <button type="submit" className="btn btn-primary" disabled={newHireMutation.isLoading}>
+                                    {newHireMutation.isLoading ? '동기화 중...' : '등록 및 대시보드 추가'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* 퇴사자 처리 모달 */}
+            {showResignModal && (
+                <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+                    <div className="modal-content card" style={{ padding: '2rem', width: '600px', backgroundColor: '#fff' }}>
+                        <h2 style={{ marginTop: 0, color: '#ef4444' }}>👋 퇴사자 처리 연동</h2>
+                        <form onSubmit={handleResignSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                            <div>
+                                <label style={{ fontWeight: 'bold' }}>퇴사 대상 이메일 <span style={{color: 'red'}}>*</span></label>
+                                <select className="form-input" value={resignForm.email} onChange={e => setResignForm({...resignForm, email: e.target.value})} required>
+                                    <option value="">대시보드에서 대상자 선택</option>
+                                    {integratedData && [...integratedData].sort((a,b) => a.NAME.localeCompare(b.NAME)).map(u => (
+                                        <option key={u.email} value={u.email}>{u.NAME} ({u.이름}) - {u.email}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            
+                            {selectedResignUser && (
+                                <div style={{ backgroundColor: '#f9fafb', padding: '15px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.9rem' }}>
+                                    <h4 style={{ margin: '0 0 10px 0', color: '#4b5563' }}>📋 자동 조회된 자산 내역 (이관 시 첨부됨)</h4>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                        <div><strong>부서:</strong> {selectedResignUser.BU} / {selectedResignUser.ROLE}</div>
+                                        <div><strong>노트북:</strong> {selectedResignUser.Lease_List !== '-' ? selectedResignUser.Lease_List : '없음'}</div>
+                                        <div><strong>아이패드:</strong> {selectedResignUser.Ipad_List !== '-' ? selectedResignUser.Ipad_List : '없음'}</div>
+                                        <div><strong>모니터:</strong> {selectedResignUser.Monitor !== '-' ? selectedResignUser.Monitor : '없음'}</div>
+                                        <div><strong>팀즈:</strong> {selectedResignUser.TeamsNum !== '-' ? selectedResignUser.TeamsNum : '없음'}</div>
+                                        <div><strong>복합기:</strong> {selectedResignUser.Printer !== '-' ? selectedResignUser.Printer : '없음'}</div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div>
+                                <label style={{ fontWeight: 'bold' }}>퇴사 일자 <span style={{color: 'red'}}>*</span></label>
+                                <input type="date" className="form-input" value={resignForm.resign_date} onChange={e => setResignForm({...resignForm, resign_date: e.target.value})} required />
+                            </div>
+
+                            <p style={{ margin: 0, fontSize: '0.85rem', color: '#6b7280' }}>
+                                ⚠️ 처리 버튼을 누르면 위 자산 내역과 함께 <strong>'퇴사자 명단'</strong>으로 완전히 이동되며, <strong>대시보드(All_User)</strong> 화면에서는 자동으로 삭제됩니다.
+                            </p>
+
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                                <button type="button" className="btn btn-secondary" onClick={() => setShowResignModal(false)}>취소</button>
+                                <button type="submit" className="btn btn-danger" disabled={resignMutation.isLoading}>
+                                    {resignMutation.isLoading ? '처리 중...' : '자산 이관 및 대시보드에서 삭제'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             <div className="dashboard-grid">
                 {stats.map(s => (

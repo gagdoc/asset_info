@@ -308,10 +308,12 @@ async def register_new_hire(entry: NewHireEntry):
     dfs = load_from_db()
     df = dfs.get("NewHire", pd.DataFrame())
     
+    email = entry.email.strip().lower()
+    
     new_row = {
         "NAME": entry.NAME,
         "이름": entry.korean_name,
-        "email": entry.email.strip().lower(),
+        "email": email,
         "BU": entry.BU,
         "ROLE": entry.ROLE,
     }
@@ -319,12 +321,37 @@ async def register_new_hire(entry: NewHireEntry):
     # Fill columns that exist in the DF
     for col in df.columns:
         if col not in new_row:
-            new_row[col] = ""
+            new_row[col] = "-"
     
     new_df = pd.DataFrame([new_row])
     df = pd.concat([df, new_df], ignore_index=True)
     update_db("NewHire", df)
-    return {"message": f"{entry.email} 등록 완료"}
+    
+    # ── 대시보드(All_User) 자동 추가 연동 ──
+    df_all = dfs.get("All_User", pd.DataFrame())
+    if not df_all.empty:
+        try:
+            max_no = pd.to_numeric(df_all["NO"], errors="coerce").max()
+            if pd.isna(max_no): max_no = 0
+        except:
+            max_no = 0
+            
+        all_row = {
+            "NO": int(max_no) + 1,
+            "NAME": entry.NAME if entry.NAME else entry.korean_name,
+            "이름": entry.korean_name,
+            "email": email,
+            "BU": entry.BU,
+            "ROLE": entry.ROLE,
+        }
+        for col in df_all.columns:
+            if col not in all_row:
+                all_row[col] = "-"
+                
+        df_all = pd.concat([df_all, pd.DataFrame([all_row])], ignore_index=True)
+        update_db("All_User", df_all)
+        
+    return {"message": f"{email} 입사 등록 완료 (대시보드와 동기화 됨)"}
 
 # ── New Hire: Sync to All_User ───────────────────────
 @router.post("/newhire/sync")
@@ -437,23 +464,31 @@ async def register_resign(entry: ResignEntry):
         except:
             pass
     
-    new_row = {"F": year, "월": month, "날짜": day, "email": email, "설명": "퇴사 예정"}
+    new_row = {"년": year, "월": month, "날짜": day, "email": email, "설명": "퇴사자 정보 연동 확정"}
     for col in df.columns:
         if col not in new_row:
             new_row[col] = "-"
     
-    # Enrich with asset info
+    # Enrich with asset info (자동 매핑)
     new_df = pd.DataFrame([new_row])
     enriched = _enrich_data_with_assets(new_df, dfs)
     
     # Check duplicates
-    if email in df["email"].values:
+    if "email" in df.columns and email in df["email"].values:
         df.loc[df["email"] == email, enriched.columns] = enriched.iloc[0].values
     else:
         df = pd.concat([df, enriched], ignore_index=True)
     
     update_db("Resign", df)
-    return {"message": f"{email} 등록 및 자산 정보 연동 완료"}
+    
+    # ── 대시보드(All_User)에서 자동 삭제 연동 ──
+    df_all = dfs.get("All_User", pd.DataFrame())
+    if not df_all.empty and "email" in df_all.columns:
+        df_all["_email_lower"] = df_all["email"].astype(str).str.strip().str.lower()
+        df_all = df_all[df_all["_email_lower"] != email].drop(columns=["_email_lower"])
+        update_db("All_User", df_all)
+        
+    return {"message": f"{email} 퇴사 확정 완료 (자산 조회 및 대시보드에서 삭제됨)"}
 
 # ── Asset Return ─────────────────────────────────────
 @router.post("/resign/return")
