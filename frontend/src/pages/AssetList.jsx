@@ -8,6 +8,7 @@ const AssetList = () => {
     const { type } = useParams()
     const queryClient = useQueryClient()
     const { addToast } = useToast()
+    const [selectedCell, setSelectedCell] = useState(null)
     const [editingCell, setEditingCell] = useState(null)
     const [editValue, setEditValue] = useState('')
     const [selectedRows, setSelectedRows] = useState(new Set())
@@ -25,13 +26,28 @@ const AssetList = () => {
 
     const columns = assets?.length > 0 ? Object.keys(assets[0]) : []
 
-    // ── Inline editing ──
-    const handleCellClick = (rowIdx, col) => {
-        setEditingCell({ row: rowIdx, col })
-        setEditValue(assets[rowIdx][col] !== null ? String(assets[rowIdx][col]) : '')
+    // ── 3단계 안전 수정 로직 (선택 -> 수정 -> 저장) ──
+    const handleCellSelect = (rowIdx, col) => {
+        // 이미 수정 중인 셀이 있다면 다른 셀 클릭 시 무시 (강제 저장/취소 먼저 하도록 유도)
+        if (editingCell) return
+        setSelectedCell({ row: rowIdx, col })
     }
 
-    const handleCellSave = async () => {
+    const handleStartEdit = (e, rowIdx, col) => {
+        e.stopPropagation()
+        setEditingCell({ row: rowIdx, col })
+        setEditValue(assets[rowIdx][col] !== null ? String(assets[rowIdx][col]) : '')
+        setSelectedCell(null)
+    }
+
+    const handleCellCancel = (e) => {
+        if(e) e.stopPropagation();
+        setEditingCell(null);
+        setSelectedCell(null);
+    }
+
+    const handleCellSave = async (e) => {
+        if(e) e.stopPropagation();
         if (!editingCell) return
         try {
             await axios.put('/api/assets/row/update', {
@@ -45,11 +61,12 @@ const AssetList = () => {
             addToast('수정 실패: ' + err.message, 'error')
         }
         setEditingCell(null)
+        setSelectedCell(null)
     }
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter') handleCellSave()
-        if (e.key === 'Escape') setEditingCell(null)
+        if (e.key === 'Escape') handleCellCancel()
     }
 
     // ── Row delete ──
@@ -132,8 +149,8 @@ const AssetList = () => {
 
             {activeTab === 'list' && (
                 <div className="card" style={{ padding: 0 }}>
-                    <div className="alert alert-info" style={{ margin: '1rem 1rem 0', borderRadius: '0.5rem' }}>
-                        💡 셀을 클릭하면 직접 수정할 수 있습니다. Enter로 저장, Esc로 취소합니다.
+                    <div className="alert alert-info" style={{ margin: '1rem 1rem 0', borderRadius: '0.5rem', border: '1px solid #bbdefb', backgroundColor: '#e3f2fd', color: '#0d47a1' }}>
+                        💡 <strong>[안전 수정 모드]</strong> 데이터를 수정하려면 셀을 먼저 <strong>선택</strong>하고, 나타나는 <strong>[✏️ 수정]</strong> 버튼을 클릭한 뒤 수정한 후 <strong>[💾 저장]</strong> 하세요.
                     </div>
                     {assets?.length > 0 ? (
                         <div className="table-wrapper" style={{ maxHeight: '65vh', overflow: 'auto' }}>
@@ -160,25 +177,52 @@ const AssetList = () => {
                                                     }}
                                                 />
                                             </td>
-                                            {columns.map(col => (
-                                                <td
-                                                    key={col}
-                                                    className="editable"
-                                                    onClick={() => handleCellClick(idx, col)}
-                                                >
-                                                    {editingCell?.row === idx && editingCell?.col === col ? (
-                                                        <input
-                                                            autoFocus
-                                                            value={editValue}
-                                                            onChange={e => setEditValue(e.target.value)}
-                                                            onBlur={handleCellSave}
-                                                            onKeyDown={handleKeyDown}
-                                                        />
-                                                    ) : (
-                                                        row[col] !== null ? String(row[col]) : '-'
-                                                    )}
-                                                </td>
-                                            ))}
+                                            {columns.map(col => {
+                                                const isSelected = selectedCell?.row === idx && selectedCell?.col === col
+                                                const isEditing = editingCell?.row === idx && editingCell?.col === col
+                                                
+                                                return (
+                                                    <td
+                                                        key={col}
+                                                        className={`editable ${isSelected ? 'selected-cell' : ''} ${isEditing ? 'editing-cell' : ''}`}
+                                                        onClick={() => handleCellSelect(idx, col)}
+                                                        style={{ 
+                                                            position: 'relative', 
+                                                            cursor: isEditing ? 'default' : 'pointer',
+                                                            border: isSelected ? '2px solid #3b82f6' : isEditing ? '2px solid #10b981' : '',
+                                                            backgroundColor: isSelected ? '#eff6ff' : isEditing ? '#f0fdf4' : '',
+                                                            padding: isEditing ? '4px' : '8px'
+                                                        }}
+                                                    >
+                                                        {isEditing ? (
+                                                            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                                                <input
+                                                                    autoFocus
+                                                                    value={editValue}
+                                                                    onChange={e => setEditValue(e.target.value)}
+                                                                    onKeyDown={handleKeyDown}
+                                                                    style={{ flex: 1, padding: '4px', border: '1px solid #ccc', borderRadius: '4px' }}
+                                                                />
+                                                                <button title="저장" className="btn btn-primary" style={{ padding: '2px 6px', fontSize: '0.8rem', minWidth: 'auto' }} onClick={handleCellSave}>💾</button>
+                                                                <button title="취소" className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8rem', minWidth: 'auto' }} onClick={handleCellCancel}>✖</button>
+                                                            </div>
+                                                        ) : (
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '24px' }}>
+                                                                <span>{row[col] !== null ? String(row[col]) : '-'}</span>
+                                                                {isSelected && (
+                                                                    <button 
+                                                                        className="btn btn-primary" 
+                                                                        style={{ padding: '2px 8px', fontSize: '0.8rem', position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} 
+                                                                        onClick={(e) => handleStartEdit(e, idx, col)}
+                                                                    >
+                                                                        ✏️ 수정
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                )
+                                            })}
                                         </tr>
                                     ))}
                                 </tbody>

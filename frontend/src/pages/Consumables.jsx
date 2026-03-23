@@ -257,6 +257,8 @@ const ItemsTab = () => {
     const queryClient = useQueryClient()
     const [showForm, setShowForm] = useState(false)
     const [formData, setFormData] = useState({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '' })
+    const [searchTerm, setSearchTerm] = useState('')
+    const [filterCategory, setFilterCategory] = useState('')
 
     const { data: items, isLoading } = useQuery({
         queryKey: ['consumables-items'],
@@ -294,6 +296,13 @@ const ItemsTab = () => {
     }
 
     if (isLoading) return <div>Loading...</div>
+
+    const categories = Array.from(new Set(items?.map(it => it.category).filter(Boolean)))
+    const filteredItems = items?.filter(item => {
+        const matchSearch = item.item_name.toLowerCase().includes(searchTerm.toLowerCase()) || item.category.toLowerCase().includes(searchTerm.toLowerCase())
+        const matchCat = filterCategory ? item.category === filterCategory : true
+        return matchSearch && matchCat
+    })
 
     return (
         <div className="card">
@@ -338,6 +347,24 @@ const ItemsTab = () => {
                 </form>
             )}
 
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem', background: '#f8f9fa', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <input 
+                    type="text" 
+                    placeholder="🔍 소모품명 또는 대분류 검색..." 
+                    value={searchTerm} 
+                    onChange={e => setSearchTerm(e.target.value)} 
+                    style={{ padding: '8px', flex: 1, borderRadius: '4px', border: '1px solid #ccc' }} 
+                />
+                <select 
+                    value={filterCategory} 
+                    onChange={e => setFilterCategory(e.target.value)} 
+                    style={{ padding: '8px', width: '200px', borderRadius: '4px', border: '1px solid #ccc' }}
+                >
+                    <option value="">📂 전체 분류 (All)</option>
+                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+            </div>
+
             <table className="data-table">
                 <thead>
                     <tr>
@@ -349,7 +376,7 @@ const ItemsTab = () => {
                     </tr>
                 </thead>
                 <tbody>
-                    {items?.length > 0 ? items.map((item, idx) => {
+                    {filteredItems?.length > 0 ? filteredItems.map((item, idx) => {
                         let statusBadge = <span style={{ color: '#aaa', fontSize: '0.85em' }}>추적안함 (-)</span>
                         if (item.is_tracked) {
                             const current = item.current_stock || 0
@@ -385,7 +412,7 @@ const ItemsTab = () => {
                             </tr>
                         )
                     }) : (
-                        <tr><td colSpan="5" style={{ textAlign: 'center' }}>등록된 품목이 없습니다.</td></tr>
+                        <tr><td colSpan="5" style={{ textAlign: 'center' }}>조건에 맞는 품목이 없습니다.</td></tr>
                     )}
                 </tbody>
             </table>
