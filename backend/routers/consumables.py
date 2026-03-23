@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Query, Body
-from backend.services.consumables_service import get_available_months, get_items_list, get_outbound_history, get_estimate, add_outbound, save_item, update_outbound_history, delete_outbound_history
+from fastapi import APIRouter, HTTPException, Query, Body, Path
+from backend.services.consumables_service import get_available_months, get_items_list, get_outbound_history, get_estimate, add_outbound, save_item, update_outbound_history, delete_outbound_history, get_item_outbound_history
 from typing import List, Dict, Any
 
 router = APIRouter(
@@ -19,6 +19,12 @@ async def list_items():
     """품목 리스트 반환 ('품목리스트' 시트)"""
     items = get_items_list()
     return items
+
+@router.get("/items/{item_name}/outbound")
+async def list_item_outbounds(item_name: str = Path(..., description="조회할 품목 이름")):
+    """선택한 단일 품목의 전체 시트(월) 기준 과거 출고 이력 조회"""
+    history = get_item_outbound_history(item_name)
+    return history
 
 @router.get("/outbound")
 async def list_outbound(month: str = Query(..., description="조회할 월 (예: '3월')")):

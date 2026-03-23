@@ -58,13 +58,20 @@ const Consumables = () => {
                     className={`btn ${activeTab === 'items' ? 'btn-primary' : ''}`}
                     onClick={() => setActiveTab('items')}
                 >
-                    전체 품목 리스트
+                    소모품 마스터 리스트
+                </button>
+                <button
+                    className={`btn ${activeTab === 'tracked' ? 'btn-primary' : ''}`}
+                    onClick={() => setActiveTab('tracked')}
+                >
+                    📍 재고 추적 관리
                 </button>
             </div>
 
             {activeTab === 'estimate' && selectedMonth && <EstimateTab month={selectedMonth} />}
             {activeTab === 'outbound' && selectedMonth && <OutboundTab month={selectedMonth} />}
             {activeTab === 'items' && <ItemsTab />}
+            {activeTab === 'tracked' && <TrackedItemsTab />}
             
             {(activeTab === 'estimate' || activeTab === 'outbound') && !selectedMonth && (
                 <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>조회할 월(Month) 데이터를 불러오는 중입니다...</div>
@@ -332,7 +339,7 @@ const OutboundTab = ({ month }) => {
 const ItemsTab = () => {
     const queryClient = useQueryClient()
     const [showForm, setShowForm] = useState(false)
-    const [formData, setFormData] = useState({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '' })
+    const [formData, setFormData] = useState({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
     const [searchTerm, setSearchTerm] = useState('')
     const [filterCategory, setFilterCategory] = useState('')
 
@@ -351,7 +358,7 @@ const ItemsTab = () => {
         onSuccess: () => {
             queryClient.invalidateQueries(['consumables-items'])
             setShowForm(false)
-            setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '' })
+            setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
             alert("품목이 저장되었습니다.")
         },
         onError: () => alert("오류가 발생했습니다. 구글 시트를 확인하세요.")
@@ -367,7 +374,7 @@ const ItemsTab = () => {
     }
 
     const startEdit = (item) => {
-        setFormData({ category: item.category, item_name: item.item_name, price: item.price, is_tracked: item.is_tracked || false, base_qty: item.base_qty || '' })
+        setFormData({ category: item.category, item_name: item.item_name, price: item.price, is_tracked: item.is_tracked || false, base_qty: item.base_qty || '', order_qty: item.order_qty || '' })
         setShowForm(true)
     }
 
@@ -384,7 +391,7 @@ const ItemsTab = () => {
         <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <h3>소모품 마스터 리스트 (단가표)</h3>
-                <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '' }); }}>
+                <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' }); }}>
                     {showForm ? '닫기' : '+ 품목 추가'}
                 </button>
             </div>
@@ -410,10 +417,16 @@ const ItemsTab = () => {
                     </div>
 
                     {formData.is_tracked && (
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#1976d2', fontWeight: 'bold' }}>초기 재고 (개)</label>
-                            <input type="number" min="1" placeholder="100" value={formData.base_qty} onChange={e => setFormData({...formData, base_qty: e.target.value})} style={{ padding: '8px', width: '80px', border: '1px solid #1976d2' }} required />
-                        </div>
+                        <>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#10b981', fontWeight: 'bold' }}>발주 수량 (현재 입고량)</label>
+                                <input type="number" min="0" placeholder="100" value={formData.order_qty} onChange={e => setFormData({...formData, order_qty: e.target.value})} style={{ padding: '8px', width: '80px', border: '1px solid #10b981' }} required />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#ef4444', fontWeight: 'bold' }}>고정 재고 (부족 알림 기준)</label>
+                                <input type="number" min="0" placeholder="10" value={formData.base_qty} onChange={e => setFormData({...formData, base_qty: e.target.value})} style={{ padding: '8px', width: '80px', border: '1px solid #ef4444' }} required />
+                            </div>
+                        </>
                     )}
 
                     <button type="submit" className="btn btn-primary" disabled={mutation.isLoading} style={{ marginLeft: 'auto' }}>
@@ -457,8 +470,7 @@ const ItemsTab = () => {
                         if (item.is_tracked) {
                             const current = item.current_stock || 0
                             const base = item.base_qty || 1
-                            const ratio = (current / base) * 100
-                            const isLow = ratio < 10
+                            const isLow = current < base
                             
                             statusBadge = (
                                 <span style={{ 

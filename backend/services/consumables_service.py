@@ -63,7 +63,6 @@ def get_items_list():
             is_tracked = False
             base_qty = 0
             
-            # 파이썬 Index 오류 방지 처리를 통해 D, E열 접근
             if len(r) > 3 and str(r[3]).strip().upper() == "O":
                 is_tracked = True
                 tracked_item_names.add(str(r[1]).strip())
@@ -72,14 +71,21 @@ def get_items_list():
                         base_qty = int(str(r[4]).strip().replace(',', ''))
                 except ValueError:
                     base_qty = 0
+                    
+                try:
+                    if len(r) > 5:
+                        order_qty = int(str(r[5]).strip().replace(',', ''))
+                except ValueError:
+                    order_qty = 0
 
             items.append({
                 "category": str(r[0]).strip() if len(r) > 0 else "",
                 "item_name": str(r[1]).strip() if len(r) > 1 else "",
                 "price": str(r[2]).strip() if len(r) > 2 else "",
                 "is_tracked": is_tracked,
-                "base_qty": base_qty,
-                "current_stock": base_qty if is_tracked else None,
+                "base_qty": base_qty,        # 이제 이것은 '고정 재고'를 의미
+                "order_qty": order_qty,      # 발주 수량
+                "current_stock": order_qty if is_tracked else None,
                 "dispatched_qty": 0 if is_tracked else None
             })
 
@@ -108,7 +114,7 @@ def get_items_list():
                         i_name = item["item_name"]
                         d_qty = dispatched_agg.get(i_name, 0)
                         item["dispatched_qty"] = d_qty
-                        item["current_stock"] = item["base_qty"] - d_qty
+                        item["current_stock"] = item["order_qty"] - d_qty
 
         return items
     except Exception as e:
@@ -261,7 +267,7 @@ def delete_outbound_history(month: str, row_index: int) -> bool:
         return False
 
 def save_item(data: dict) -> bool:
-    """품목리스트 시트 A~E열에 새로운 품목을 추가하거나 기존 품목(B열 기준)을 수정합니다."""
+    """품목리스트 시트 A~F열에 새로운 품목을 추가하거나 기존 품목(B열 기준)을 수정합니다."""
     _, ss = _get_consumables_client()
     if not ss: return False
     try:
@@ -277,27 +283,57 @@ def save_item(data: dict) -> bool:
                 
         is_tracked_str = 'O' if data.get('is_tracked') else 'X'
         base_qty_str = str(data.get('base_qty', '0'))
+        order_qty_str = str(data.get('order_qty', '0'))
 
         if row_idx:
-            # 존재하면 해당 행 A~E 덮어쓰기
-            ws.update(f"A{row_idx}:E{row_idx}", [[
+            # 존재하면 해당 행 A~F 덮어쓰기
+            ws.update(f"A{row_idx}:F{row_idx}", [[
                 data.get('category', ''), 
                 data.get('item_name', ''), 
                 data.get('price', ''),
                 is_tracked_str,
-                base_qty_str
+                base_qty_str,
+                order_qty_str
             ]])
         else:
-            # 없으면 맨 아래(B열 비어있는 곳 기준) A~E 추가
+            # 없으면 맨 아래(B열 비어있는 곳 기준) A~F 추가
             next_row = len(col_B) + 1
-            ws.update(f"A{next_row}:E{next_row}", [[
+            ws.update(f"A{next_row}:F{next_row}", [[
                 data.get('category', ''), 
                 data.get('item_name', ''), 
                 data.get('price', ''),
                 is_tracked_str,
-                base_qty_str
+                base_qty_str,
+                order_qty_str
             ]])
         return True
     except Exception as e:
         print(f"Error saving item: {e}")
         return False
+
+def get_item_outbound_history(item_name: str):
+    """특정 품목의 과거 출고 이력을 모든 월별 시트에서 검색하여 년-월별 집계 가능하게 반환"""
+    _, ss = _get_consumables_client()
+    if not ss: return []
+    
+    months = [ws.title for ws in ss.worksheets() if ws.title.endswith("월")]
+    if not months: return []
+    
+    ranges = [f"{m}!A2:D" for m in months]
+    batch_res = ss.values_batch_get(ranges)
+    
+    history = []
+    
+    for month_title, res in zip(months, batch_res.get('valueRanges', [])):
+        values = res.get('values', [])
+        for row in values:
+            if len(row) > 2 and str(row[1]).strip() == item_name:
+                qty_str = str(row[2]).strip().replace(',', '')
+                qty = int(qty_str) if qty_str.isdigit() else 0
+                history.append({
+                    "month": month_title,
+                    "date": str(row[0]).strip() if len(row) > 0 else "",
+                    "quantity": qty,
+                    "user_name": str(row[3]).strip() if len(row) > 3 else ""
+                })
+    return history
