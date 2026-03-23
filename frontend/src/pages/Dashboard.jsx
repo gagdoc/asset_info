@@ -11,7 +11,7 @@ const Dashboard = () => {
     const [showResignModal, setShowResignModal] = useState(false)
     
     // 신규 입사자 폼
-    const [newHireForm, setNewHireForm] = useState({ NAME: '', korean_name: '', email: '', BU: '', ROLE: '' })
+    const [newHireForm, setNewHireForm] = useState({ join_date: '', NAME: '', korean_name: '', email: '', BU: '', ROLE: '' })
     
     // 퇴사자 폼
     const [resignForm, setResignForm] = useState({ email: '', resign_date: '' })
@@ -46,7 +46,7 @@ const Dashboard = () => {
             queryClient.invalidateQueries(['dashboardIntegrated'])
             queryClient.invalidateQueries(['dashboardSummary'])
             setShowNewHireModal(false)
-            setNewHireForm({ NAME: '', korean_name: '', email: '', BU: '', ROLE: '' })
+            setNewHireForm({ join_date: '', NAME: '', korean_name: '', email: '', BU: '', ROLE: '' })
             alert('✅ 신규 입사자 등록 및 대시보드 동기화 성공!')
         },
         onError: (err) => alert('오류: ' + err.message)
@@ -66,8 +66,8 @@ const Dashboard = () => {
 
     const handleNewHireSubmit = (e) => {
         e.preventDefault()
-        if (!newHireForm.email || (!newHireForm.NAME && !newHireForm.korean_name)) {
-            alert('이메일과 이름 중 하나는 필수입니다.')
+        if (!newHireForm.email || !newHireForm.join_date || (!newHireForm.NAME && !newHireForm.korean_name)) {
+            alert('이메일, 입사 일자, 이름 중 하나는 필수입니다.')
             return
         }
         newHireMutation.mutate(newHireForm)
@@ -139,6 +139,10 @@ const Dashboard = () => {
                     <div className="modal-content card" style={{ padding: '2rem', width: '500px', backgroundColor: '#fff' }}>
                         <h2 style={{ marginTop: 0 }}>➕ 신규 입사자 등록</h2>
                         <form onSubmit={handleNewHireSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                            <div>
+                                <label style={{ fontWeight: 'bold' }}>입사 일자 <span style={{color: 'red'}}>*</span></label>
+                                <input type="date" className="form-input" value={newHireForm.join_date} onChange={e => setNewHireForm({...newHireForm, join_date: e.target.value})} required />
+                            </div>
                             <div>
                                 <label style={{ fontWeight: 'bold' }}>영어 이름 (NAME)</label>
                                 <input className="form-input" value={newHireForm.NAME} onChange={e => setNewHireForm({...newHireForm, NAME: e.target.value})} placeholder="예: John Doe" />

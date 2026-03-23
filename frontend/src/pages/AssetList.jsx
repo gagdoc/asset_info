@@ -14,6 +14,10 @@ const AssetList = () => {
     const [selectedRows, setSelectedRows] = useState(new Set())
     const [activeTab, setActiveTab] = useState('list')
     const fileInputRef = useRef(null)
+    
+    // 년, 월 필터 상태 추가
+    const [filterYear, setFilterYear] = useState('')
+    const [filterMonth, setFilterMonth] = useState('')
 
     const { data: assets, isLoading } = useQuery({
         queryKey: ['assets', type],
@@ -25,6 +29,19 @@ const AssetList = () => {
     })
 
     const columns = assets?.length > 0 ? Object.keys(assets[0]) : []
+
+    // ── 연도/월 추출 및 데이터 필터링 ──
+    const getYear = (row) => String(row['년'] || row['년도'] || '')
+    const getMonth = (row) => String(row['월'] || '')
+
+    const uniqueYears = Array.from(new Set(assets?.map(getYear).filter(v => v !== '' && v !== 'null' && v !== 'undefined'))).sort((a,b) => b.localeCompare(a))
+    const uniqueMonths = Array.from(new Set(assets?.map(getMonth).filter(v => v !== '' && v !== 'null' && v !== 'undefined'))).sort((a,b) => parseInt(a) - parseInt(b))
+
+    let displayedAssets = assets
+    if (type === 'NewHire' || type === 'Resign') {
+        if (filterYear) displayedAssets = displayedAssets?.filter(row => getYear(row) === filterYear)
+        if (filterMonth) displayedAssets = displayedAssets?.filter(row => getMonth(row) === filterMonth)
+    }
 
     // ── 3단계 안전 수정 로직 (선택 -> 수정 -> 저장) ──
     const handleCellSelect = (rowIdx, col) => {
@@ -132,6 +149,18 @@ const AssetList = () => {
             <div className="flex items-center justify-between mb-2">
                 <h1>{titleMap[type] || `${type} Management`}</h1>
                 <div className="flex gap-1">
+                    {(type === 'NewHire' || type === 'Resign') && (
+                        <div style={{ display: 'flex', gap: '5px', marginRight: '10px' }}>
+                            <select className="form-input" style={{ padding: '4px 8px', minWidth: '100px' }} value={filterYear} onChange={e => setFilterYear(e.target.value)}>
+                                <option value="">전체 연도</option>
+                                {uniqueYears.map(y => <option key={y} value={y}>{y}년</option>)}
+                            </select>
+                            <select className="form-input" style={{ padding: '4px 8px', minWidth: '90px' }} value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
+                                <option value="">전체 월</option>
+                                {uniqueMonths.map(m => <option key={m} value={m}>{m}월</option>)}
+                            </select>
+                        </div>
+                    )}
                     {selectedRows.size > 0 && (
                         <button className="btn btn-danger btn-sm" onClick={handleDeleteSelected}>
                             🗑 {selectedRows.size}개 삭제
@@ -152,19 +181,19 @@ const AssetList = () => {
                     <div className="alert alert-info" style={{ margin: '1rem 1rem 0', borderRadius: '0.5rem', border: '1px solid #bbdefb', backgroundColor: '#e3f2fd', color: '#0d47a1' }}>
                         💡 <strong>[안전 수정 모드]</strong> 데이터를 수정하려면 셀을 먼저 <strong>선택</strong>하고, 나타나는 <strong>[✏️ 수정]</strong> 버튼을 클릭한 뒤 수정한 후 <strong>[💾 저장]</strong> 하세요.
                     </div>
-                    {assets?.length > 0 ? (
+                    {displayedAssets?.length > 0 ? (
                         <div className="table-wrapper" style={{ maxHeight: '65vh', overflow: 'auto' }}>
                             <table className="data-table">
                                 <thead>
                                     <tr>
                                         <th style={{ width: '40px' }}>
-                                            <input type="checkbox" onChange={toggleSelectAll} checked={selectedRows.size === assets.length} />
+                                            <input type="checkbox" onChange={toggleSelectAll} checked={selectedRows.size === displayedAssets?.length && displayedAssets?.length > 0} />
                                         </th>
                                         {columns.map(col => <th key={col}>{col}</th>)}
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {assets.map((row, idx) => (
+                                    {displayedAssets.map((row, idx) => (
                                         <tr key={idx}>
                                             <td className="checkbox-cell">
                                                 <input

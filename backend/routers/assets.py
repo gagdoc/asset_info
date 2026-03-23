@@ -32,6 +32,7 @@ class NewHireEntry(BaseModel):
     BU: str = ""
     ROLE: str = ""
     korean_name: str = ""
+    join_date: str = ""  # YYYY-MM-DD
 
 class ResignEntry(BaseModel):
     email: str
@@ -310,7 +311,19 @@ async def register_new_hire(entry: NewHireEntry):
     
     email = entry.email.strip().lower()
     
+    # 파싱 로직
+    year, month, day = "", "", ""
+    if entry.join_date:
+        try:
+            dt = datetime.strptime(entry.join_date, "%Y-%m-%d")
+            year, month, day = dt.year, dt.month, dt.day
+        except:
+            pass
+            
     new_row = {
+        "년": year,
+        "월": month,
+        "날짜": day,
         "NAME": entry.NAME,
         "이름": entry.korean_name,
         "email": email,
