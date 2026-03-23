@@ -123,9 +123,10 @@ def get_outbound_history(month: str):
         # A부터 D열까지 (날짜, 품목, 수량, 이름)
         records = ws.get_values("A2:D")
         history = []
-        for r in records:
+        for i, r in enumerate(records):
             if not r or not str(r[0]).strip() or str(r[0]).strip() == "날짜": continue
             history.append({
+                "row_index": i + 2, # 시트 내 실제 행 번호 (A2부터 시작)
                 "date": str(r[0]).strip() if len(r) > 0 else "",
                 "item_name": str(r[1]).strip() if len(r) > 1 else "",
                 "quantity": str(r[2]).strip() if len(r) > 2 else "",
@@ -228,6 +229,35 @@ def add_outbound(month: str, data: dict) -> bool:
         return True
     except Exception as e:
         print(f"Error adding outbound: {e}")
+        return False
+
+def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
+    """월별 출고 시트의 특정 행(row_index) 데이터를 수정합니다."""
+    _, ss = _get_consumables_client()
+    if not ss: return False
+    try:
+        ws = ss.worksheet(month)
+        ws.update(f"A{row_index}:D{row_index}", [[
+            data.get('date', ''), 
+            data.get('item_name', ''), 
+            data.get('quantity', ''), 
+            data.get('user_name', '')
+        ]])
+        return True
+    except Exception as e:
+        print(f"Error updating outbound: {e}")
+        return False
+
+def delete_outbound_history(month: str, row_index: int) -> bool:
+    """월별 출고 시트의 특정 행(row_index)을 완전히 삭제합니다."""
+    _, ss = _get_consumables_client()
+    if not ss: return False
+    try:
+        ws = ss.worksheet(month)
+        ws.delete_rows(row_index)
+        return True
+    except Exception as e:
+        print(f"Error deleting outbound: {e}")
         return False
 
 def save_item(data: dict) -> bool:

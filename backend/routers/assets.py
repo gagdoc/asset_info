@@ -481,14 +481,52 @@ async def register_resign(entry: ResignEntry):
     
     update_db("Resign", df)
     
-    # ── 대시보드(All_User)에서 자동 삭제 연동 ──
+    # ── 대시보드(All_User)에서 자동 삭제 및 자산 반납(STOCK 처리) 자동 연동 ──
     df_all = dfs.get("All_User", pd.DataFrame())
+    eng_name, user_bu = email.split('@')[0], "Unknown"
+    
     if not df_all.empty and "email" in df_all.columns:
+        # Get User Info for return remarks before deletion
+        mask = df_all["email"].astype(str).str.strip().str.lower() == email
+        if mask.any():
+            user_row = df_all[mask].iloc[0]
+            if "NAME" in user_row and pd.notnull(user_row["NAME"]): eng_name = str(user_row["NAME"]).strip()
+            if "BU" in user_row and pd.notnull(user_row["BU"]): user_bu = str(user_row["BU"]).strip()
+            
         df_all["_email_lower"] = df_all["email"].astype(str).str.strip().str.lower()
         df_all = df_all[df_all["_email_lower"] != email].drop(columns=["_email_lower"])
         update_db("All_User", df_all)
         
-    return {"message": f"{email} 퇴사 확정 완료 (자산 조회 및 대시보드에서 삭제됨)"}
+    # ── 자산(Asset) 테이블 반납 플로우 연동 (email 제거 및 STOCK 처리) ──
+    today_str = datetime.now().strftime("%Y%m%d")
+    teams_label = f"{eng_name}/{user_bu}" if user_bu != "Unknown" else eng_name
+    
+    def auto_return_process(table_key, extra_updates=None):
+        if table_key in dfs and not dfs[table_key].empty and "email" in dfs[table_key].columns:
+            m = dfs[table_key]["email"].astype(str).str.strip().str.lower() == email
+            if m.any():
+                dfs[table_key].loc[m, "email"] = ""
+                if extra_updates:
+                    for col, val in extra_updates.items():
+                        if col in dfs[table_key].columns:
+                            dfs[table_key].loc[m, col] = val
+                update_db(table_key, dfs[table_key])
+                
+    auto_return_process("Lease", {
+        "User": "STOCK", "BU": "IT", 
+        "Additional Information": f"{today_str}/{email}/퇴사반납"
+    })
+    auto_return_process("iPad", {
+        "User": "STOCK", "BU": "IT", "Role": "IT", 
+        "Additional Information": f"{today_str}/{email}/퇴사반납"
+    })
+    auto_return_process("Teams", {
+        "Business Title": f"{teams_label} 기존 사용 번호 (퇴사)"
+    })
+    auto_return_process("Monitor")
+    auto_return_process("Printer")
+        
+    return {"message": f"{email} 퇴사 확정 완료 (자산은 반납 처리되었으며 퇴사자 관리 탭에 이력 보관, 대시보드 삭제 완료)"}
 
 # ── Asset Return ─────────────────────────────────────
 @router.post("/resign/return")

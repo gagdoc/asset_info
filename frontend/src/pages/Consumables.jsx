@@ -159,6 +159,49 @@ const OutboundTab = ({ month }) => {
         }
     })
 
+    const [editingRow, setEditingRow] = useState(null)
+    const [editForm, setEditForm] = useState({})
+
+    const updateMutation = useMutation({
+        mutationFn: async (newData) => await axios.put('/api/consumables/outbound', newData),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['consumables-outbound', month])
+            queryClient.invalidateQueries(['consumables-items'])
+            setEditingRow(null)
+            alert("출고 내역이 수정되었습니다.")
+        },
+        onError: () => alert("수정 중 오류가 발생했습니다.")
+    })
+
+    const deleteMutation = useMutation({
+        mutationFn: async (rowIndex) => await axios.delete(`/api/consumables/outbound?month=${month}&row_index=${rowIndex}`),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['consumables-outbound', month])
+            queryClient.invalidateQueries(['consumables-items'])
+            alert("출고 내역이 삭제되었습니다.")
+        },
+        onError: () => alert("삭제 중 오류가 발생했습니다.")
+    })
+
+    const handleEditStart = (row) => {
+        setEditingRow(row.row_index)
+        setEditForm({ ...row })
+    }
+
+    const handleEditSave = () => {
+        if (!editForm.date || !editForm.item_name || !editForm.quantity || !editForm.user_name) {
+            alert("모든 필드를 입력해야 합니다.")
+            return
+        }
+        updateMutation.mutate({ month, row_index: editForm.row_index, ...editForm })
+    }
+
+    const handleDelete = (rowIndex) => {
+        if (window.confirm("해당 출고 기록을 완전히 삭제하시겠습니까?\\n(재고 관리를 사용하는 품목인 경우, 삭제된 수량만큼 재고가 다시 증가합니다)")) {
+            deleteMutation.mutate(rowIndex)
+        }
+    }
+
     const { data: itemsList } = useQuery({
         queryKey: ['consumables-items'],
         queryFn: async () => {
@@ -234,18 +277,51 @@ const OutboundTab = ({ month }) => {
                         <th>출고 품목명</th>
                         <th>지급 수량</th>
                         <th>지급 대상자(팀)</th>
+                        <th style={{ textAlign: 'center', width: '120px' }}>관리</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {history?.length > 0 ? history.map((row, idx) => (
-                        <tr key={idx}>
-                            <td>{row.date}</td>
-                            <td>{row.item_name}</td>
-                            <td style={{ textAlign: 'center' }}>{row.quantity}</td>
-                            <td>{row.user_name}</td>
-                        </tr>
-                    )) : (
-                        <tr><td colSpan="4" style={{ textAlign: 'center' }}>출고 내역이 비어 있습니다.</td></tr>
+                    {history?.length > 0 ? history.map((row, idx) => {
+                        const isEditing = editingRow === row.row_index;
+                        return (
+                            <tr key={idx} style={{ backgroundColor: isEditing ? '#f8f9fa' : 'transparent' }}>
+                                {isEditing ? (
+                                    <>
+                                        <td>
+                                            <input type="text" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})} style={{ width: '100px', padding: '4px' }} />
+                                        </td>
+                                        <td>
+                                            <select value={editForm.item_name} onChange={e => setEditForm({...editForm, item_name: e.target.value})} style={{ width: '150px', padding: '4px' }}>
+                                                {itemsList?.map((it, i) => <option key={i} value={it.item_name}>{it.item_name}</option>)}
+                                            </select>
+                                        </td>
+                                        <td style={{ textAlign: 'center' }}>
+                                            <input type="number" min="1" value={editForm.quantity} onChange={e => setEditForm({...editForm, quantity: e.target.value})} style={{ width: '60px', padding: '4px', textAlign: 'center' }} />
+                                        </td>
+                                        <td>
+                                            <input type="text" value={editForm.user_name} onChange={e => setEditForm({...editForm, user_name: e.target.value})} style={{ width: '100px', padding: '4px' }} />
+                                        </td>
+                                        <td style={{ textAlign: 'center' }}>
+                                            <button className="btn btn-primary" style={{ padding: '2px 6px', fontSize: '0.8rem', marginRight: '4px' }} onClick={handleEditSave} disabled={updateMutation.isLoading}>💾</button>
+                                            <button className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8rem' }} onClick={() => setEditingRow(null)}>✖</button>
+                                        </td>
+                                    </>
+                                ) : (
+                                    <>
+                                        <td>{row.date}</td>
+                                        <td>{row.item_name}</td>
+                                        <td style={{ textAlign: 'center' }}>{row.quantity}</td>
+                                        <td>{row.user_name}</td>
+                                        <td style={{ textAlign: 'center' }}>
+                                            <button className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8em', marginRight: '4px' }} onClick={() => handleEditStart(row)}>✏️</button>
+                                            <button className="btn btn-danger" style={{ padding: '2px 6px', fontSize: '0.8em' }} onClick={() => handleDelete(row.row_index)} disabled={deleteMutation.isLoading}>🗑️</button>
+                                        </td>
+                                    </>
+                                )}
+                            </tr>
+                        )
+                    }) : (
+                        <tr><td colSpan="5" style={{ textAlign: 'center' }}>출고 내역이 비어 있습니다.</td></tr>
                     )}
                 </tbody>
             </table>

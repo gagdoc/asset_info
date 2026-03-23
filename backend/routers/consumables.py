@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query, Body
-from backend.services.consumables_service import get_available_months, get_items_list, get_outbound_history, get_estimate, add_outbound, save_item
+from backend.services.consumables_service import get_available_months, get_items_list, get_outbound_history, get_estimate, add_outbound, save_item, update_outbound_history, delete_outbound_history
 from typing import List, Dict, Any
 
 router = APIRouter(
@@ -53,4 +53,25 @@ async def create_or_update_item(data: Dict[str, Any] = Body(...)):
     success = save_item(data)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to save item")
+    return {"status": "success"}
+
+@router.put("/outbound")
+async def update_outbound(data: Dict[str, Any] = Body(...)):
+    """월별 출고 개별 데이터 수정"""
+    month = data.get("month")
+    row_index = data.get("row_index")
+    if not month or not row_index:
+        raise HTTPException(status_code=400, detail="Month and row_index are required")
+        
+    success = update_outbound_history(month, int(row_index), data)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update outbound record")
+    return {"status": "success"}
+
+@router.delete("/outbound")
+async def delete_outbound(month: str = Query(...), row_index: int = Query(...)):
+    """월별 출고 개별 데이터 삭제"""
+    success = delete_outbound_history(month, row_index)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete outbound record")
     return {"status": "success"}
