@@ -688,8 +688,7 @@ const CreateMonthTab = () => {
                 <div>
                     <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>출고 시작 날짜 (선택)</label>
                     <input 
-                        type="text" 
-                        placeholder="예: 2026.04.01" 
+                        type="date" 
                         value={startDate}
                         onChange={e => setStartDate(e.target.value)}
                         style={{ padding: '10px', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }}
