@@ -92,8 +92,8 @@ def create_month_sheet(month_name: str, start_date: str) -> bool:
 def _get_available_months_impl():
     _, ss = _get_consumables_client()
     if not ss: return []
-    # "월"로 끝나는 시트 이름 반환
-    months = [ws.title for ws in ss.worksheets() if ws.title.endswith("월")]
+    # '품목리스트' 시트를 제외한 모든 시트 반환
+    months = [ws.title for ws in ss.worksheets() if ws.title != "품목리스트"]
     return months
 
 def get_items_list():
@@ -141,9 +141,9 @@ def _get_items_list_impl():
                 "dispatched_qty": 0 if is_tracked else None
             })
 
-        # 재고 관리 대상이 있으면 전 월의 출고 내역을 Batch Get으로 가져와 잔여 재고 계산
+        # 재고 관리 대상이 있으면        # 2단계: Tracking 대상이 있으면 전체 월간 출고 데이터를 합산
         if tracked_item_names:
-            months = [ws.title for ws in ss.worksheets() if ws.title.endswith("월")]
+            months = [ws.title for ws in ss.worksheets() if ws.title != "품목리스트"]
             if months:
                 ranges = [f"{m}!A2:D" for m in months]
                 batch_res = ss.values_batch_get(ranges)
@@ -375,7 +375,7 @@ def get_item_outbound_history(item_name: str):
     _, ss = _get_consumables_client()
     if not ss: return []
     
-    months = [ws.title for ws in ss.worksheets() if ws.title.endswith("월")]
+    months = [ws.title for ws in ss.worksheets() if ws.title != "품목리스트"]
     if not months: return []
     
     ranges = [f"{m}!A2:D" for m in months]
