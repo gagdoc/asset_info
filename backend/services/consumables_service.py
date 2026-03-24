@@ -96,10 +96,10 @@ def _get_available_months_impl():
     months = [ws.title for ws in ss.worksheets() if "월" in ws.title and ws.title != "품목리스트"]
     return months
 
-def get_items_list():
-    return _get_cached("items", _get_items_list_impl)
+def get_items_list(month=None):
+    return _get_cached(f"items_{month}", lambda: _get_items_list_impl(month=month))
 
-def _get_items_list_impl():
+def _get_items_list_impl(month=None):
     _, ss = _get_consumables_client()
     if not ss: return []
     try:
@@ -141,9 +141,13 @@ def _get_items_list_impl():
                 "dispatched_qty": 0 if is_tracked else None
             })
 
-        # 재고 관리 대상이 있으면        # 2단계: Tracking 대상이 있으면 전체 월간 출고 데이터를 합산
+        # 2단계: Tracking 대상이 있으면 출고 데이터를 합산
         if tracked_item_names:
-            months = [ws.title for ws in ss.worksheets() if "월" in ws.title and ws.title != "품목리스트"]
+            if month and month != "전체":
+                months = [month]
+            else:
+                months = [ws.title for ws in ss.worksheets() if "월" in ws.title and ws.title != "품목리스트"]
+                
             if months:
                 ranges = [f"{m}!A2:D" for m in months]
                 batch_res = ss.values_batch_get(ranges)

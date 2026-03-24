@@ -79,7 +79,7 @@ const Consumables = () => {
             {activeTab === 'outbound' && selectedMonth && <OutboundTab month={selectedMonth} />}
             {activeTab === 'create-month' && <CreateMonthTab />}
             {activeTab === 'items' && <ItemsTab />}
-            {activeTab === 'tracked' && <TrackedItemsTab />}
+            {activeTab === 'tracked' && <TrackedItemsTab month={selectedMonth} />}
             
             {(activeTab === 'estimate' || activeTab === 'outbound') && !selectedMonth && (
                 <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>조회할 월(Month) 데이터를 불러오는 중입니다...</div>
@@ -575,12 +575,12 @@ const ItemHistoryModal = ({ itemName, onClose }) => {
     )
 }
 
-const TrackedItemsTab = () => {
+const TrackedItemsTab = ({ month }) => {
     const [selectedHistoryItem, setSelectedHistoryItem] = useState(null)
     const { data: items, isLoading } = useQuery({
-        queryKey: ['consumables-items'],
+        queryKey: ['consumables-items', month],
         queryFn: async () => {
-            const { data } = await axios.get('/api/consumables/items')
+            const { data } = await axios.get(`/api/consumables/items?month=${month || ''}`)
             return data
         }
     })
@@ -591,9 +591,9 @@ const TrackedItemsTab = () => {
 
     return (
         <div className="card">
-            <h3 style={{ marginBottom: '1rem' }}>📍 재고 추적 관리 현황</h3>
+            <h3 style={{ marginBottom: '1rem' }}>📍 재고 추적 관리 현황 ({month || '전체'})</h3>
             <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
-                💡 <strong>최종 잔여 재고</strong> = <strong>입력한 현재 재고</strong> - <strong>총 출고 수량 합계</strong> (등록된 모든 월 표 기준)<br/>
+                💡 <strong>최종 잔여 재고</strong> = <strong>입력한 현재 재고</strong> - <strong>'{month || '선택된 월'}'의 출고 수량</strong><br/>
                 고정 재고(최소기준선)보다 최종 잔여 재고가 낮아지면 🚨 <strong>부족</strong> 경고가 표시됩니다.
             </div>
             
@@ -603,7 +603,7 @@ const TrackedItemsTab = () => {
                         <th>품목명</th>
                         <th style={{ textAlign: 'center' }}>고정 재고(기준선)</th>
                         <th style={{ textAlign: 'center', color: '#10b981' }}>현재 재고 (입고량)</th>
-                        <th style={{ textAlign: 'center', color: '#f59e0b' }}>총 출고 수량</th>
+                        <th style={{ textAlign: 'center', color: '#f59e0b' }}>선택월({month || '전체'}) 출고량</th>
                         <th style={{ textAlign: 'center', color: '#3b82f6', fontSize: '1.1em' }}>최종 잔여 재고</th>
                         <th style={{ textAlign: 'center' }}>상태</th>
                         <th style={{ textAlign: 'center' }}>상세 내역</th>

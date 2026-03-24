@@ -33,9 +33,9 @@ def add_new_month(data: Dict[str, str] = Body(...)):
     return {"status": "success"}
 
 @router.get("/items")
-def list_items():
-    """품목 리스트 반환 ('품목리스트' 시트)"""
-    items = get_items_list()
+def list_items(month: str = Query(None)):
+    """품목 리스트 반환 ('품목리스트' 시트) 및 선택적 월별 출고합산"""
+    items = get_items_list(month=month)
     return items
 
 @router.get("/items/{item_name}/outbound")
