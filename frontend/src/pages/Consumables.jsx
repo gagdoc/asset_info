@@ -25,7 +25,7 @@ const Consumables = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h1 style={{ margin: 0 }}>소모품 월별 관리 및 견적서</h1>
                 
-                {(activeTab === 'outbound' || activeTab === 'estimate') && (
+                {(activeTab === 'outbound' || activeTab === 'estimate' || activeTab === 'tracked') && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <label style={{ fontWeight: 'bold' }}>조회 월 선택:</label>
                         <select 
@@ -622,7 +622,7 @@ const TrackedItemsTab = ({ month }) => {
                                 <td style={{ fontWeight: 'bold' }}>{item.item_name}</td>
                                 <td style={{ textAlign: 'center', color: '#6b7280' }}>{base}</td>
                                 <td style={{ textAlign: 'center', color: '#10b981', fontWeight: 'bold' }}>{order}</td>
-                                <td style={{ textAlign: 'center', color: '#f59e0b', fontWeight: 'bold' }}>{dispatched} (월별전체)</td>
+                                <td style={{ textAlign: 'center', color: '#f59e0b', fontWeight: 'bold' }}>{dispatched}</td>
                                 <td style={{ textAlign: 'center', color: '#3b82f6', fontWeight: 'bold', fontSize: '1.2em' }}>{current}</td>
                                 <td style={{ textAlign: 'center' }}>
                                     <span style={{ 
