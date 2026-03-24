@@ -105,7 +105,7 @@ def _get_items_list_impl():
     try:
         ws = ss.worksheet("품목리스트")
         # A부터 E열까지 (분류, 품목, 가격, 관리여부, 초기수량)
-        records = ws.get_values("A2:E")
+        records = ws.get_values("A2:F")
         items = []
         tracked_item_names = set()
 
