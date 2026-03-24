@@ -261,8 +261,8 @@ const OutboundTab = ({ month }) => {
             {showForm && (
                 <form onSubmit={handleSubmit} style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>날짜 (예: 2025. 03.11)</label>
-                        <input type="text" placeholder="2025. 03.11" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} style={{ padding: '8px' }} required />
+                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>출고 날짜</label>
+                        <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} style={{ padding: '8px' }} required />
                     </div>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>품목</label>
@@ -303,7 +303,7 @@ const OutboundTab = ({ month }) => {
                                 {isEditing ? (
                                     <>
                                         <td>
-                                            <input type="text" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})} style={{ width: '100px', padding: '4px' }} />
+                                            <input type="date" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})} style={{ width: '130px', padding: '4px' }} />
                                         </td>
                                         <td>
                                             <select value={editForm.item_name} onChange={e => setEditForm({...editForm, item_name: e.target.value})} style={{ width: '150px', padding: '4px' }}>
