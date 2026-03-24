@@ -62,6 +62,33 @@ def _get_consumables_client():
 def get_available_months():
     return _get_cached("months", _get_available_months_impl)
 
+def create_month_sheet(month_name: str, start_date: str) -> bool:
+    try:
+        _, ss = _get_consumables_client()
+        if not ss: return False
+        
+        # 이름 중복 확인
+        existing = [ws.title for ws in ss.worksheets()]
+        if month_name in existing:
+            return False
+            
+        # 새 시트 추가
+        ws = ss.add_worksheet(title=month_name, rows=1000, cols=20)
+        
+        # 헤더 기록
+        headers = ['날짜', '품목 명', '수량 (개)', '사용자 이름']
+        ws.update('A1:D1', [headers])
+        
+        # 시작 안내 데이터 한 줄 추가 (옵션)
+        if start_date:
+            ws.update('A2:D2', [[start_date, '==출고 내역 시작==', '', '']])
+            
+        _invalidate_cache()
+        return True
+    except Exception as e:
+        print(f"Error creating month sheet: {e}")
+        return False
+
 def _get_available_months_impl():
     _, ss = _get_consumables_client()
     if not ss: return []

@@ -1,5 +1,10 @@
 from fastapi import APIRouter, HTTPException, Query, Body, Path
-from backend.services.consumables_service import get_available_months, get_items_list, get_outbound_history, get_estimate, add_outbound, save_item, update_outbound_history, delete_outbound_history, get_item_outbound_history
+from backend.services.consumables_service import (
+    get_available_months, get_items_list, get_outbound_history,
+    get_estimate, add_outbound, save_item, update_outbound_history,
+    delete_outbound_history, get_item_outbound_history,
+    create_month_sheet
+)
 from typing import List, Dict, Any
 
 router = APIRouter(
@@ -13,6 +18,19 @@ def list_months():
     """사용 가능한 월(시트) 목록 반환"""
     months = get_available_months()
     return {"months": months}
+
+@router.post("/months")
+def add_new_month(data: Dict[str, str] = Body(...)):
+    """새로운 월의 출고 내역 시트 생성"""
+    month_name = data.get("month")
+    start_date = data.get("start_date", "")
+    if not month_name:
+        raise HTTPException(status_code=400, detail="새로운 월 이름이 필요합니다.")
+        
+    success = create_month_sheet(month_name, start_date)
+    if not success:
+        raise HTTPException(status_code=500, detail="이미 존재하는 월이거나 구글 시트 생성에 실패했습니다.")
+    return {"status": "success"}
 
 @router.get("/items")
 def list_items():
