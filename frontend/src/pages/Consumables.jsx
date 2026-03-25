@@ -434,6 +434,7 @@ const ItemsTab = ({ month }) => {
                         onChange={e => setTempValue(e.target.value)}
                         onBlur={handleBlur}
                         onKeyDown={handleKeyDown}
+                        onFocus={e => e.target.select()}
                         style={{ 
                             width: '100%', 
                             padding: '10px 8px', 
