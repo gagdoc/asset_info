@@ -94,15 +94,22 @@ const EditableCell = ({ value, onSave, type = "text", bold = false, align = "lef
     const [isEditing, setIsEditing] = useState(false)
     const [tempValue, setTempValue] = useState(value)
 
+    const handleStartEdit = () => {
+        // 숫자형인 경우 쉼표를 제거하고 시작해야 input type="number"에서 정상 인식됨
+        const cleanValue = value?.toString().replace(/,/g, '')
+        setTempValue(cleanValue)
+        setIsEditing(true)
+    }
+
     const handleBlur = () => {
         setIsEditing(false)
-        if (tempValue !== value) onSave(tempValue)
+        if (tempValue !== value?.toString().replace(/,/g, '')) onSave(tempValue)
     }
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter') {
             setIsEditing(false)
-            if (tempValue !== value) onSave(tempValue)
+            if (tempValue !== value?.toString().replace(/,/g, '')) onSave(tempValue)
         }
         if (e.key === 'Escape') {
             setIsEditing(false)
@@ -137,17 +144,25 @@ const EditableCell = ({ value, onSave, type = "text", bold = false, align = "lef
 
     return (
         <td 
-            onDoubleClick={() => setIsEditing(true)}
+            onDoubleClick={handleStartEdit}
+            className="editable-cell"
             style={{ 
                 cursor: 'pointer', 
                 textAlign: align,
                 fontWeight: bold ? 'bold' : 'normal',
                 backgroundColor: isEditing ? '#f0f9ff' : 'transparent',
-                transition: 'background-color 0.2s'
+                transition: 'all 0.2s',
+                border: isEditing ? 'none' : '1px dashed transparent',
+                borderRadius: '4px'
             }}
+            onMouseOver={e => e.currentTarget.style.backgroundColor = '#f0f9ff'}
+            onMouseOut={e => e.currentTarget.style.backgroundColor = isEditing ? '#f0f9ff' : 'transparent'}
             title="더블 클릭하여 수정"
         >
-            {type === 'number' || !isNaN(Number(value?.toString().replace(/,/g, ''))) ? Number(value?.toString().replace(/,/g, '')).toLocaleString() : value}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start', gap: '4px' }}>
+                {type === 'number' || !isNaN(Number(value?.toString().replace(/,/g, ''))) ? Number(value?.toString().replace(/,/g, '')).toLocaleString() : value}
+                <span style={{ fontSize: '0.8em', opacity: 0.3 }}>✎</span>
+            </div>
         </td>
     )
 }
