@@ -26,13 +26,13 @@ const Consumables = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h1 style={{ margin: 0 }}>소모품 월별 관리 및 견적서</h1>
                 
-                {(activeTab === 'outbound' || activeTab === 'estimate' || activeTab === 'tracked' || activeTab === 'items') && (
+                {activeTab !== 'create-month' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <label style={{ fontWeight: 'bold' }}>조회 월 선택:</label>
                         <select 
                             value={selectedMonth} 
                             onChange={(e) => setSelectedMonth(e.target.value)}
-                            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
+                            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd', minWidth: '150px' }}
                         >
                             {monthsData?.map(m => (
                                 <option key={m} value={m}>{m}</option>
@@ -411,7 +411,10 @@ const ItemsTab = ({ month }) => {
     return (
         <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3>소모품 마스터 리스트 (단가표) {month && <span style={{ fontSize: '0.8em', color: '#0ea5e9' }}>- {month} 기준 재고</span>}</h3>
+                <h3 style={{ margin: 0 }}>
+                    소모품 마스터 리스트 (단가표) 
+                    {month && <span style={{ fontSize: '0.85em', color: '#0ea5e9', marginLeft: '10px' }}>- {month} 기준 재고</span>}
+                </h3>
                 <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' }); }}>
                     {showForm ? '닫기' : '+ 품목 추가'}
                 </button>
