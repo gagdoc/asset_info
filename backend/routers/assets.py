@@ -27,8 +27,8 @@ class RowDeleteRequest(BaseModel):
     row_indices: List[int]
 
 class NewHireEntry(BaseModel):
-    NAME: str = ""
-    email: str
+    NAME: Optional[str] = ""
+    email: Optional[str] = ""
     BU: str = ""
     ROLE: str = ""
     korean_name: str = ""
@@ -204,6 +204,11 @@ def get_asset_list(asset_type: str):
         raise HTTPException(status_code=404, detail=f"Asset type '{asset_type}' not found")
     
     df = dfs[asset_type]
+    
+    # 신규 입사자의 경우 실시간 자산 정보 매칭(Enrichment) 수행
+    if asset_type == "NewHire" and not df.empty:
+        df = _enrich_data_with_assets(df, dfs)
+        
     df = df.where(pd.notnull(df), None)
     return df.to_dict(orient="records")
 
@@ -309,7 +314,7 @@ def register_new_hire(entry: NewHireEntry):
     dfs = load_from_db()
     df = dfs.get("NewHire", pd.DataFrame())
     
-    email = entry.email.strip().lower()
+    email = entry.email.strip().lower() if entry.email else ""
     
     # 파싱 로직
     year, month, day = "", "", ""
@@ -340,8 +345,9 @@ def register_new_hire(entry: NewHireEntry):
     df = pd.concat([df, new_df], ignore_index=True)
     update_db("NewHire", df)
     
-    # ── 대시보드(All_User) 자동 추가 연동 ──
-    df_all = dfs.get("All_User", pd.DataFrame())
+    # ── 대시보드(All_User) 자동 추가 연동 (이메일이 있을 경우에만) ──
+    if email:
+        df_all = dfs.get("All_User", pd.DataFrame())
     if not df_all.empty:
         try:
             max_no = pd.to_numeric(df_all["NO"], errors="coerce").max()

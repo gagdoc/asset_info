@@ -96,8 +96,8 @@ const RegisterForm = ({ deptConfig, queryClient, addToast }) => {
 
     const handleSubmit = async (e) => {
         e.preventDefault()
-        if (!form.email || !form.join_date) {
-            addToast('이메일과 입사 일자를 입력해주세요.', 'error')
+        if (!form.join_date) {
+            addToast('입사 일자를 입력해주세요.', 'error')
             return
         }
         try {
@@ -151,7 +151,6 @@ const RegisterForm = ({ deptConfig, queryClient, addToast }) => {
                             value={form.email}
                             onChange={e => setForm({ ...form, email: e.target.value })}
                             placeholder="user@stryker.com"
-                            required
                         />
                     </div>
                 </div>
@@ -188,6 +187,23 @@ const RegisterForm = ({ deptConfig, queryClient, addToast }) => {
 // ── 리스트 탭 ────────────────────────────────────────────
 const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryClient, addToast }) => {
     const [selectedRows, setSelectedRows] = useState(new Set())
+    const [editingCell, setEditingCell] = useState(null) // { idx, col }
+    const [editValue, setEditValue] = useState('')
+
+    const handleCellEdit = async (idx, col, value) => {
+        try {
+            await axios.put('/api/assets/row/update', {
+                asset_type: 'NewHire',
+                row_index: idx,
+                updates: { [col]: value }
+            })
+            addToast('✅ 수정 완료', 'success')
+            queryClient.invalidateQueries(['assets', 'NewHire'])
+        } catch (err) {
+            addToast('수정 실패', 'error')
+        }
+        setEditingCell(null)
+    }
 
     // Google Sheets 새로고침
     const handleRefresh = () => {
@@ -305,13 +321,43 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                                                 }}
                                             />
                                         </td>
-                                        {columns.map(col => (
-                                            <td key={col}>
-                                                {row[col] !== null && row[col] !== undefined
-                                                    ? String(row[col])
-                                                    : '-'}
-                                            </td>
-                                        ))}
+                                        {columns.map(col => {
+                                            const isEditable = ['이름', 'NAME', 'email', 'BU', 'ROLE', '추가사항'].includes(col)
+                                            const isEditing = editingCell?.idx === idx && editingCell?.col === col
+
+                                            return (
+                                                <td 
+                                                    key={col} 
+                                                    onDoubleClick={() => {
+                                                        if (isEditable) {
+                                                            setEditingCell({ idx, col })
+                                                            setEditValue(row[col] || '')
+                                                        }
+                                                    }}
+                                                    style={isEditable ? { cursor: 'pointer' } : {}}
+                                                    title={isEditable ? '더블 클릭하여 수정' : ''}
+                                                >
+                                                    {isEditing ? (
+                                                        <input
+                                                            autoFocus
+                                                            className="form-input"
+                                                            style={{ padding: '2px 4px', fontSize: '0.9em' }}
+                                                            value={editValue}
+                                                            onChange={e => setEditValue(e.target.value)}
+                                                            onBlur={() => handleCellEdit(idx, col, editValue)}
+                                                            onKeyDown={e => {
+                                                                if (e.key === 'Enter') handleCellEdit(idx, col, editValue)
+                                                                if (e.key === 'Escape') setEditingCell(null)
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        row[col] !== null && row[col] !== undefined && row[col] !== ''
+                                                            ? String(row[col])
+                                                            : '-'
+                                                    )}
+                                                </td>
+                                            )
+                                        })}
                                     </tr>
                                 ))}
                             </tbody>
