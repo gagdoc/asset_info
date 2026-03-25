@@ -144,7 +144,7 @@ const RegisterForm = ({ deptConfig, queryClient, addToast }) => {
                         />
                     </div>
                     <div className="form-group">
-                        <label className="form-label">이메일 *</label>
+                        <label className="form-label">이메일</label>
                         <input
                             className="form-input"
                             type="email"
