@@ -109,7 +109,7 @@ def _get_items_list_impl(month=None):
         items = []
         tracked_item_names = set()
 
-        for r in records:
+        for i, r in enumerate(records):
             if not r or not str(r[0]).strip(): continue
             is_tracked = False
             base_qty = 0
@@ -138,6 +138,7 @@ def _get_items_list_impl(month=None):
                 "base_qty": base_qty,        # 이제 이것은 '고정 재고'를 의미
                 "order_qty": order_qty,      # 발주 수량
                 "current_stock": order_qty if is_tracked else None,
+                "row_index": i + 2,
                 "dispatched_qty": 0 if is_tracked else None
             })
 
@@ -292,6 +293,8 @@ def add_outbound(month: str, data: dict) -> bool:
             data.get('user_name', '')
         ]])
         _invalidate_cache()
+        # 데이터 변경 시 재고리스트 요약 시트 동기화
+        sync_inventory_summary_sheet()
         return True
     except Exception as e:
         print(f"Error adding outbound: {e}")
@@ -310,6 +313,8 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
             data.get('user_name', '')
         ]])
         _invalidate_cache()
+        # 데이터 변경 시 재고리스트 요약 시트 동기화
+        sync_inventory_summary_sheet()
         return True
     except Exception as e:
         print(f"Error updating outbound: {e}")
@@ -323,6 +328,8 @@ def delete_outbound_history(month: str, row_index: int) -> bool:
         ws = ss.worksheet(month)
         ws.delete_rows(row_index)
         _invalidate_cache()
+        # 데이터 변경 시 재고리스트 요약 시트 동기화
+        sync_inventory_summary_sheet()
         return True
     except Exception as e:
         print(f"Error deleting outbound: {e}")
@@ -334,14 +341,15 @@ def save_item(data: dict) -> bool:
     if not ss: return False
     try:
         ws = ss.worksheet("품목리스트")
-        col_B = ws.col_values(2) # B열 (품명) 기준
         target_item = data.get('item_name', '').strip()
+        row_idx = data.get('row_index') # 만약 인라인 수정 등에서 행 번호를 직접 보낸다면 우선순위 가짐
         
-        row_idx = None
-        for i, val in enumerate(col_B):
-            if val.strip() == target_item:
-                row_idx = i + 1
-                break
+        if not row_idx:
+            col_B = ws.col_values(2) # B열 (품명) 기준
+            for i, val in enumerate(col_B):
+                if val.strip() == target_item:
+                    row_idx = i + 1
+                    break
                 
         is_tracked_str = 'O' if data.get('is_tracked') else 'X'
         base_qty_str = str(data.get('base_qty', '0'))
@@ -369,6 +377,8 @@ def save_item(data: dict) -> bool:
                 order_qty_str
             ]])
         _invalidate_cache()
+        # 데이터 변경 시 재고리스트 요약 시트 동기화
+        sync_inventory_summary_sheet()
         return True
     except Exception as e:
         print(f"Error saving item: {e}")
@@ -400,3 +410,50 @@ def get_item_outbound_history(item_name: str):
                     "user_name": str(row[3]).strip() if len(row) > 3 else ""
                 })
     return history
+
+def sync_inventory_summary_sheet():
+    """
+    현재 등록된 모든 소모품의 마스터 정보와 '전체 기간' 기준 재고 현황을 
+    '재고리스트' 구글 시트에 일괄 업데이트합니다.
+    """
+    _, ss = _get_consumables_client()
+    if not ss: return False
+    
+    try:
+        # 1. 최신 데이터 가져오기 (전체 기간 기준)
+        items = _get_items_list_impl(month=None)
+        
+        # 2. 시트 데이터 구성을 위한 헤더 및 행 생성
+        headers = ['분류', '품목명', '단가', '재고추적여부', '고정재고(기준)', '현재재고(입고량)', '총출고량', '최종잔여재고', '상태']
+        rows = [headers]
+        
+        for it in items:
+            is_tracked = "O" if it.get("is_tracked") else "X"
+            dispatched = it.get("dispatched_qty", 0) if it.get("is_tracked") else "-"
+            current = it.get("current_stock", 0) if it.get("is_tracked") else "-"
+            
+            status = "-"
+            if it.get("is_tracked"):
+                base = it.get("base_qty", 1)
+                status = "🚨 부족" if current < base else "✅ 양호"
+
+            rows.append([
+                it.get("category", ""),
+                it.get("item_name", ""),
+                it.get("price", ""),
+                is_tracked,
+                it.get("base_qty", ""),
+                it.get("order_qty", ""),
+                dispatched,
+                current,
+                status
+            ])
+            
+        # 3. '재고리스트' 시트에 덮어쓰기
+        ws = ss.worksheet("재고리스트")
+        ws.clear()
+        ws.update("A1", rows)
+        return True
+    except Exception as e:
+        print(f"Error syncing inventory summary sheet: {e}")
+        return False

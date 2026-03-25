@@ -402,6 +402,69 @@ const ItemsTab = ({ month }) => {
     if (isLoading) return <div>Loading...</div>
 
     const categories = Array.from(new Set(items?.map(it => it.category).filter(Boolean)))
+    
+    // 인라인 수정을 위한 전용 셀 컴포넌트
+    const EditableCell = ({ value, onSave, type = "text", bold = false, align = "left" }) => {
+        const [isEditing, setIsEditing] = useState(false)
+        const [tempValue, setTempValue] = useState(value)
+
+        const handleBlur = () => {
+            setIsEditing(false)
+            if (tempValue !== value) onSave(tempValue)
+        }
+
+        const handleKeyDown = (e) => {
+            if (e.key === 'Enter') {
+                setIsEditing(false)
+                if (tempValue !== value) onSave(tempValue)
+            }
+            if (e.key === 'Escape') {
+                setIsEditing(false)
+                setTempValue(value)
+            }
+        }
+
+        if (isEditing) {
+            return (
+                <td style={{ padding: '0' }}>
+                    <input 
+                        autoFocus
+                        type={type}
+                        value={tempValue}
+                        onChange={e => setTempValue(e.target.value)}
+                        onBlur={handleBlur}
+                        onKeyDown={handleKeyDown}
+                        style={{ 
+                            width: '100%', 
+                            padding: '10px 8px', 
+                            border: '2px solid #0ea5e9', 
+                            borderRadius: '4px',
+                            boxSizing: 'border-box',
+                            fontSize: '1em',
+                            textAlign: align
+                        }}
+                    />
+                </td>
+            )
+        }
+
+        return (
+            <td 
+                onDoubleClick={() => setIsEditing(true)}
+                style={{ 
+                    cursor: 'pointer', 
+                    textAlign: align,
+                    fontWeight: bold ? 'bold' : 'normal',
+                    backgroundColor: isEditing ? '#f0f9ff' : 'transparent',
+                    transition: 'background-color 0.2s'
+                }}
+                title="더블 클릭하여 수정"
+            >
+                {value}
+            </td>
+        )
+    }
+
     const filteredItems = items?.filter(item => {
         const matchSearch = item.item_name.toLowerCase().includes(searchTerm.toLowerCase()) || item.category.toLowerCase().includes(searchTerm.toLowerCase())
         const matchCat = filterCategory ? item.category === filterCategory : true
@@ -484,12 +547,19 @@ const ItemsTab = ({ month }) => {
                         <th>대분류 (Category)</th>
                         <th>소모품명 (Item Name)</th>
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
+                        <th style={{ textAlign: 'center' }}>고정 재고(기준)</th>
+                        <th style={{ textAlign: 'center' }}>현재 재고(입고량)</th>
                         <th style={{ textAlign: 'center' }}>상태(재고현황)</th>
                         <th style={{ textAlign: 'center' }}>관리</th>
                     </tr>
                 </thead>
                 <tbody>
                     {filteredItems?.length > 0 ? filteredItems.map((item, idx) => {
+                        const handleInlineUpdate = (field, newVal) => {
+                            const updatedData = { ...item, [field]: newVal }
+                            mutation.mutate(updatedData)
+                        }
+
                         let statusBadge = <span style={{ color: '#aaa', fontSize: '0.85em' }}>추적안함 (-)</span>
                         if (item.is_tracked) {
                             const current = item.current_stock || 0
@@ -514,12 +584,14 @@ const ItemsTab = ({ month }) => {
 
                         return (
                             <tr key={idx}>
-                                <td>{item.category}</td>
-                                <td><strong>{item.item_name}</strong></td>
-                                <td style={{ textAlign: 'right' }}>{item.price}</td>
+                                <EditableCell value={item.category} onSave={(val) => handleInlineUpdate('category', val)} />
+                                <EditableCell value={item.item_name} onSave={(val) => handleInlineUpdate('item_name', val)} bold={true} />
+                                <EditableCell value={item.price} onSave={(val) => handleInlineUpdate('price', val)} align="right" />
+                                <EditableCell value={item.base_qty} onSave={(val) => handleInlineUpdate('base_qty', val)} align="center" type="number" />
+                                <EditableCell value={item.order_qty} onSave={(val) => handleInlineUpdate('order_qty', val)} align="center" type="number" />
                                 <td style={{ textAlign: 'center' }}>{statusBadge}</td>
                                 <td style={{ textAlign: 'center' }}>
-                                    <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => startEdit(item)}>수정</button>
+                                    <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => startEdit(item)}>상세 수정</button>
                                 </td>
                             </tr>
                         )
