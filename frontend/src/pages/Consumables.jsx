@@ -26,7 +26,7 @@ const Consumables = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h1 style={{ margin: 0 }}>소모품 월별 관리 및 견적서</h1>
                 
-                {(activeTab === 'outbound' || activeTab === 'estimate' || activeTab === 'tracked') && (
+                {(activeTab === 'outbound' || activeTab === 'estimate' || activeTab === 'tracked' || activeTab === 'items') && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <label style={{ fontWeight: 'bold' }}>조회 월 선택:</label>
                         <select 
@@ -79,7 +79,7 @@ const Consumables = () => {
             {activeTab === 'estimate' && selectedMonth && <EstimateTab month={selectedMonth} />}
             {activeTab === 'outbound' && selectedMonth && <OutboundTab month={selectedMonth} />}
             {activeTab === 'create-month' && <CreateMonthTab />}
-            {activeTab === 'items' && <ItemsTab />}
+            {activeTab === 'items' && <ItemsTab month={selectedMonth} />}
             {activeTab === 'tracked' && <TrackedItemsTab month={selectedMonth} />}
             
             {(activeTab === 'estimate' || activeTab === 'outbound') && !selectedMonth && (
@@ -357,7 +357,7 @@ const OutboundTab = ({ month }) => {
     )
 }
 
-const ItemsTab = () => {
+const ItemsTab = ({ month }) => {
     const queryClient = useQueryClient()
     const [showForm, setShowForm] = useState(false)
     const [formData, setFormData] = useState({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
@@ -365,9 +365,9 @@ const ItemsTab = () => {
     const [filterCategory, setFilterCategory] = useState('')
 
     const { data: items, isLoading } = useQuery({
-        queryKey: ['consumables-items'],
+        queryKey: ['consumables-items', month],
         queryFn: async () => {
-            const { data } = await axios.get('/api/consumables/items')
+            const { data } = await axios.get(`/api/consumables/items?month=${month || ''}`)
             return data
         }
     })
@@ -377,7 +377,7 @@ const ItemsTab = () => {
             return axios.post('/api/consumables/items', newData)
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['consumables-items'])
+            queryClient.invalidateQueries(['consumables-items', month])
             setShowForm(false)
             setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
             alert("품목이 저장되었습니다.")
@@ -411,7 +411,7 @@ const ItemsTab = () => {
     return (
         <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3>소모품 마스터 리스트 (단가표)</h3>
+                <h3>소모품 마스터 리스트 (단가표) {month && <span style={{ fontSize: '0.8em', color: '#0ea5e9' }}>- {month} 기준 재고</span>}</h3>
                 <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' }); }}>
                     {showForm ? '닫기' : '+ 품목 추가'}
                 </button>
