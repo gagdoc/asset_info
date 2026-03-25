@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { useToast } from '../components/Toast'
+import ConfirmModal from '../components/ConfirmModal'
 
 // Google Sheets '신규입사자' 탭 컬럼 우선 표시 순서
 const PRIORITY_COLS = [
@@ -189,6 +190,7 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
     const [selectedRows, setSelectedRows] = useState(new Set())
     const [editingCell, setEditingCell] = useState(null) // { idx, col }
     const [editValue, setEditValue] = useState('')
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
 
     const handleCellEdit = async (idx, col, value) => {
         try {
@@ -226,8 +228,10 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
     // 선택 행 삭제 (Google Sheets에도 반영)
     const handleDeleteSelected = async () => {
         if (selectedRows.size === 0) return
-        if (!confirm(`선택한 ${selectedRows.size}명을 신규입사자 목록에서 삭제하시겠습니까?`)) return
+        setIsDeleteModalOpen(true)
+    }
 
+    const confirmDelete = async () => {
         const remaining = newhires.filter((_, idx) => !selectedRows.has(idx))
         try {
             await axios.post('/api/assets/NewHire/save', remaining)
@@ -236,6 +240,8 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
             queryClient.invalidateQueries(['assets', 'NewHire'])
         } catch (err) {
             addToast('삭제 실패: ' + (err.response?.data?.detail || err.message), 'error')
+        } finally {
+            setIsDeleteModalOpen(false)
         }
     }
 
@@ -369,6 +375,13 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                     </p>
                 )}
             </div>
+
+            <ConfirmModal
+                isOpen={isDeleteModalOpen}
+                message={`선택한 ${selectedRows.size}명을 신규입사자 목록에서 삭제하시겠습니까?`}
+                onConfirm={confirmDelete}
+                onCancel={() => setIsDeleteModalOpen(false)}
+            />
         </div>
     )
 }
