@@ -138,8 +138,8 @@ const EstimateTab = ({ month }) => {
                                 <td><strong>{row.item_name}</strong></td>
                                 <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{row.total_qty}</td>
                                 <td style={{ fontSize: '0.9em', color: '#555' }}>{row.users}</td>
-                                <td style={{ textAlign: 'right' }}>{row.unit_price}</td>
-                                <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#e53e3e' }}>{row.total_price}</td>
+                                <td style={{ textAlign: 'right' }}>{row.unit_price?.toLocaleString()}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#e53e3e' }}>{row.total_price?.toLocaleString()}</td>
                             </tr>
                         )) : (
                             <tr><td colSpan="7" style={{ textAlign: 'center' }}>해당 월에 정리된 견적 데이터가 없습니다. Google Sheets를 확인해주세요.</td></tr>
@@ -461,7 +461,7 @@ const ItemsTab = ({ month }) => {
                 }}
                 title="더블 클릭하여 수정"
             >
-                {value}
+                {type === 'number' || !isNaN(Number(value?.toString().replace(/,/g, ''))) ? Number(value?.toString().replace(/,/g, '')).toLocaleString() : value}
             </td>
         )
     }
@@ -697,10 +697,10 @@ const TrackedItemsTab = ({ month }) => {
                         return (
                             <tr key={idx} style={{ backgroundColor: isLow ? '#fff5f5' : 'transparent' }}>
                                 <td style={{ fontWeight: 'bold' }}>{item.item_name}</td>
-                                <td style={{ textAlign: 'center', color: '#6b7280' }}>{base}</td>
-                                <td style={{ textAlign: 'center', color: '#10b981', fontWeight: 'bold' }}>{order}</td>
-                                <td style={{ textAlign: 'center', color: '#f59e0b', fontWeight: 'bold' }}>{dispatched}</td>
-                                <td style={{ textAlign: 'center', color: '#3b82f6', fontWeight: 'bold', fontSize: '1.2em' }}>{current}</td>
+                                <td style={{ textAlign: 'center', color: '#6b7280' }}>{base.toLocaleString()}</td>
+                                <td style={{ textAlign: 'center', color: '#10b981', fontWeight: 'bold' }}>{order.toLocaleString()}</td>
+                                <td style={{ textAlign: 'center', color: '#f59e0b', fontWeight: 'bold' }}>{dispatched.toLocaleString()}</td>
+                                <td style={{ textAlign: 'center', color: '#3b82f6', fontWeight: 'bold', fontSize: '1.2em' }}>{current.toLocaleString()}</td>
                                 <td style={{ textAlign: 'center' }}>
                                     <span style={{ 
                                         padding: '4px 10px', borderRadius: '12px', fontSize: '0.85em', fontWeight: 'bold', display: 'inline-block',
