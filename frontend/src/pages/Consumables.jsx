@@ -89,6 +89,69 @@ const Consumables = () => {
     )
 }
 
+// 인라인 수정을 위한 공통 셀 컴포넌트
+const EditableCell = ({ value, onSave, type = "text", bold = false, align = "left" }) => {
+    const [isEditing, setIsEditing] = useState(false)
+    const [tempValue, setTempValue] = useState(value)
+
+    const handleBlur = () => {
+        setIsEditing(false)
+        if (tempValue !== value) onSave(tempValue)
+    }
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            setIsEditing(false)
+            if (tempValue !== value) onSave(tempValue)
+        }
+        if (e.key === 'Escape') {
+            setIsEditing(false)
+            setTempValue(value)
+        }
+    }
+
+    if (isEditing) {
+        return (
+            <td style={{ padding: '0' }}>
+                <input 
+                    autoFocus
+                    type={type}
+                    value={tempValue}
+                    onChange={e => setTempValue(e.target.value)}
+                    onBlur={handleBlur}
+                    onKeyDown={handleKeyDown}
+                    onFocus={e => e.target.select()}
+                    style={{ 
+                        width: '100%', 
+                        padding: '10px 8px', 
+                        border: '2px solid #0ea5e9', 
+                        borderRadius: '4px',
+                        boxSizing: 'border-box',
+                        fontSize: '1em',
+                        textAlign: align
+                    }}
+                />
+            </td>
+        )
+    }
+
+    return (
+        <td 
+            onDoubleClick={() => setIsEditing(true)}
+            style={{ 
+                cursor: 'pointer', 
+                textAlign: align,
+                fontWeight: bold ? 'bold' : 'normal',
+                backgroundColor: isEditing ? '#f0f9ff' : 'transparent',
+                transition: 'background-color 0.2s'
+            }}
+            title="더블 클릭하여 수정"
+        >
+            {type === 'number' || !isNaN(Number(value?.toString().replace(/,/g, ''))) ? Number(value?.toString().replace(/,/g, '')).toLocaleString() : value}
+        </td>
+    )
+}
+
 const EstimateTab = ({ month }) => {
     const { data: estimateData, isLoading, refetch, isFetching } = useQuery({
         queryKey: ['consumables-estimate', month],
@@ -403,69 +466,6 @@ const ItemsTab = ({ month }) => {
 
     const categories = Array.from(new Set(items?.map(it => it.category).filter(Boolean)))
     
-    // 인라인 수정을 위한 전용 셀 컴포넌트
-    const EditableCell = ({ value, onSave, type = "text", bold = false, align = "left" }) => {
-        const [isEditing, setIsEditing] = useState(false)
-        const [tempValue, setTempValue] = useState(value)
-
-        const handleBlur = () => {
-            setIsEditing(false)
-            if (tempValue !== value) onSave(tempValue)
-        }
-
-        const handleKeyDown = (e) => {
-            if (e.key === 'Enter') {
-                setIsEditing(false)
-                if (tempValue !== value) onSave(tempValue)
-            }
-            if (e.key === 'Escape') {
-                setIsEditing(false)
-                setTempValue(value)
-            }
-        }
-
-        if (isEditing) {
-            return (
-                <td style={{ padding: '0' }}>
-                    <input 
-                        autoFocus
-                        type={type}
-                        value={tempValue}
-                        onChange={e => setTempValue(e.target.value)}
-                        onBlur={handleBlur}
-                        onKeyDown={handleKeyDown}
-                        onFocus={e => e.target.select()}
-                        style={{ 
-                            width: '100%', 
-                            padding: '10px 8px', 
-                            border: '2px solid #0ea5e9', 
-                            borderRadius: '4px',
-                            boxSizing: 'border-box',
-                            fontSize: '1em',
-                            textAlign: align
-                        }}
-                    />
-                </td>
-            )
-        }
-
-        return (
-            <td 
-                onDoubleClick={() => setIsEditing(true)}
-                style={{ 
-                    cursor: 'pointer', 
-                    textAlign: align,
-                    fontWeight: bold ? 'bold' : 'normal',
-                    backgroundColor: isEditing ? '#f0f9ff' : 'transparent',
-                    transition: 'background-color 0.2s'
-                }}
-                title="더블 클릭하여 수정"
-            >
-                {type === 'number' || !isNaN(Number(value?.toString().replace(/,/g, ''))) ? Number(value?.toString().replace(/,/g, '')).toLocaleString() : value}
-            </td>
-        )
-    }
-
     const filteredItems = items?.filter(item => {
         const matchSearch = item.item_name.toLowerCase().includes(searchTerm.toLowerCase()) || item.category.toLowerCase().includes(searchTerm.toLowerCase())
         const matchCat = filterCategory ? item.category === filterCategory : true
@@ -653,6 +653,7 @@ const ItemHistoryModal = ({ itemName, onClose }) => {
 }
 
 const TrackedItemsTab = ({ month }) => {
+    const queryClient = useQueryClient()
     const [selectedHistoryItem, setSelectedHistoryItem] = useState(null)
     const { data: items, isLoading } = useQuery({
         queryKey: ['consumables-items', month],
@@ -660,6 +661,17 @@ const TrackedItemsTab = ({ month }) => {
             const { data } = await axios.get(`/api/consumables/items?month=${month || ''}`)
             return data
         }
+    })
+
+    const mutation = useMutation({
+        mutationFn: async (newData) => {
+            return axios.post('/api/consumables/items', newData)
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries(['consumables-items', month])
+            // alert("수정되었습니다.") // 조용한 반영을 위해 주석 처리하거나 토스트 사용 권장
+        },
+        onError: () => alert("수정 중 오류가 발생했습니다.")
     })
 
     if (isLoading) return <div>Loading...</div>
@@ -678,6 +690,7 @@ const TrackedItemsTab = ({ month }) => {
                 <thead>
                     <tr>
                         <th>품목명</th>
+                        <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
                         <th style={{ textAlign: 'center' }}>고정 재고(기준선)</th>
                         <th style={{ textAlign: 'center', color: '#10b981' }}>현재 재고 (입고량)</th>
                         <th style={{ textAlign: 'center', color: '#f59e0b' }}>선택월({month || '전체'}) 출고량</th>
@@ -688,6 +701,11 @@ const TrackedItemsTab = ({ month }) => {
                 </thead>
                 <tbody>
                     {trackedItems.length > 0 ? trackedItems.map((item, idx) => {
+                        const handleInlineUpdate = (field, newVal) => {
+                            const updatedData = { ...item, [field]: newVal }
+                            mutation.mutate(updatedData)
+                        }
+
                         const current = item.current_stock || 0
                         const base = item.base_qty || 1
                         const order = item.order_qty || 0
@@ -697,8 +715,9 @@ const TrackedItemsTab = ({ month }) => {
                         return (
                             <tr key={idx} style={{ backgroundColor: isLow ? '#fff5f5' : 'transparent' }}>
                                 <td style={{ fontWeight: 'bold' }}>{item.item_name}</td>
-                                <td style={{ textAlign: 'center', color: '#6b7280' }}>{base.toLocaleString()}</td>
-                                <td style={{ textAlign: 'center', color: '#10b981', fontWeight: 'bold' }}>{order.toLocaleString()}</td>
+                                <EditableCell value={item.price} onSave={(val) => handleInlineUpdate('price', val)} align="right" />
+                                <EditableCell value={item.base_qty} onSave={(val) => handleInlineUpdate('base_qty', val)} align="center" type="number" />
+                                <EditableCell value={item.order_qty} onSave={(val) => handleInlineUpdate('order_qty', val)} align="center" type="number" />
                                 <td style={{ textAlign: 'center', color: '#f59e0b', fontWeight: 'bold' }}>{dispatched.toLocaleString()}</td>
                                 <td style={{ textAlign: 'center', color: '#3b82f6', fontWeight: 'bold', fontSize: '1.2em' }}>{current.toLocaleString()}</td>
                                 <td style={{ textAlign: 'center' }}>
@@ -715,7 +734,7 @@ const TrackedItemsTab = ({ month }) => {
                             </tr>
                         )
                     }) : (
-                        <tr><td colSpan="7" style={{ textAlign: 'center' }}>재고 추적 중인 품목이 없습니다.</td></tr>
+                        <tr><td colSpan="8" style={{ textAlign: 'center' }}>재고 추적 중인 품목이 없습니다.</td></tr>
                     )}
                 </tbody>
             </table>
