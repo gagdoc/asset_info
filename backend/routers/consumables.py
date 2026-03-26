@@ -3,7 +3,7 @@ from backend.services.consumables_service import (
     get_available_months, get_items_list, get_outbound_history,
     get_estimate, add_outbound, save_item, update_outbound_history,
     delete_outbound_history, get_item_outbound_history,
-    create_month_sheet
+    create_month_sheet, invalidate_cache
 )
 from typing import List, Dict, Any
 
@@ -12,6 +12,12 @@ router = APIRouter(
     tags=["consumables"],
     responses={404: {"description": "Not found"}},
 )
+
+@router.get("/clear-cache")
+def clear_consumables_cache():
+    """서버 캐시를 강제로 비워 구글 시트 최신 데이터를 불러올 수 있게 함"""
+    invalidate_cache()
+    return {"status": "success", "message": "Cache cleared."}
 
 @router.get("/months")
 def list_months():

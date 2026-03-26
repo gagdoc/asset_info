@@ -37,7 +37,7 @@ def _get_cached(key, func, *args):
     _CACHE[key] = (val, now + _CACHE_TTL)
     return val
 
-def _invalidate_cache():
+def invalidate_cache():
     _CACHE.clear()
 
 def _get_consumables_client():
@@ -83,7 +83,7 @@ def create_month_sheet(month_name: str, start_date: str) -> bool:
         if start_date:
             ws.update('A2:D2', [[start_date, '==출고 내역 시작==', '', '']])
             
-        _invalidate_cache()
+        invalidate_cache()
         return True
     except Exception as e:
         print(f"Error creating month sheet: {e}")
@@ -292,7 +292,7 @@ def add_outbound(month: str, data: dict) -> bool:
             data.get('quantity', ''), 
             data.get('user_name', '')
         ]])
-        _invalidate_cache()
+        invalidate_cache()
         # 데이터 변경 시 재고리스트 요약 시트 동기화
         sync_inventory_summary_sheet()
         return True
@@ -312,7 +312,7 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
             data.get('quantity', ''), 
             data.get('user_name', '')
         ]])
-        _invalidate_cache()
+        invalidate_cache()
         # 데이터 변경 시 재고리스트 요약 시트 동기화
         sync_inventory_summary_sheet()
         return True
@@ -327,7 +327,7 @@ def delete_outbound_history(month: str, row_index: int) -> bool:
     try:
         ws = ss.worksheet(month)
         ws.delete_rows(row_index)
-        _invalidate_cache()
+        invalidate_cache()
         # 데이터 변경 시 재고리스트 요약 시트 동기화
         sync_inventory_summary_sheet()
         return True
@@ -376,7 +376,7 @@ def save_item(data: dict) -> bool:
                 base_qty_str,
                 order_qty_str
             ]])
-        _invalidate_cache()
+        invalidate_cache()
         # 데이터 변경 시 재고리스트 요약 시트 동기화
         sync_inventory_summary_sheet()
         return True

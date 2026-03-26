@@ -6,6 +6,24 @@ import ConfirmModal from '../components/ConfirmModal'
 const Consumables = () => {
     const [activeTab, setActiveTab] = useState('estimate')
     const [selectedMonth, setSelectedMonth] = useState('')
+    const queryClient = useQueryClient()
+    const [isSyncing, setIsSyncing] = useState(false)
+
+    const handleSync = async () => {
+        setIsSyncing(true)
+        try {
+            await axios.get('/api/consumables/clear-cache')
+            queryClient.invalidateQueries(['consumables-items'])
+            queryClient.invalidateQueries(['consumables-months'])
+            queryClient.invalidateQueries(['consumables-estimate'])
+            alert("구글 시트와 동기화되었습니다.")
+        } catch (error) {
+            console.error("Sync error:", error)
+            alert("동기화 중 오류가 발생했습니다.")
+        } finally {
+            setIsSyncing(false)
+        }
+    }
 
     const { data: monthsData } = useQuery({
         queryKey: ['consumables-months'],
@@ -23,17 +41,37 @@ const Consumables = () => {
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                <h1 style={{ margin: 0 }}>소모품 월별 관리 및 견적서</h1>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                    <h1 style={{ margin: 0 }}>📦 소모품 월별 관리 및 견적서</h1>
+                    <button 
+                        onClick={handleSync} 
+                        disabled={isSyncing}
+                        className="btn btn-secondary"
+                        style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '5px',
+                            backgroundColor: '#f8fafc',
+                            color: '#475569',
+                            border: '1px solid #e2e8f0',
+                            padding: '6px 12px',
+                            fontSize: '0.9em'
+                        }}
+                    >
+                        {isSyncing ? '동기화 중...' : '🔄 시트 데이터 동기화'}
+                    </button>
+                </div>
                 
                 {activeTab !== 'create-month' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <label style={{ fontWeight: 'bold' }}>조회 월 선택:</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', padding: '8px 12px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+                        <label style={{ fontWeight: 'bold' }}>📅 조회 월 선택:</label>
                         <select 
                             value={selectedMonth} 
                             onChange={(e) => setSelectedMonth(e.target.value)}
-                            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd', minWidth: '150px' }}
+                            style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ddd', minWidth: '150px' }}
                         >
+                            <option value="">전체 기록</option>
                             {monthsData?.map(m => (
                                 <option key={m} value={m}>{m}</option>
                             ))}
