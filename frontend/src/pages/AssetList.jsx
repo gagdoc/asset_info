@@ -23,6 +23,15 @@ const AssetList = () => {
     const [editingRowIdx, setEditingRowIdx] = useState(null)
     const [modalData, setModalData] = useState({})
 
+    // type(경로 파라미터)가 변경될 때 필터 상태 초기화
+    useEffect(() => {
+        setFilterYear('')
+        setFilterMonth('')
+        setSearchQuery('')
+        setSelectedRows(new Set())
+        setShowDuplicateSummary(false)
+    }, [type])
+
     const { data: assets, isLoading } = useQuery({
         queryKey: ['assets', type],
         queryFn: async () => {
