@@ -6,7 +6,7 @@ import { useToast } from '../components/Toast'
 const Resign = () => {
     const queryClient = useQueryClient()
     const { addToast } = useToast()
-    const [activeTab, setActiveTab] = useState('register')
+    const [activeTab, setActiveTab] = useState('list')
 
     const { data: resigns, isLoading } = useQuery({
         queryKey: ['assets', 'Resign'],
@@ -25,8 +25,8 @@ const Resign = () => {
             </div>
 
             <div className="tabs">
-                <button className={`tab-btn ${activeTab === 'register' ? 'active' : ''}`} onClick={() => setActiveTab('register')}>➕ 퇴사 예정자 등록</button>
                 <button className={`tab-btn ${activeTab === 'list' ? 'active' : ''}`} onClick={() => setActiveTab('list')}>📋 리스트 & 반납 처리</button>
+                <button className={`tab-btn ${activeTab === 'register' ? 'active' : ''}`} onClick={() => setActiveTab('register')}>➕ 퇴사 예정자 등록</button>
             </div>
 
             {activeTab === 'register' && <RegisterTab queryClient={queryClient} addToast={addToast} />}
