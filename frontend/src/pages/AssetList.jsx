@@ -41,6 +41,8 @@ const AssetList = () => {
         enabled: !!type
     })
 
+    const assetsWithIdx = assets?.map((row, idx) => ({ ...row, _originalIdx: idx })) || []
+
     const columns = assets?.length > 0 ? Object.keys(assets[0]) : []
 
     // ── 연도/월 추출 및 데이터 필터링 ──
@@ -98,7 +100,7 @@ const AssetList = () => {
             .filter(v => v !== '' && v !== 'null' && v !== 'undefined')
     )).sort((a,b) => parseInt(a) - parseInt(b))
 
-    let displayedAssets = assets
+    let displayedAssets = assetsWithIdx
     if (type === 'NewHire' || type === 'Resign' || type === 'Lease' || type === 'iPad') {
         if (filterYear) displayedAssets = displayedAssets?.filter(row => getYear(row) === filterYear)
         if (filterMonth) displayedAssets = displayedAssets?.filter(row => getMonth(row) === filterMonth)
@@ -117,12 +119,12 @@ const AssetList = () => {
     // ── 중복 이메일 체크 및 그룹화 ──
     const emailToRows = {}
     if (displayedAssets) {
-        displayedAssets.forEach((row, idx) => {
+        displayedAssets.forEach((row) => {
             const email = row['email'] || row['EMAIL']
             if (email && email.trim() !== '' && email.toLowerCase() !== 'missing') {
                 const normEmail = email.trim().toLowerCase()
                 if (!emailToRows[normEmail]) emailToRows[normEmail] = []
-                emailToRows[normEmail].push({ ...row, originalIdx: idx })
+                emailToRows[normEmail].push({ ...row })
             }
         })
     }
@@ -136,9 +138,11 @@ const AssetList = () => {
     const duplicateEmails = Object.keys(duplicateGroups)
 
     // ── 상세 수정 모달 로직 ──
-    const openEditModal = (row, idx) => {
-        setEditingRowIdx(idx)
-        setModalData({ ...row })
+    const openEditModal = (row) => {
+        setEditingRowIdx(row._originalIdx)
+        const cleanRow = { ...row }
+        delete cleanRow._originalIdx // backend doesn't need this
+        setModalData(cleanRow)
         setIsModalOpen(true)
     }
 
@@ -192,10 +196,10 @@ const AssetList = () => {
     }
 
     const toggleSelectAll = () => {
-        if (selectedRows.size === assets?.length) {
+        if (selectedRows.size === displayedAssets?.length) {
             setSelectedRows(new Set())
         } else {
-            setSelectedRows(new Set(assets?.map((_, i) => i)))
+            setSelectedRows(new Set(displayedAssets?.map(r => r._originalIdx)))
         }
     }
 
@@ -310,16 +314,16 @@ const AssetList = () => {
                                             <td className="checkbox-cell">
                                                 <input
                                                     type="checkbox"
-                                                    checked={selectedRows.has(idx)}
+                                                    checked={selectedRows.has(row._originalIdx)}
                                                     onChange={(e) => {
                                                         const newSet = new Set(selectedRows)
-                                                        e.target.checked ? newSet.add(idx) : newSet.delete(idx)
+                                                        e.target.checked ? newSet.add(row._originalIdx) : newSet.delete(row._originalIdx)
                                                         setSelectedRows(newSet)
                                                     }}
                                                 />
                                             </td>
                                             <td style={{ textAlign: 'center' }}>
-                                                <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => openEditModal(row, idx)}>상세 수정</button>
+                                                <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => openEditModal(row)}>상세 수정</button>
                                             </td>
                                             {columns.map(col => {
                                                 const val = row[col] !== null ? String(row[col]) : '-'
