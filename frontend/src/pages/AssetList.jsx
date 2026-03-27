@@ -227,9 +227,16 @@ const AssetList = () => {
                                     <div key={email} style={{ padding: '8px', backgroundColor: 'white', border: '1px solid #fed7d7', borderRadius: '4px' }}>
                                         <div style={{ fontWeight: 'bold', borderBottom: '1px solid #eee', marginBottom: '4px', paddingBottom: '2px', color: '#e53e3e' }}>{email}</div>
                                         {duplicateGroups[email].map((r, i) => (
-                                            <div key={i} style={{ fontSize: '0.85rem', color: '#4a5568', display: 'flex', justifyContent: 'space-between' }}>
-                                                <span>• {r['S/N'] || r['Model'] || 'ID 미상'}</span>
-                                                <span style={{ color: '#718096' }}>({r['USER'] || r['이름'] || '사용자 미상'})</span>
+                                            <div key={i} style={{ fontSize: '0.85rem', color: '#4a5568', padding: '4px 0', borderTop: i > 0 ? '1px dashed #edf2f7' : 'none' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '500' }}>
+                                                    <span>• {r['S/N'] || r['Model'] || 'ID 미상'}</span>
+                                                    <span style={{ color: '#2d3748' }}>{r['User'] || r['USER'] || r['이름'] || '-'}</span>
+                                                </div>
+                                                {(r['Additional Information'] || r['참고']) && (
+                                                    <div style={{ paddingLeft: '12px', fontSize: '0.75rem', color: '#718096', fontStyle: 'italic' }}>
+                                                        💬 {r['Additional Information'] || r['참고']}
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
