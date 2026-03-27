@@ -11,9 +11,10 @@ except ImportError:
     pass
 
 try:
-    from config import CONSUMABLES_SPREADSHEET_ID, GOOGLE_CREDENTIALS_FILE, GOOGLE_CREDENTIALS_JSON
+    from config import CONSUMABLES_MASTER_SPREADSHEET_ID, CONSUMABLES_OUTBOUND_SPREADSHEET_ID, GOOGLE_CREDENTIALS_FILE, GOOGLE_CREDENTIALS_JSON
 except ImportError:
-    CONSUMABLES_SPREADSHEET_ID = os.environ.get("CONSUMABLES_SPREADSHEET_ID")
+    CONSUMABLES_MASTER_SPREADSHEET_ID = os.environ.get("CONSUMABLES_MASTER_SPREADSHEET_ID")
+    CONSUMABLES_OUTBOUND_SPREADSHEET_ID = os.environ.get("CONSUMABLES_OUTBOUND_SPREADSHEET_ID")
     GOOGLE_CREDENTIALS_FILE = os.environ.get("GOOGLE_CREDENTIALS_FILE", "data/st-asset-project-8000c6bb9905.json")
     GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON")
 
@@ -40,7 +41,14 @@ def _get_cached(key, func, *args):
 def invalidate_cache():
     _CACHE.clear()
 
-def _get_consumables_client():
+def _get_consumables_client(spreadsheet_id: str = None):
+    """
+    구글 시트 클라이언트를 반환합니다.
+    spreadsheet_id가 전달되지 않으면 마스터 시트를 기본으로 반환합니다.
+    """
+    if not spreadsheet_id:
+        spreadsheet_id = CONSUMABLES_MASTER_SPREADSHEET_ID
+
     creds = None
     if GOOGLE_CREDENTIALS_JSON:
         import json
@@ -53,10 +61,10 @@ def _get_consumables_client():
         
     try:
         client = gspread.authorize(creds)
-        spreadsheet = client.open_by_key(CONSUMABLES_SPREADSHEET_ID)
+        spreadsheet = client.open_by_key(spreadsheet_id)
         return client, spreadsheet
     except Exception as e:
-        print(f"⚠️  소모품 Google Sheets 연결 오류: {e}")
+        print(f"⚠️  소모품 Google Sheets 연결 오류 (ID: {spreadsheet_id}): {e}")
         return None, None
 
 def get_available_months():
@@ -64,7 +72,7 @@ def get_available_months():
 
 def create_month_sheet(month_name: str, start_date: str) -> bool:
     try:
-        _, ss = _get_consumables_client()
+        _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
         if not ss: return False
         
         # 이름 중복 확인
@@ -90,7 +98,7 @@ def create_month_sheet(month_name: str, start_date: str) -> bool:
         return False
 
 def _get_available_months_impl():
-    _, ss = _get_consumables_client()
+    _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return []
     # "월" 키워드가 포함된 시트만 출고 내역 시트로 간주
     months = [ws.title for ws in ss.worksheets() if "월" in ws.title and ws.title != "품목리스트" and ws.title != "재고리스트"]
@@ -126,10 +134,11 @@ def get_items_list(month=None):
     return _get_cached(f"items_{month}", lambda: _get_items_list_impl(month=month))
 
 def _get_items_list_impl(month=None):
-    _, ss = _get_consumables_client()
-    if not ss: return []
+    # 품목 정보는 Master 시트에서 가져옴
+    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss_master: return []
     try:
-        ws = ss.worksheet("품목리스트")
+        ws = ss_master.worksheet("품목리스트")
         # A부터 E열까지 (분류, 품목, 가격, 관리여부, 초기수량)
         records = ws.get_values("A2:F")
         items = []
@@ -173,11 +182,15 @@ def _get_items_list_impl(month=None):
             if month and month != "전체":
                 months = [month]
             else:
-                months = [ws.title for ws in ss.worksheets() if "월" in ws.title and ws.title != "품목리스트"]
+                _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
+                if not ss_outbound: return items
+                months = [ws.title for ws in ss_outbound.worksheets() if "월" in ws.title and ws.title != "품목리스트"]
                 
             if months:
+                _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
+                if not ss_outbound: return items
                 ranges = [f"{m}!A2:D" for m in months]
-                batch_res = ss.values_batch_get(ranges)
+                batch_res = ss_outbound.values_batch_get(ranges)
                 dispatched_agg = {name: 0 for name in tracked_item_names}
 
                 for res in batch_res.get('valueRanges', []):
@@ -208,7 +221,7 @@ def get_outbound_history(month: str):
     return _get_cached(f"outbound_{month}", _get_outbound_history_impl, month)
 
 def _get_outbound_history_impl(month: str):
-    _, ss = _get_consumables_client()
+    _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return []
     try:
         ws = ss.worksheet(month)
@@ -304,7 +317,7 @@ def get_estimate(month: str):
 
 def add_outbound(month: str, data: dict) -> bool:
     """월별 출고 시트 왼쪽 A~D열의 빈 칸 맨 아래에 데이터를 기록합니다."""
-    _, ss = _get_consumables_client()
+    _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
         ws = ss.worksheet(month)
@@ -328,7 +341,7 @@ def add_outbound(month: str, data: dict) -> bool:
 
 def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
     """월별 출고 시트의 특정 행(row_index) 데이터를 수정합니다."""
-    _, ss = _get_consumables_client()
+    _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
         ws = ss.worksheet(month)
@@ -348,7 +361,7 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
 
 def delete_outbound_history(month: str, row_index: int) -> bool:
     """월별 출고 시트의 특정 행(row_index)을 완전히 삭제합니다."""
-    _, ss = _get_consumables_client()
+    _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
         ws = ss.worksheet(month)
@@ -363,7 +376,7 @@ def delete_outbound_history(month: str, row_index: int) -> bool:
 
 def save_item(data: dict) -> bool:
     """품목리스트 시트 A~F열에 새로운 품목을 추가하거나 기존 품목(B열 기준)을 수정합니다."""
-    _, ss = _get_consumables_client()
+    _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss: return False
     try:
         ws = ss.worksheet("품목리스트")
@@ -412,14 +425,14 @@ def save_item(data: dict) -> bool:
 
 def get_item_outbound_history(item_name: str):
     """특정 품목의 과거 출고 이력을 모든 월별 시트에서 검색하여 년-월별 집계 가능하게 반환"""
-    _, ss = _get_consumables_client()
-    if not ss: return []
+    _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
+    if not ss_outbound: return []
     
-    months = [ws.title for ws in ss.worksheets() if "월" in ws.title and ws.title != "품목리스트"]
+    months = [ws.title for ws in ss_outbound.worksheets() if "월" in ws.title and ws.title != "품목리스트"]
     if not months: return []
     
     ranges = [f"{m}!A2:D" for m in months]
-    batch_res = ss.values_batch_get(ranges)
+    batch_res = ss_outbound.values_batch_get(ranges)
     
     history = []
     
@@ -442,8 +455,8 @@ def sync_inventory_summary_sheet():
     현재 등록된 모든 소모품의 마스터 정보와 '전체 기간' 기준 재고 현황을 
     '재고리스트' 구글 시트에 일괄 업데이트합니다.
     """
-    _, ss = _get_consumables_client()
-    if not ss: return False
+    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss_master: return False
     
     try:
         # 1. 최신 데이터 가져오기 (전체 기간 기준)
@@ -476,7 +489,7 @@ def sync_inventory_summary_sheet():
             ])
             
         # 3. '재고리스트' 시트에 덮어쓰기
-        ws = ss.worksheet("재고리스트")
+        ws = ss_master.worksheet("재고리스트")
         ws.clear()
         ws.update("A1", rows)
         return True

@@ -19,6 +19,11 @@ const AssetList = () => {
     const [filterYear, setFilterYear] = useState('')
     const [filterMonth, setFilterMonth] = useState('')
 
+    // 상세 수정 모달 상태
+    const [isModalOpen, setIsModalOpen] = useState(false)
+    const [editingRowIdx, setEditingRowIdx] = useState(null)
+    const [modalData, setModalData] = useState({})
+
     const { data: assets, isLoading } = useQuery({
         queryKey: ['assets', type],
         queryFn: async () => {
@@ -31,14 +36,56 @@ const AssetList = () => {
     const columns = assets?.length > 0 ? Object.keys(assets[0]) : []
 
     // ── 연도/월 추출 및 데이터 필터링 ──
-    const getYear = (row) => String(row['년'] || row['년도'] || '')
-    const getMonth = (row) => String(row['월'] || '')
+    const getYear = (row) => {
+        // NewHire, Resign 등 '년', '년도' 컬럼이 직접 있는 경우
+        if (row['년'] || row['년도']) return String(row['년'] || row['년도'])
+        
+        // Lease의 경우 'Lease Date' (MM/DD/YY 또는 YYYY-MM-DD) 컬럼 파싱
+        const ld = row['Lease Date']
+        if (!ld) return ''
+        const dateStr = String(ld)
+        
+        // MM/DD/YY 형식
+        if (dateStr.includes('/')) {
+            const parts = dateStr.split('/')
+            if (parts.length === 3) {
+                const yy = parts[2].trim()
+                return yy.length === 2 ? '20' + yy : yy
+            }
+        }
+        // YYYY-MM-DD 형식
+        if (dateStr.includes('-')) {
+            const parts = dateStr.split('-')
+            if (parts[0].length === 4) return parts[0]
+        }
+        return ''
+    }
+
+    const getMonth = (row) => {
+        // NewHire, Resign 등 '월' 컬럼이 직접 있는 경우
+        if (row['월']) return String(row['월'])
+        
+        // Lease의 경우 'Lease Date' (MM/DD/YY 또는 YYYY-MM-DD) 컬럼 파싱
+        const ld = row['Lease Date']
+        if (!ld) return ''
+        const dateStr = String(ld)
+
+        if (dateStr.includes('/')) {
+            const parts = dateStr.split('/')
+            if (parts.length >= 1) return String(parseInt(parts[0]))
+        }
+        if (dateStr.includes('-')) {
+            const parts = dateStr.split('-')
+            if (parts.length >= 2) return String(parseInt(parts[1]))
+        }
+        return ''
+    }
 
     const uniqueYears = Array.from(new Set(assets?.map(getYear).filter(v => v !== '' && v !== 'null' && v !== 'undefined'))).sort((a,b) => b.localeCompare(a))
     const uniqueMonths = Array.from(new Set(assets?.map(getMonth).filter(v => v !== '' && v !== 'null' && v !== 'undefined'))).sort((a,b) => parseInt(a) - parseInt(b))
 
     let displayedAssets = assets
-    if (type === 'NewHire' || type === 'Resign') {
+    if (type === 'NewHire' || type === 'Resign' || type === 'Lease') {
         if (filterYear) displayedAssets = displayedAssets?.filter(row => getYear(row) === filterYear)
         if (filterMonth) displayedAssets = displayedAssets?.filter(row => getMonth(row) === filterMonth)
     }
@@ -84,6 +131,28 @@ const AssetList = () => {
     const handleKeyDown = (e) => {
         if (e.key === 'Enter') handleCellSave()
         if (e.key === 'Escape') handleCellCancel()
+    }
+
+    // ── 상세 수정 모달 로직 ──
+    const openEditModal = (row, idx) => {
+        setEditingRowIdx(idx)
+        setModalData({ ...row })
+        setIsModalOpen(true)
+    }
+
+    const handleModalSave = async () => {
+        try {
+            await axios.put('/api/assets/row/update', {
+                asset_type: type,
+                row_index: editingRowIdx,
+                updates: modalData
+            })
+            queryClient.invalidateQueries(['assets', type])
+            addToast('상세 수정 완료', 'success')
+            setIsModalOpen(false)
+        } catch (err) {
+            addToast('수정 실패: ' + err.message, 'error')
+        }
     }
 
     // ── Row delete ──
@@ -149,7 +218,7 @@ const AssetList = () => {
             <div className="flex items-center justify-between mb-2">
                 <h1>{titleMap[type] || `${type} Management`}</h1>
                 <div className="flex gap-1">
-                    {(type === 'NewHire' || type === 'Resign') && (
+                    {(type === 'NewHire' || type === 'Resign' || type === 'Lease') && (
                         <div style={{ display: 'flex', gap: '5px', marginRight: '10px' }}>
                             <select className="form-input" style={{ padding: '4px 8px', minWidth: '100px' }} value={filterYear} onChange={e => setFilterYear(e.target.value)}>
                                 <option value="">전체 연도</option>
@@ -189,6 +258,7 @@ const AssetList = () => {
                                         <th style={{ width: '40px' }}>
                                             <input type="checkbox" onChange={toggleSelectAll} checked={selectedRows.size === displayedAssets?.length && displayedAssets?.length > 0} />
                                         </th>
+                                        <th style={{ width: '80px' }}>관리</th>
                                         {columns.map(col => <th key={col}>{col}</th>)}
                                     </tr>
                                 </thead>
@@ -205,6 +275,9 @@ const AssetList = () => {
                                                         setSelectedRows(newSet)
                                                     }}
                                                 />
+                                            </td>
+                                            <td style={{ textAlign: 'center' }}>
+                                                <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => openEditModal(row, idx)}>상세 수정</button>
                                             </td>
                                             {columns.map(col => {
                                                 const isSelected = selectedCell?.row === idx && selectedCell?.col === col
@@ -280,6 +353,36 @@ const AssetList = () => {
                     </div>
                     <div style={{ marginTop: '1rem' }}>
                         <button className="btn" onClick={handleDownload}>📥 현재 데이터 CSV 다운로드</button>
+                    </div>
+                </div>
+            )}
+
+            {/* 상세 수정 모달 */}
+            {isModalOpen && (
+                <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+                    <div className="card" style={{ width: '80%', maxWidth: '800px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '1rem', borderBottom: '1px solid #eee' }}>
+                            <h3 style={{ margin: 0 }}>📍 상세 정보 수정</h3>
+                            <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>✖</button>
+                        </div>
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                                {columns.map(col => (
+                                    <div key={col} className="form-group">
+                                        <label className="form-label">{col}</label>
+                                        <input 
+                                            className="form-input"
+                                            value={modalData[col] !== null ? String(modalData[col]) : ''} 
+                                            onChange={e => setModalData({ ...modalData, [col]: e.target.value })}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div style={{ padding: '1rem', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                            <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>취소</button>
+                            <button className="btn btn-primary" onClick={handleModalSave}>💾 모든 변경사항 저장</button>
+                        </div>
                     </div>
                 </div>
             )}

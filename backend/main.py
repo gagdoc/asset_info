@@ -45,7 +45,7 @@ frontend_build_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspa
 
 if os.path.exists(frontend_build_path):
     # Serve static assets
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_build_path, "assets")), name="assets")
+    app.mount("/static", StaticFiles(directory=os.path.join(frontend_build_path, "static")), name="static")
 
     # Catch-all route for React SPA routing
     @app.get("/{full_path:path}")
