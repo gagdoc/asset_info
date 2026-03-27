@@ -84,6 +84,7 @@ def get_dashboard_integrated():
     """
     Returns the merged 'All Employee Info' view:
     All_User + Lease + iPad + Monitor + Teams + Printer + Resign info
+    Now supports multiple assets per user (grouped by email).
     """
     dfs = load_from_db()
     if "All_User" not in dfs or dfs["All_User"].empty:
@@ -91,6 +92,13 @@ def get_dashboard_integrated():
 
     view_df = dfs["All_User"].copy()
     
+    # Drop known asset columns from All_User to avoid merge conflicts (_x/_y)
+    # This ensures assets are pulled fresh from the dedicated tables as requested.
+    asset_cols_to_drop = ["Lease_List", "Ipad_List", "TeamsNum", "Printer", "Monitor", "모니터"]
+    cols_present = [c for c in asset_cols_to_drop if c in view_df.columns]
+    if cols_present:
+        view_df.drop(columns=cols_present, inplace=True)
+
     # Filter valid emails
     if "email" in view_df.columns:
         view_df["email"] = view_df["email"].astype(str).str.strip().str.lower()
@@ -98,56 +106,64 @@ def get_dashboard_integrated():
     else:
         return []
 
-    # Merge Logic (ported from dashboard.py)
+    # Helper: Group by email and join values with duplicate marker
+    def _group_asset(df, email_col, val_col, target_key):
+        if df.empty or email_col not in df.columns or val_col not in df.columns:
+            return pd.DataFrame(columns=["email", target_key])
+        
+        subset = df[[email_col, val_col]].dropna().copy()
+        subset["email"] = subset["email"].astype(str).str.strip().str.lower()
+        subset[val_col] = subset[val_col].astype(str).str.strip()
+        
+        # Filter out invalid values
+        subset = subset[~subset[val_col].isin(["", "-", "nan", "None", "null"])]
+        if subset.empty:
+            return pd.DataFrame(columns=["email", target_key])
+
+        # Group and Join
+        def _join_logic(x):
+            unique_vals = sorted(list(set(x)))
+            if not unique_vals: return "-"
+            prefix = "[중복!] " if len(unique_vals) > 1 else ""
+            return prefix + ", ".join(unique_vals)
+
+        grouped = subset.groupby("email")[val_col].apply(_join_logic).reset_index()
+        return grouped.rename(columns={val_col: target_key})
+
     # 1. Lease
-    if "Lease" in dfs and not dfs["Lease"].empty and "email" in dfs["Lease"].columns:
-        try:
-            cols = dfs["Lease"].columns
-            target_col = "S/N" if "S/N" in cols else (cols[3] if len(cols) > 3 else cols[0])
-            subset = dfs["Lease"][["email", target_col]].rename(columns={target_col: "Lease_List"}).drop_duplicates("email")
-            subset["email"] = subset["email"].astype(str).str.strip().str.lower()
-            view_df = pd.merge(view_df, subset, on="email", how="left")
-        except: pass
+    if "Lease" in dfs and not dfs["Lease"].empty:
+        cols = dfs["Lease"].columns
+        target_col = "S/N" if "S/N" in cols else (cols[3] if len(cols) > 3 else cols[0])
+        l_sub = _group_asset(dfs["Lease"], "email", target_col, "Lease_List")
+        view_df = pd.merge(view_df, l_sub, on="email", how="left")
 
     # 2. iPad
-    if "iPad" in dfs and not dfs["iPad"].empty and "email" in dfs["iPad"].columns:
-        try:
-            cols = dfs["iPad"].columns
-            target_col = "S/N" if "S/N" in cols else ("Model" if "Model" in cols else cols[0])
-            subset = dfs["iPad"][["email", target_col]].rename(columns={target_col: "Ipad_List"}).drop_duplicates("email")
-            subset["email"] = subset["email"].astype(str).str.strip().str.lower()
-            view_df = pd.merge(view_df, subset, on="email", how="left")
-        except: pass
+    if "iPad" in dfs and not dfs["iPad"].empty:
+        cols = dfs["iPad"].columns
+        target_col = "S/N" if "S/N" in cols else ("Model" if "Model" in cols else cols[0])
+        i_sub = _group_asset(dfs["iPad"], "email", target_col, "Ipad_List")
+        view_df = pd.merge(view_df, i_sub, on="email", how="left")
 
     # 3. Monitor
-    if "Monitor" in dfs and not dfs["Monitor"].empty and "email" in dfs["Monitor"].columns:
-        try:
-            subset = dfs["Monitor"][["email", "Model"]].rename(columns={"Model": "모니터"}).drop_duplicates("email")
-            subset["email"] = subset["email"].astype(str).str.strip().str.lower()
-            view_df = pd.merge(view_df, subset, on="email", how="left")
-        except: pass
+    if "Monitor" in dfs and not dfs["Monitor"].empty:
+        m_sub = _group_asset(dfs["Monitor"], "email", "Model", "Monitor")
+        view_df = pd.merge(view_df, m_sub, on="email", how="left")
 
     # 4. Teams
-    if "Teams" in dfs and not dfs["Teams"].empty and "email" in dfs["Teams"].columns:
-        try:
-            cols = dfs["Teams"].columns
-            target_col = next((c for c in ["LineURI", "Number", "전화번호", "Number formated for Country"] if c in cols), None)
-            if target_col:
-                subset = dfs["Teams"][["email", target_col]].rename(columns={target_col: "TeamsNum"}).drop_duplicates("email")
-                subset["email"] = subset["email"].astype(str).str.strip().str.lower()
-                view_df = pd.merge(view_df, subset, on="email", how="left")
-        except: pass
+    if "Teams" in dfs and not dfs["Teams"].empty:
+        cols = dfs["Teams"].columns
+        target_col = next((c for c in ["LineURI", "Number", "전화번호", "Number formated for Country"] if c in cols), None)
+        if target_col:
+            t_sub = _group_asset(dfs["Teams"], "email", target_col, "TeamsNum")
+            view_df = pd.merge(view_df, t_sub, on="email", how="left")
 
     # 5. Printer
-    if "Printer" in dfs and not dfs["Printer"].empty and "email" in dfs["Printer"].columns:
-        try:
-            cols = dfs["Printer"].columns
-            target_col = next((c for c in ["Additional Information 2", "프린터정보", "Model"] if c in cols), None)
-            if target_col:
-                subset = dfs["Printer"][["email", target_col]].rename(columns={target_col: "Printer"}).drop_duplicates("email")
-                subset["email"] = subset["email"].astype(str).str.strip().str.lower()
-                view_df = pd.merge(view_df, subset, on="email", how="left")
-        except: pass
+    if "Printer" in dfs and not dfs["Printer"].empty:
+        cols = dfs["Printer"].columns
+        target_col = next((c for c in ["Additional Information 2", "프린터정보", "Model"] if c in cols), None)
+        if target_col:
+            p_sub = _group_asset(dfs["Printer"], "email", target_col, "Printer")
+            view_df = pd.merge(view_df, p_sub, on="email", how="left")
 
     # 6. Resign Info
     if "Resign" in dfs and not dfs["Resign"].empty and "email" in dfs["Resign"].columns:
@@ -166,18 +182,7 @@ def get_dashboard_integrated():
             view_df = pd.merge(view_df, r_sub, on="email", how="left")
         except: pass
 
-    # Cleanup merge artifacts
-    def _consolidate(df):
-        for c in df.columns:
-            if c.endswith("_x"):
-                base = c[:-2]
-                y = base + "_y"
-                if y in df.columns:
-                    df[base] = df[c].combine_first(df[y])
-                    df.drop([c, y], axis=1, inplace=True)
-        return df
-
-    view_df = _consolidate(view_df)
+    # Fill missing cols and handle NaNs
     view_df["퇴사정보"] = view_df.get("퇴사정보", pd.Series()).fillna("-")
 
     if "모니터" in view_df.columns and "Monitor" not in view_df.columns:
