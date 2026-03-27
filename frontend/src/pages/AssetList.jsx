@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
@@ -71,7 +71,23 @@ const AssetList = () => {
     }
 
     const uniqueYears = Array.from(new Set(assets?.map(getYear).filter(v => v !== '' && v !== 'null' && v !== 'undefined'))).sort((a,b) => b.localeCompare(a))
-    const uniqueMonths = Array.from(new Set(assets?.map(getMonth).filter(v => v !== '' && v !== 'null' && v !== 'undefined'))).sort((a,b) => parseInt(a) - parseInt(b))
+    
+    // filterYear가 변경될 때 유효하지 않은 filterMonth 초기화
+    useEffect(() => {
+        if (filterYear && filterMonth) {
+            const yearFilteredAssets = assets?.filter(row => getYear(row) === filterYear)
+            const availableMonths = new Set(yearFilteredAssets?.map(getMonth))
+            if (!availableMonths.has(filterMonth)) {
+                setFilterMonth('')
+            }
+        }
+    }, [filterYear])
+
+    const uniqueMonths = Array.from(new Set(
+        (filterYear ? assets?.filter(row => getYear(row) === filterYear) : assets)
+            ?.map(getMonth)
+            .filter(v => v !== '' && v !== 'null' && v !== 'undefined')
+    )).sort((a,b) => parseInt(a) - parseInt(b))
 
     let displayedAssets = assets
     if (type === 'NewHire' || type === 'Resign' || type === 'Lease' || type === 'iPad') {
