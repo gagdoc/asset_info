@@ -11,6 +11,7 @@ const AssetList = () => {
     const [selectedRows, setSelectedRows] = useState(new Set())
     const [activeTab, setActiveTab] = useState('list')
     const [showDuplicateSummary, setShowDuplicateSummary] = useState(false)
+    const [searchQuery, setSearchQuery] = useState('')
     const fileInputRef = useRef(null)
     
     // 년, 월 필터 상태 추가
@@ -76,6 +77,16 @@ const AssetList = () => {
     if (type === 'NewHire' || type === 'Resign' || type === 'Lease') {
         if (filterYear) displayedAssets = displayedAssets?.filter(row => getYear(row) === filterYear)
         if (filterMonth) displayedAssets = displayedAssets?.filter(row => getMonth(row) === filterMonth)
+    }
+
+    // ── 검색 필터링 ──
+    if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim()
+        displayedAssets = displayedAssets?.filter(row => {
+            return Object.values(row).some(val => 
+                val !== null && String(val).toLowerCase().includes(q)
+            )
+        })
     }
 
     // ── 중복 이메일 체크 및 그룹화 ──
@@ -180,9 +191,19 @@ const AssetList = () => {
         <div>
             <div className="flex items-center justify-between mb-2">
                 <h1>{titleMap[type] || `${type} Management`}</h1>
-                <div className="flex gap-1">
+                <div className="flex gap-1" style={{ alignItems: 'center' }}>
                     {(type === 'NewHire' || type === 'Resign' || type === 'Lease') && (
                         <div style={{ display: 'flex', gap: '5px', marginRight: '10px' }}>
+                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                <span style={{ position: 'absolute', left: '10px', color: '#9ca3af' }}>🔍</span>
+                                <input 
+                                    className="form-input" 
+                                    style={{ padding: '4px 10px 4px 30px', minWidth: '200px' }} 
+                                    placeholder="전체 검색..." 
+                                    value={searchQuery} 
+                                    onChange={e => setSearchQuery(e.target.value)} 
+                                />
+                            </div>
                             <select className="form-input" style={{ padding: '4px 8px', minWidth: '100px' }} value={filterYear} onChange={e => setFilterYear(e.target.value)}>
                                 <option value="">전체 연도</option>
                                 {uniqueYears.map(y => <option key={y} value={y}>{y}년</option>)}
@@ -204,7 +225,7 @@ const AssetList = () => {
             </div>
 
             <div className="tabs">
-                <button className={`tab-btn ${activeTab === 'list' ? 'active' : ''}`} onClick={() => setActiveTab('list')}>📋 {type === 'Lease' ? '자산 리스트' : '리스트 편집'}</button>
+                <button className={`tab-btn ${activeTab === 'list' ? 'active' : ''}`} onClick={() => setActiveTab('list')}>📋 {type === 'Lease' ? '리스 목록' : '리스트 편집'}</button>
                 {type !== 'Lease' && <button className={`tab-btn ${activeTab === 'upload' ? 'active' : ''}`} onClick={() => setActiveTab('upload')}>📂 파일 등록</button>}
             </div>
 
