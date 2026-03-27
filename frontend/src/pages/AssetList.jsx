@@ -10,6 +10,7 @@ const AssetList = () => {
     const { addToast } = useToast()
     const [selectedRows, setSelectedRows] = useState(new Set())
     const [activeTab, setActiveTab] = useState('list')
+    const [showDuplicateSummary, setShowDuplicateSummary] = useState(false)
     const fileInputRef = useRef(null)
     
     // 년, 월 필터 상태 추가
@@ -77,18 +78,26 @@ const AssetList = () => {
         if (filterMonth) displayedAssets = displayedAssets?.filter(row => getMonth(row) === filterMonth)
     }
 
-    // ── 중복 이메일 체크 ──
-    const emailCounts = {}
+    // ── 중복 이메일 체크 및 그룹화 ──
+    const emailToRows = {}
     if (displayedAssets) {
-        displayedAssets.forEach(row => {
+        displayedAssets.forEach((row, idx) => {
             const email = row['email'] || row['EMAIL']
             if (email && email.trim() !== '' && email.toLowerCase() !== 'missing') {
                 const normEmail = email.trim().toLowerCase()
-                emailCounts[normEmail] = (emailCounts[normEmail] || 0) + 1
+                if (!emailToRows[normEmail]) emailToRows[normEmail] = []
+                emailToRows[normEmail].push({ ...row, originalIdx: idx })
             }
         })
     }
-    const duplicateEmails = Object.keys(emailCounts).filter(email => emailCounts[email] > 1)
+    const duplicateGroups = Object.keys(emailToRows)
+        .filter(email => emailToRows[email].length > 1)
+        .reduce((acc, email) => {
+            acc[email] = emailToRows[email]
+            return acc
+        }, {})
+    
+    const duplicateEmails = Object.keys(duplicateGroups)
 
     // ── 상세 수정 모달 로직 ──
     const openEditModal = (row, idx) => {
@@ -202,8 +211,30 @@ const AssetList = () => {
             {activeTab === 'list' && (
                 <div className="card" style={{ padding: 0 }}>
                     {duplicateEmails.length > 0 && (
-                        <div className="alert alert-danger" style={{ margin: '1rem', borderRadius: '0.5rem' }}>
-                            🚨 <strong>중복 이메일 감지</strong>: 현재 리스트에 {duplicateEmails.length}개의 중복된 이메일 주소가 있습니다. (아래 빨간색 강조 표시)
+                        <div className="alert alert-danger" style={{ margin: '1rem', borderRadius: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>🚨 <strong>중복 이메일 감지</strong>: 현재 리스트에 {duplicateEmails.length}개의 중복된 이메일 주소가 있습니다.</div>
+                            <button className="btn btn-danger btn-sm" onClick={() => setShowDuplicateSummary(!showDuplicateSummary)}>
+                                {showDuplicateSummary ? '요약 닫기' : '중복 내역 보기'}
+                            </button>
+                        </div>
+                    )}
+
+                    {showDuplicateSummary && duplicateEmails.length > 0 && (
+                        <div style={{ margin: '0 1rem 1rem', padding: '1rem', backgroundColor: '#fff5f5', border: '1px solid #feb2b2', borderRadius: '0.5rem' }}>
+                            <h4 style={{ margin: '0 0 0.5rem', color: '#c53030' }}>📍 중복 할당 상세 내역</h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '10px' }}>
+                                {duplicateEmails.map(email => (
+                                    <div key={email} style={{ padding: '8px', backgroundColor: 'white', border: '1px solid #fed7d7', borderRadius: '4px' }}>
+                                        <div style={{ fontWeight: 'bold', borderBottom: '1px solid #eee', marginBottom: '4px', paddingBottom: '2px', color: '#e53e3e' }}>{email}</div>
+                                        {duplicateGroups[email].map((r, i) => (
+                                            <div key={i} style={{ fontSize: '0.85rem', color: '#4a5568', display: 'flex', justifyContent: 'space-between' }}>
+                                                <span>• {r['S/N'] || r['Model'] || 'ID 미상'}</span>
+                                                <span style={{ color: '#718096' }}>({r['USER'] || r['이름'] || '사용자 미상'})</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
                     {displayedAssets?.length > 0 ? (
