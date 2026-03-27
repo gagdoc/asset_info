@@ -36,8 +36,8 @@ const AssetList = () => {
 
     // ── 연도/월 추출 및 데이터 필터링 ──
     const getYear = (row) => {
-        if (type !== 'Lease' && (row['년'] || row['년도'])) return String(row['년'] || row['년도'])
-        const ld = row['Lease Date']
+        if (type !== 'Lease' && type !== 'iPad' && (row['년'] || row['년도'])) return String(row['년'] || row['년도'])
+        const ld = row['Lease Date'] || row['Date']
         if (!ld) return ''
         const dateStr = String(ld)
         if (dateStr.includes('/')) {
@@ -55,8 +55,8 @@ const AssetList = () => {
     }
 
     const getMonth = (row) => {
-        if (type !== 'Lease' && row['월']) return String(row['월'])
-        const ld = row['Lease Date']
+        if (type !== 'Lease' && type !== 'iPad' && row['월']) return String(row['월'])
+        const ld = row['Lease Date'] || row['Date']
         if (!ld) return ''
         const dateStr = String(ld)
         if (dateStr.includes('/')) {
@@ -74,7 +74,7 @@ const AssetList = () => {
     const uniqueMonths = Array.from(new Set(assets?.map(getMonth).filter(v => v !== '' && v !== 'null' && v !== 'undefined'))).sort((a,b) => parseInt(a) - parseInt(b))
 
     let displayedAssets = assets
-    if (type === 'NewHire' || type === 'Resign' || type === 'Lease') {
+    if (type === 'NewHire' || type === 'Resign' || type === 'Lease' || type === 'iPad') {
         if (filterYear) displayedAssets = displayedAssets?.filter(row => getYear(row) === filterYear)
         if (filterMonth) displayedAssets = displayedAssets?.filter(row => getMonth(row) === filterMonth)
     }
@@ -192,7 +192,7 @@ const AssetList = () => {
             <div className="flex items-center justify-between mb-2">
                 <h1>{titleMap[type] || `${type} Management`}</h1>
                 <div className="flex gap-1" style={{ alignItems: 'center' }}>
-                    {(type === 'NewHire' || type === 'Resign' || type === 'Lease') && (
+                    {(type === 'NewHire' || type === 'Resign' || type === 'Lease' || type === 'iPad') && (
                         <div style={{ display: 'flex', gap: '5px', marginRight: '10px' }}>
                             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                                 <span style={{ position: 'absolute', left: '10px', color: '#9ca3af' }}>🔍</span>
@@ -225,8 +225,10 @@ const AssetList = () => {
             </div>
 
             <div className="tabs">
-                <button className={`tab-btn ${activeTab === 'list' ? 'active' : ''}`} onClick={() => setActiveTab('list')}>📋 {type === 'Lease' ? '리스 목록' : '리스트 편집'}</button>
-                {type !== 'Lease' && <button className={`tab-btn ${activeTab === 'upload' ? 'active' : ''}`} onClick={() => setActiveTab('upload')}>📂 파일 등록</button>}
+                <button className={`tab-btn ${activeTab === 'list' ? 'active' : ''}`} onClick={() => setActiveTab('list')}>
+                    📋 {type === 'Lease' ? '리스 목록' : type === 'iPad' ? '아이패드 목록' : '리스트 편집'}
+                </button>
+                {type !== 'Lease' && type !== 'iPad' && <button className={`tab-btn ${activeTab === 'upload' ? 'active' : ''}`} onClick={() => setActiveTab('upload')}>📂 파일 등록</button>}
             </div>
 
             {activeTab === 'list' && (
