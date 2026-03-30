@@ -20,6 +20,8 @@ app = FastAPI(title=PAGE_TITLE)
 origins = [
     "http://localhost:5173",  # Vite default port
     "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
 ]
 # Allow dynamic origin from env (for Cloud Run if needed)
 if "ALLOWED_ORIGIN" in os.environ:

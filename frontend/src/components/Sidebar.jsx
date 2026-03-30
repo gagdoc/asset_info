@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { FaHome, FaLaptop, FaTabletAlt, FaPrint, FaDesktop, FaPhone, FaUserPlus, FaUserTimes, FaBoxOpen, FaCog, FaUpload } from 'react-icons/fa'
+import { FaHome, FaLaptop, FaTabletAlt, FaPrint, FaDesktop, FaPhone, FaUserPlus, FaUserTimes, FaBoxOpen, FaCog, FaUpload, FaExternalLinkAlt } from 'react-icons/fa'
 
 const Sidebar = () => {
     const assetItems = [
@@ -52,6 +52,12 @@ const Sidebar = () => {
                     {item.icon} <span>{item.name}</span>
                 </NavLink>
             ))}
+
+            <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                <NavLink to="/register" className="nav-link" style={{ color: '#818cf8', fontWeight: '600' }}>
+                    <FaExternalLinkAlt /> <span>출고 등록 (자가용)</span>
+                </NavLink>
+            </div>
         </aside>
     )
 }

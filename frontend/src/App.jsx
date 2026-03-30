@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ToastProvider } from './components/Toast'
 import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
@@ -8,12 +8,16 @@ import NewHire from './pages/NewHire'
 import Resign from './pages/Resign'
 import DeptConfig from './pages/DeptConfig'
 import ExcelUpload from './pages/ExcelUpload'
+import SelfOutbound from './pages/SelfOutbound'
 
 function App() {
+  const location = useLocation()
+  const isRegisterPage = location.pathname === '/register'
+
   return (
     <ToastProvider>
-      <div className="app-container">
-        <Sidebar />
+      <div className={`app-container ${isRegisterPage ? 'centered-layout' : ''}`}>
+        {!isRegisterPage && <Sidebar />}
         <main className="main-content">
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -24,6 +28,7 @@ function App() {
             <Route path="/resign" element={<Resign />} />
             <Route path="/config" element={<DeptConfig />} />
             <Route path="/upload" element={<ExcelUpload />} />
+            <Route path="/register" element={<SelfOutbound />} />
           </Routes>
         </main>
       </div>

@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import ConfirmModal from '../components/ConfirmModal'
+import SearchableSelect from '../components/SearchableSelect'
+import LoadingModal from '../components/LoadingModal'
 
 const Consumables = () => {
     const [activeTab, setActiveTab] = useState('estimate')
@@ -123,6 +125,8 @@ const Consumables = () => {
             {(activeTab === 'estimate' || activeTab === 'outbound') && !selectedMonth && (
                 <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>조회할 월(Month) 데이터를 불러오는 중입니다...</div>
             )}
+
+            <LoadingModal isOpen={isSyncing} message="구글 시트와 동기화 중입니다..." />
         </div>
     )
 }
@@ -253,7 +257,7 @@ const EstimateTab = ({ month }) => {
                                 <td>{row.category}</td>
                                 <td><strong>{row.item_name}</strong></td>
                                 <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{row.total_qty}</td>
-                                <td style={{ fontSize: '0.9em', color: '#555' }}>{row.users}</td>
+                                <td style={{ fontSize: '0.9em', color: '#555' }}>{row.users?.replace(/\s*\(.*?\)/g, '').replace(/\./g, ' ')}</td>
                                 <td style={{ textAlign: 'right' }}>{row.unit_price?.toLocaleString()}</td>
                                 <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#e53e3e' }}>{row.total_price?.toLocaleString()}</td>
                             </tr>
@@ -279,109 +283,7 @@ const EstimateTab = ({ month }) => {
 }
 
 
-// 검색 가능한 선택 컴포넌트
-const SearchableSelect = ({ options, value, onChange, placeholder, displayField = "label", valueField = "value", searchFields = ["label"], width = "200px" }) => {
-    const [isOpen, setIsOpen] = useState(false)
-    const [searchTerm, setSearchTerm] = useState('')
-    const containerRef = useRef(null)
-
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (containerRef.current && !containerRef.current.contains(event.target)) {
-                setIsOpen(false)
-            }
-        }
-        document.addEventListener('mousedown', handleClickOutside)
-        return () => document.removeEventListener('mousedown', handleClickOutside)
-    }, [])
-
-    const filteredOptions = useMemo(() => {
-        if (!searchTerm) return options || []
-        const term = searchTerm.toLowerCase()
-        return (options || []).filter(opt => 
-            searchFields.some(field => String(opt[field] || '').toLowerCase().includes(term))
-        )
-    }, [options, searchTerm, searchFields])
-
-    const selectedOption = useMemo(() => 
-        (options || []).find(opt => opt[valueField] === value), 
-    [options, value, valueField])
-
-    return (
-        <div ref={containerRef} style={{ position: 'relative', width }}>
-            <div 
-                onClick={() => setIsOpen(!isOpen)}
-                style={{ 
-                    padding: '8px 12px', 
-                    border: '1px solid #ddd', 
-                    borderRadius: '4px', 
-                    backgroundColor: '#fff',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    minHeight: '38px'
-                }}
-            >
-                <span style={{ color: selectedOption ? '#000' : '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {selectedOption ? selectedOption[displayField] : placeholder}
-                </span>
-                <span style={{ fontSize: '0.8em', color: '#666' }}>{isOpen ? '▲' : '▼'}</span>
-            </div>
-
-            {isOpen && (
-                <div style={{ 
-                    position: 'absolute', 
-                    top: '100%', 
-                    left: 0, 
-                    right: 0, 
-                    zIndex: 100, 
-                    backgroundColor: '#fff', 
-                    border: '1px solid #ddd', 
-                    borderRadius: '4px', 
-                    marginTop: '4px',
-                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-                    maxHeight: '250px',
-                    overflowY: 'auto'
-                }}>
-                    <div style={{ padding: '8px', borderBottom: '1px solid #eee', position: 'sticky', top: 0, backgroundColor: '#fff' }}>
-                        <input 
-                            autoFocus
-                            type="text" 
-                            placeholder="검색..." 
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            style={{ width: '100%', padding: '6px', border: '1px solid #ddd', borderRadius: '4px', boxSizing: 'border-box' }}
-                        />
-                    </div>
-                    {filteredOptions.length > 0 ? filteredOptions.map((opt, idx) => (
-                        <div 
-                            key={idx}
-                            onClick={() => {
-                                onChange(opt[valueField])
-                                setIsOpen(false)
-                                setSearchTerm('')
-                            }}
-                            style={{ 
-                                padding: '8px 12px', 
-                                cursor: 'pointer',
-                                backgroundColor: value === opt[valueField] ? '#f0f9ff' : 'transparent',
-                                borderBottom: '1px solid #f9f9f9'
-                            }}
-                            onMouseOver={(e) => e.target.style.backgroundColor = '#f8fafc'}
-                            onMouseOut={(e) => e.target.style.backgroundColor = value === opt[valueField] ? '#f0f9ff' : 'transparent'}
-                        >
-                            <div style={{ fontWeight: value === opt[valueField] ? 'bold' : 'normal' }}>{opt[displayField]}</div>
-                            {opt.subLabel && <div style={{ fontSize: '0.8em', color: '#666' }}>{opt.subLabel}</div>}
-                        </div>
-                    )) : (
-                        <div style={{ padding: '12px', textAlign: 'center', color: '#999' }}>검색 결과가 없습니다.</div>
-                    )}
-                </div>
-            )}
-        </div>
-    )
-}
+// SearchableSelect deleted (moved to components)
 
 const OutboundTab = ({ month }) => {
     const queryClient = useQueryClient()
@@ -465,14 +367,17 @@ const OutboundTab = ({ month }) => {
     [itemsList])
 
     const userOptions = useMemo(() => 
-        (usersList || []).map(u => ({ 
-            label: `${u.이름 || u.NAME} (${u.BU})`, 
-            value: `${u.이름 || u.NAME} (${u.BU})`,
-            subLabel: u.email,
-            name: u.이름 || u.NAME,
-            email: u.email,
-            bu: u.BU
-        })).sort((a, b) => (a.name || '').localeCompare(b.name || '')), 
+        (usersList || []).map(u => {
+            const nameOnly = (u.이름 || u.NAME || '').replace(/\./g, ' ');
+            return { 
+                label: nameOnly, 
+                value: nameOnly,
+                subLabel: `${u.email}${u.BU ? ` (${u.BU})` : ''}`,
+                name: nameOnly,
+                email: u.email,
+                bu: u.BU
+            };
+        }).sort((a, b) => (a.name || '').localeCompare(b.name || '')), 
     [usersList])
 
     const mutation = useMutation({
@@ -529,7 +434,7 @@ const OutboundTab = ({ month }) => {
                         <input type="number" min="1" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} style={{ padding: '8px', width: '80px', borderRadius: '4px', border: '1px solid #ddd' }} required />
                     </div>
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>사용자 이름(팀)</label>
+                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>사용자 이름</label>
                         <SearchableSelect 
                             options={userOptions} 
                             value={formData.user_name} 
@@ -540,8 +445,11 @@ const OutboundTab = ({ month }) => {
                         />
                     </div>
                     <button type="submit" className="btn btn-primary" disabled={mutation.isLoading}>
-                        {mutation.isLoading ? '저장 중...' : '확인'}
+                        확인
                     </button>
+                    <LoadingModal isOpen={mutation.isLoading} message="출고 내역을 구글 시트에 기록 중입니다..." />
+                    <LoadingModal isOpen={updateMutation.isLoading} message="출고 내역을 수정하고 있습니다..." />
+                    <LoadingModal isOpen={deleteMutation.isLoading} message="출고 내역을 삭제하고 있습니다..." />
                 </form>
             )}
 
@@ -551,7 +459,7 @@ const OutboundTab = ({ month }) => {
                         <th>출고 날짜</th>
                         <th>출고 품목명</th>
                         <th>지급 수량</th>
-                        <th>지급 대상자(팀)</th>
+                        <th>지급 대상자</th>
                         <th style={{ textAlign: 'center', width: '120px' }}>관리</th>
                     </tr>
                 </thead>
@@ -597,7 +505,7 @@ const OutboundTab = ({ month }) => {
                                         <td>{row.date}</td>
                                         <td>{row.item_name}</td>
                                         <td style={{ textAlign: 'center' }}>{row.quantity}</td>
-                                        <td>{row.user_name}</td>
+                                        <td>{row.user_name?.replace(/\s*\(.*\)$/, '').replace(/\./g, ' ')}</td>
                                         <td style={{ textAlign: 'center' }}>
                                             <button className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8em', marginRight: '4px' }} onClick={() => handleEditStart(row)}>✏️</button>
                                             <button className="btn btn-danger" style={{ padding: '2px 6px', fontSize: '0.8em' }} onClick={() => handleDelete(row.row_index)} disabled={deleteMutation.isLoading}>🗑️</button>
@@ -720,8 +628,9 @@ const ItemsTab = ({ month }) => {
                     )}
 
                     <button type="submit" className="btn btn-primary" disabled={mutation.isLoading} style={{ marginLeft: 'auto' }}>
-                        {mutation.isLoading ? '저장 중...' : '저장하기'}
+                        저장하기
                     </button>
+                    <LoadingModal isOpen={mutation.isLoading} message="소모품 정보를 저장 중입니다..." />
                     <div style={{ fontSize: '0.8em', color: '#666', marginTop: '5px', width: '100%' }}>* 품목명이 같을 경우 수정되고, 다를 경우 덧붙여집니다. 재고 추적 시 '현재 재고'를 입력해두면 총 출고량을 차감한 진짜 잔여 재고를 자동 계산합니다.</div>
                 </form>
             )}

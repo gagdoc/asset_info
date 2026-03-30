@@ -36,6 +36,7 @@ frontend/.idea/
 # OS Files
 .DS_Store
 Thumbs.db
+uvicorn.log
 
 # Security & Secrets
 .env
