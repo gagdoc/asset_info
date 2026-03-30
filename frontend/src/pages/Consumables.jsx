@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import ConfirmModal from '../components/ConfirmModal'
@@ -278,6 +278,111 @@ const EstimateTab = ({ month }) => {
     )
 }
 
+
+// 검색 가능한 선택 컴포넌트
+const SearchableSelect = ({ options, value, onChange, placeholder, displayField = "label", valueField = "value", searchFields = ["label"], width = "200px" }) => {
+    const [isOpen, setIsOpen] = useState(false)
+    const [searchTerm, setSearchTerm] = useState('')
+    const containerRef = useRef(null)
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (containerRef.current && !containerRef.current.contains(event.target)) {
+                setIsOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
+
+    const filteredOptions = useMemo(() => {
+        if (!searchTerm) return options || []
+        const term = searchTerm.toLowerCase()
+        return (options || []).filter(opt => 
+            searchFields.some(field => String(opt[field] || '').toLowerCase().includes(term))
+        )
+    }, [options, searchTerm, searchFields])
+
+    const selectedOption = useMemo(() => 
+        (options || []).find(opt => opt[valueField] === value), 
+    [options, value, valueField])
+
+    return (
+        <div ref={containerRef} style={{ position: 'relative', width }}>
+            <div 
+                onClick={() => setIsOpen(!isOpen)}
+                style={{ 
+                    padding: '8px 12px', 
+                    border: '1px solid #ddd', 
+                    borderRadius: '4px', 
+                    backgroundColor: '#fff',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    minHeight: '38px'
+                }}
+            >
+                <span style={{ color: selectedOption ? '#000' : '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {selectedOption ? selectedOption[displayField] : placeholder}
+                </span>
+                <span style={{ fontSize: '0.8em', color: '#666' }}>{isOpen ? '▲' : '▼'}</span>
+            </div>
+
+            {isOpen && (
+                <div style={{ 
+                    position: 'absolute', 
+                    top: '100%', 
+                    left: 0, 
+                    right: 0, 
+                    zIndex: 100, 
+                    backgroundColor: '#fff', 
+                    border: '1px solid #ddd', 
+                    borderRadius: '4px', 
+                    marginTop: '4px',
+                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                    maxHeight: '250px',
+                    overflowY: 'auto'
+                }}>
+                    <div style={{ padding: '8px', borderBottom: '1px solid #eee', position: 'sticky', top: 0, backgroundColor: '#fff' }}>
+                        <input 
+                            autoFocus
+                            type="text" 
+                            placeholder="검색..." 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            style={{ width: '100%', padding: '6px', border: '1px solid #ddd', borderRadius: '4px', boxSizing: 'border-box' }}
+                        />
+                    </div>
+                    {filteredOptions.length > 0 ? filteredOptions.map((opt, idx) => (
+                        <div 
+                            key={idx}
+                            onClick={() => {
+                                onChange(opt[valueField])
+                                setIsOpen(false)
+                                setSearchTerm('')
+                            }}
+                            style={{ 
+                                padding: '8px 12px', 
+                                cursor: 'pointer',
+                                backgroundColor: value === opt[valueField] ? '#f0f9ff' : 'transparent',
+                                borderBottom: '1px solid #f9f9f9'
+                            }}
+                            onMouseOver={(e) => e.target.style.backgroundColor = '#f8fafc'}
+                            onMouseOut={(e) => e.target.style.backgroundColor = value === opt[valueField] ? '#f0f9ff' : 'transparent'}
+                        >
+                            <div style={{ fontWeight: value === opt[valueField] ? 'bold' : 'normal' }}>{opt[displayField]}</div>
+                            {opt.subLabel && <div style={{ fontSize: '0.8em', color: '#666' }}>{opt.subLabel}</div>}
+                        </div>
+                    )) : (
+                        <div style={{ padding: '12px', textAlign: 'center', color: '#999' }}>검색 결과가 없습니다.</div>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
+
 const OutboundTab = ({ month }) => {
     const queryClient = useQueryClient()
     const [showForm, setShowForm] = useState(false)
@@ -347,6 +452,29 @@ const OutboundTab = ({ month }) => {
         }
     })
 
+    const { data: usersList } = useQuery({
+        queryKey: ['integrated-users'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/assets/dashboard/integrated')
+            return data
+        }
+    })
+
+    const itemOptions = useMemo(() => 
+        (itemsList || []).map(it => ({ label: it.item_name, value: it.item_name })), 
+    [itemsList])
+
+    const userOptions = useMemo(() => 
+        (usersList || []).map(u => ({ 
+            label: `${u.이름 || u.NAME} (${u.BU})`, 
+            value: `${u.이름 || u.NAME} (${u.BU})`,
+            subLabel: u.email,
+            name: u.이름 || u.NAME,
+            email: u.email,
+            bu: u.BU
+        })).sort((a, b) => (a.name || '').localeCompare(b.name || '')), 
+    [usersList])
+
     const mutation = useMutation({
         mutationFn: async (newData) => {
             return axios.post('/api/consumables/outbound', newData)
@@ -384,22 +512,32 @@ const OutboundTab = ({ month }) => {
                 <form onSubmit={handleSubmit} style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>출고 날짜</label>
-                        <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} style={{ padding: '8px' }} required />
+                        <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }} required />
                     </div>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>품목</label>
-                        <select value={formData.item_name} onChange={e => setFormData({...formData, item_name: e.target.value})} style={{ padding: '8px', minWidth: '200px' }} required>
-                            <option value="">품목 선택</option>
-                            {itemsList?.map((it, idx) => <option key={idx} value={it.item_name}>{it.item_name}</option>)}
-                        </select>
+                        <SearchableSelect 
+                            options={itemOptions} 
+                            value={formData.item_name} 
+                            onChange={val => setFormData({...formData, item_name: val})} 
+                            placeholder="품목 선택" 
+                            width="250px"
+                        />
                     </div>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>수량</label>
-                        <input type="number" min="1" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} style={{ padding: '8px', width: '80px' }} required />
+                        <input type="number" min="1" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} style={{ padding: '8px', width: '80px', borderRadius: '4px', border: '1px solid #ddd' }} required />
                     </div>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>사용자 이름(팀)</label>
-                        <input type="text" placeholder="홍길동" value={formData.user_name} onChange={e => setFormData({...formData, user_name: e.target.value})} style={{ padding: '8px' }} required />
+                        <SearchableSelect 
+                            options={userOptions} 
+                            value={formData.user_name} 
+                            onChange={val => setFormData({...formData, user_name: val})} 
+                            placeholder="사용자 검색 (이름/이메일)" 
+                            searchFields={["name", "email", "bu"]}
+                            width="300px"
+                        />
                     </div>
                     <button type="submit" className="btn btn-primary" disabled={mutation.isLoading}>
                         {mutation.isLoading ? '저장 중...' : '확인'}
@@ -425,18 +563,29 @@ const OutboundTab = ({ month }) => {
                                 {isEditing ? (
                                     <>
                                         <td>
-                                            <input type="date" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})} style={{ width: '130px', padding: '4px' }} />
+                                            <input type="date" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})} style={{ width: '130px', padding: '4px', borderRadius: '4px', border: '1px solid #ddd' }} />
                                         </td>
                                         <td>
-                                            <select value={editForm.item_name} onChange={e => setEditForm({...editForm, item_name: e.target.value})} style={{ width: '150px', padding: '4px' }}>
-                                                {itemsList?.map((it, i) => <option key={i} value={it.item_name}>{it.item_name}</option>)}
-                                            </select>
+                                            <SearchableSelect 
+                                                options={itemOptions} 
+                                                value={editForm.item_name} 
+                                                onChange={val => setEditForm({...editForm, item_name: val})} 
+                                                placeholder="품목 선택" 
+                                                width="180px"
+                                            />
                                         </td>
                                         <td style={{ textAlign: 'center' }}>
-                                            <input type="number" min="1" value={editForm.quantity} onChange={e => setEditForm({...editForm, quantity: e.target.value})} style={{ width: '60px', padding: '4px', textAlign: 'center' }} />
+                                            <input type="number" min="1" value={editForm.quantity} onChange={e => setEditForm({...editForm, quantity: e.target.value})} style={{ width: '60px', padding: '4px', textAlign: 'center', borderRadius: '4px', border: '1px solid #ddd' }} />
                                         </td>
                                         <td>
-                                            <input type="text" value={editForm.user_name} onChange={e => setEditForm({...editForm, user_name: e.target.value})} style={{ width: '100px', padding: '4px' }} />
+                                            <SearchableSelect 
+                                                options={userOptions} 
+                                                value={editForm.user_name} 
+                                                onChange={val => setEditForm({...editForm, user_name: val})} 
+                                                placeholder="사용자 검색" 
+                                                searchFields={["name", "email", "bu"]}
+                                                width="200px"
+                                            />
                                         </td>
                                         <td style={{ textAlign: 'center' }}>
                                             <button className="btn btn-primary" style={{ padding: '2px 6px', fontSize: '0.8rem', marginRight: '4px' }} onClick={handleEditSave} disabled={updateMutation.isLoading}>💾</button>

@@ -193,11 +193,21 @@ const Dashboard = () => {
                                     filteredData.map((row, idx) => (
                                         <tr key={idx}>
                                             <td>{idx + 1}</td>
-                                            {columns.slice(1).map(col => (
-                                                <td key={col.key} style={col.key === '퇴사정보' && row[col.key] !== '-' ? { color: '#ef4444', fontWeight: 'bold' } : {}}>
-                                                    {row[col.key] || '-'}
-                                                </td>
-                                            ))}
+                                            {columns.slice(1).map(col => {
+                                                const value = String(row[col.key] || '-')
+                                                const isDuplicate = value.startsWith('[중복!]')
+                                                const isResigned = col.key === '퇴사정보' && row[col.key] !== '-'
+                                                
+                                                let style = {}
+                                                if (isDuplicate) style = { color: '#ef4444', fontWeight: 'bold' }
+                                                if (isResigned) style = { color: '#ef4444', fontWeight: 'bold' }
+
+                                                return (
+                                                    <td key={col.key} style={style}>
+                                                        {value}
+                                                    </td>
+                                                )
+                                            })}
                                         </tr>
                                     ))
                                 ) : (
