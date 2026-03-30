@@ -290,11 +290,17 @@ def get_estimate(month: str):
     for i_name, data in agg.items():
         # 사용자 문자열 만들기 (ex: "홍길동(2), 김철수")
         user_list = []
+        user_count = len(data['users'])
         for u, q in data['users'].items():
-            if q > 1:
-                user_list.append(f"{u}({q})")
+            # 팀명 제거 (Name (Team) -> Name)
+            name_only = u.split(' (')[0] if ' (' in u else u
+            
+            # 사용자가 2명 이상이고, 해당 사용자가 받은 수량이 2개 이상일 때만 (Q) 표시
+            # 사용자가 1명인 경우는 수량에 관계없이 이름만 표시
+            if user_count > 1 and q > 1:
+                user_list.append(f"{name_only} ({q})")
             else:
-                user_list.append(u)
+                user_list.append(name_only)
         users_str = ", ".join(user_list)
 
         info = item_dict.get(i_name, {'category': '', 'price': 0})

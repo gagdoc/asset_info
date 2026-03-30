@@ -15,7 +15,7 @@ const SelfOutbound = () => {
     const [isSuccess, setIsSuccess] = useState(false)
 
     // 1. 가용한 월 목록 조회 (최신 월 자동 선택용)
-    const { data: monthsData } = useQuery({
+    const { data: monthsData, isLoading: isMonthsLoading } = useQuery({
         queryKey: ['consumables-months'],
         queryFn: async () => {
             const { data } = await axios.get('/api/consumables/months')
@@ -24,7 +24,7 @@ const SelfOutbound = () => {
     })
 
     // 2. 품목 리스트 조회
-    const { data: itemsList } = useQuery({
+    const { data: itemsList, isLoading: isItemsLoading } = useQuery({
         queryKey: ['consumables-items'],
         queryFn: async () => {
             const { data } = await axios.get('/api/consumables/items')
@@ -33,13 +33,15 @@ const SelfOutbound = () => {
     })
 
     // 3. 사용자 리스트 조회
-    const { data: usersList } = useQuery({
+    const { data: usersList, isLoading: isUsersLoading } = useQuery({
         queryKey: ['integrated-users'],
         queryFn: async () => {
             const { data } = await axios.get('/api/assets/dashboard/integrated')
             return data
         }
     })
+
+    const isInitialLoading = isMonthsLoading || isItemsLoading || isUsersLoading;
 
     const itemOptions = useMemo(() => 
         (itemsList || []).map(it => ({ label: it.item_name, value: it.item_name })), 
@@ -48,11 +50,13 @@ const SelfOutbound = () => {
     const userOptions = useMemo(() => 
         (usersList || []).map(u => {
             const nameOnly = (u.이름 || u.NAME || '').replace(/\./g, ' ');
+            const fullNameWithBU = `${nameOnly}${u.BU ? ` (${u.BU})` : ''}`;
             return { 
                 label: nameOnly, 
-                value: nameOnly,
+                value: fullNameWithBU, // 상세기록처럼 이름(팀) 형식으로 저장
                 subLabel: `${u.email}${u.BU ? ` (${u.BU})` : ''}`,
                 name: nameOnly,
+                email: u.email,
                 bu: u.BU
             };
         }).sort((a, b) => (a.name || '').localeCompare(b.name || '')), 
@@ -155,8 +159,8 @@ const SelfOutbound = () => {
                         options={userOptions} 
                         value={formData.user_name} 
                         onChange={val => setFormData({...formData, user_name: val})} 
-                        placeholder="성함 검색 및 선택" 
-                        searchFields={["name", "bu"]}
+                        placeholder="성함 검색 (이름/이메일)" 
+                        searchFields={["name", "email", "bu"]}
                         width="100%"
                     />
                 </div>
@@ -181,6 +185,7 @@ const SelfOutbound = () => {
                     출고 등록 완료
                 </button>
                 <LoadingModal isOpen={mutation.isLoading} message="출고 내역을 안전하게 저장 중입니다..." />
+                <LoadingModal isOpen={isInitialLoading} message="필요한 정보를 불러오는 중입니다..." />
             </form>
 
             {isSuccess && (

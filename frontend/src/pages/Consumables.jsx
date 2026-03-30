@@ -237,7 +237,8 @@ const EstimateTab = ({ month }) => {
                 </button>
             </div>
             
-            {isLoading ? <div>데이터 구조를 파악하는 중입니다... (약 2~3초 소요)</div> : (
+            {isLoading && <LoadingModal isOpen={isLoading} message="견적 데이터를 불러오는 중입니다..." />}
+            {!isLoading && (
                 <table className="data-table">
                     <thead>
                         <tr>
@@ -257,7 +258,7 @@ const EstimateTab = ({ month }) => {
                                 <td>{row.category}</td>
                                 <td><strong>{row.item_name}</strong></td>
                                 <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{row.total_qty}</td>
-                                <td style={{ fontSize: '0.9em', color: '#555' }}>{row.users?.replace(/\s*\(.*?\)/g, '').replace(/\./g, ' ')}</td>
+                                <td style={{ fontSize: '0.9em', color: '#555' }}>{row.users?.replace(/\./g, ' ')}</td>
                                 <td style={{ textAlign: 'right' }}>{row.unit_price?.toLocaleString()}</td>
                                 <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#e53e3e' }}>{row.total_price?.toLocaleString()}</td>
                             </tr>
@@ -369,9 +370,10 @@ const OutboundTab = ({ month }) => {
     const userOptions = useMemo(() => 
         (usersList || []).map(u => {
             const nameOnly = (u.이름 || u.NAME || '').replace(/\./g, ' ');
+            const fullNameWithBU = `${nameOnly}${u.BU ? ` (${u.BU})` : ''}`;
             return { 
                 label: nameOnly, 
-                value: nameOnly,
+                value: fullNameWithBU, // 상세기록처럼 이름(팀) 형식으로 저장
                 subLabel: `${u.email}${u.BU ? ` (${u.BU})` : ''}`,
                 name: nameOnly,
                 email: u.email,
@@ -399,10 +401,9 @@ const OutboundTab = ({ month }) => {
             alert("모든 필드를 입력해주세요.")
             return
         }
-        mutation.mutate({ month, ...formData })
     }
 
-    if (isLoading) return <div>Loading...</div>
+    if (isLoading) return <LoadingModal isOpen={isLoading} message="출고 상세 내역을 불러오는 중입니다..." />
 
     return (
         <div className="card">
@@ -490,7 +491,7 @@ const OutboundTab = ({ month }) => {
                                                 options={userOptions} 
                                                 value={editForm.user_name} 
                                                 onChange={val => setEditForm({...editForm, user_name: val})} 
-                                                placeholder="사용자 검색" 
+                                                placeholder="사용자 검색 (이름/이메일)" 
                                                 searchFields={["name", "email", "bu"]}
                                                 width="200px"
                                             />
@@ -572,7 +573,7 @@ const ItemsTab = ({ month }) => {
         setShowForm(true)
     }
 
-    if (isLoading) return <div>Loading...</div>
+    if (isLoading) return <LoadingModal isOpen={isLoading} message="소모품 마스터 리스트를 불러오는 중입니다..." />
 
     const categories = Array.from(new Set(items?.map(it => it.category).filter(Boolean)))
     
@@ -732,7 +733,7 @@ const ItemHistoryModal = ({ itemName, onClose }) => {
                     <h3 style={{ margin: 0 }}>📍 [{itemName}] 출고 이력 (년-월별)</h3>
                     <button className="btn btn-secondary" onClick={onClose}>닫기</button>
                 </div>
-                {isLoading ? <div>데이터를 불러오는 중...</div> : (
+                {isLoading ? <LoadingModal isOpen={isLoading} message="품목 이력을 불러오는 중입니다..." /> : (
                     <div className="table-wrapper" style={{ flex: 1, overflow: 'auto' }}>
                         <table className="data-table">
                             <thead>
@@ -785,7 +786,7 @@ const TrackedItemsTab = ({ month }) => {
         onError: () => alert("수정 중 오류가 발생했습니다.")
     })
 
-    if (isLoading) return <div>Loading...</div>
+    if (isLoading) return <LoadingModal isOpen={isLoading} message="재고 추적 데이터를 불러오는 중입니다..." />
 
     const trackedItems = items?.filter(item => item.is_tracked) || []
 
