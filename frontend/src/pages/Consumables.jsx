@@ -401,6 +401,7 @@ const OutboundTab = ({ month }) => {
             alert("모든 필드를 입력해주세요.")
             return
         }
+        mutation.mutate({ ...formData, month })
     }
 
     if (isLoading) return <LoadingModal isOpen={isLoading} message="출고 상세 내역을 불러오는 중입니다..." />
@@ -443,16 +444,18 @@ const OutboundTab = ({ month }) => {
                             placeholder="사용자 검색 (이름/이메일)" 
                             searchFields={["name", "email", "bu"]}
                             width="300px"
+                            allowCustom={true}
                         />
                     </div>
-                    <button type="submit" className="btn btn-primary" disabled={mutation.isLoading}>
+                    <button type="submit" className="btn btn-primary" disabled={mutation.isPending}>
                         확인
                     </button>
-                    <LoadingModal isOpen={mutation.isLoading} message="출고 내역을 구글 시트에 기록 중입니다..." />
-                    <LoadingModal isOpen={updateMutation.isLoading} message="출고 내역을 수정하고 있습니다..." />
-                    <LoadingModal isOpen={deleteMutation.isLoading} message="출고 내역을 삭제하고 있습니다..." />
                 </form>
             )}
+
+            <LoadingModal isOpen={mutation.isPending} message="출고 내역을 구글 시트에 기록 중입니다..." />
+            <LoadingModal isOpen={updateMutation.isPending} message="출고 내역을 수정하고 있습니다..." />
+            <LoadingModal isOpen={deleteMutation.isPending} message="출고 내역을 삭제하고 있습니다..." />
 
             <table className="data-table">
                 <thead>
@@ -494,10 +497,11 @@ const OutboundTab = ({ month }) => {
                                                 placeholder="사용자 검색 (이름/이메일)" 
                                                 searchFields={["name", "email", "bu"]}
                                                 width="200px"
+                                                allowCustom={true}
                                             />
                                         </td>
                                         <td style={{ textAlign: 'center' }}>
-                                            <button className="btn btn-primary" style={{ padding: '2px 6px', fontSize: '0.8rem', marginRight: '4px' }} onClick={handleEditSave} disabled={updateMutation.isLoading}>💾</button>
+                                            <button className="btn btn-primary" style={{ padding: '2px 6px', fontSize: '0.8rem', marginRight: '4px' }} onClick={handleEditSave} disabled={updateMutation.isPending}>💾</button>
                                             <button className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8rem' }} onClick={() => setEditingRow(null)}>✖</button>
                                         </td>
                                     </>
@@ -509,7 +513,7 @@ const OutboundTab = ({ month }) => {
                                         <td>{row.user_name?.replace(/\s*\(.*\)$/, '').replace(/\./g, ' ')}</td>
                                         <td style={{ textAlign: 'center' }}>
                                             <button className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8em', marginRight: '4px' }} onClick={() => handleEditStart(row)}>✏️</button>
-                                            <button className="btn btn-danger" style={{ padding: '2px 6px', fontSize: '0.8em' }} onClick={() => handleDelete(row.row_index)} disabled={deleteMutation.isLoading}>🗑️</button>
+                                            <button className="btn btn-danger" style={{ padding: '2px 6px', fontSize: '0.8em' }} onClick={() => handleDelete(row.row_index)} disabled={deleteMutation.isPending}>🗑️</button>
                                         </td>
                                     </>
                                 )}
@@ -628,13 +632,14 @@ const ItemsTab = ({ month }) => {
                         </>
                     )}
 
-                    <button type="submit" className="btn btn-primary" disabled={mutation.isLoading} style={{ marginLeft: 'auto' }}>
+                    <button type="submit" className="btn btn-primary" disabled={mutation.isPending} style={{ marginLeft: 'auto' }}>
                         저장하기
                     </button>
-                    <LoadingModal isOpen={mutation.isLoading} message="소모품 정보를 저장 중입니다..." />
                     <div style={{ fontSize: '0.8em', color: '#666', marginTop: '5px', width: '100%' }}>* 품목명이 같을 경우 수정되고, 다를 경우 덧붙여집니다. 재고 추적 시 '현재 재고'를 입력해두면 총 출고량을 차감한 진짜 잔여 재고를 자동 계산합니다.</div>
                 </form>
             )}
+
+            <LoadingModal isOpen={mutation.isPending} message="소모품 정보를 저장 중입니다..." />
 
             <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem', background: '#f8f9fa', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <input 
@@ -915,8 +920,8 @@ const CreateMonthTab = () => {
                     />
                     <small style={{ color: '#666', display: 'block', marginTop: '4px' }}>출고의 시작을 알리는 안내 첫 행에 기록됩니다.</small>
                 </div>
-                <button type="submit" className="btn btn-primary" style={{ padding: '12px', fontSize: '1.1em', marginTop: '10px' }} disabled={mutation.isLoading}>
-                    {mutation.isLoading ? '시트 개설 중...' : '새로운 월 출고 시트 개설하기'}
+                <button type="submit" className="btn btn-primary" style={{ padding: '12px', fontSize: '1.1em', marginTop: '10px' }} disabled={mutation.isPending}>
+                    {mutation.isPending ? '시트 개설 중...' : '새로운 월 출고 시트 개설하기'}
                 </button>
             </form>
         </div>

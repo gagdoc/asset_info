@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { useToast } from '../components/Toast'
+import SearchableSelect from '../components/SearchableSelect'
 
 const AssetList = () => {
     const { type } = useParams()
@@ -17,6 +18,9 @@ const AssetList = () => {
     // 년, 월 필터 상태 추가
     const [filterYear, setFilterYear] = useState('')
     const [filterMonth, setFilterMonth] = useState('')
+    const [filterBU, setFilterBU] = useState('')
+    const [filterModel, setFilterModel] = useState('')
+    const [filterUser, setFilterUser] = useState('')
 
     // 상세 수정 모달 상태
     const [isModalOpen, setIsModalOpen] = useState(false)
@@ -27,6 +31,9 @@ const AssetList = () => {
     useEffect(() => {
         setFilterYear('')
         setFilterMonth('')
+        setFilterBU('')
+        setFilterModel('')
+        setFilterUser('')
         setSearchQuery('')
         setSelectedRows(new Set())
         setShowDuplicateSummary(false)
@@ -100,11 +107,45 @@ const AssetList = () => {
             .filter(v => v !== '' && v !== 'null' && v !== 'undefined')
     )).sort((a,b) => parseInt(a) - parseInt(b))
 
-    let displayedAssets = assetsWithIdx
-    if (type === 'NewHire' || type === 'Resign' || type === 'Lease' || type === 'iPad') {
-        if (filterYear) displayedAssets = displayedAssets?.filter(row => getYear(row) === filterYear)
-        if (filterMonth) displayedAssets = displayedAssets?.filter(row => getMonth(row) === filterMonth)
+    const getModel = (row) => row['MODEL'] || row['Model'] || row['기종'] || ''
+    const getBU = (row) => row['BU'] || row['소속'] || ''
+    const getUser = (row) => row['USER'] || row['User'] || row['이름'] || row['NAME'] || ''
+
+    const uniqueBUs = Array.from(new Set(assets?.map(getBU).filter(v => v && v !== 'null' && v !== 'undefined' && v !== '-'))).sort()
+    const uniqueModels = Array.from(new Set(assets?.map(getModel).filter(v => v && v !== 'null' && v !== 'undefined' && v !== '-'))).sort()
+    const uniqueUsers = Array.from(new Set(assets?.map(getUser).filter(v => v && v !== 'null' && v !== 'undefined' && v !== '-'))).sort((a,b) => String(a).localeCompare(String(b)))
+
+    // STOCK 개수 파악
+    const getIsStock = (row) => {
+        const u = String(row['USER'] || row['User'] || row['이름'] || '').toUpperCase()
+        return u.includes('STOCK')
     }
+    const stockCount = assets?.filter(getIsStock).length || 0
+
+    let displayedAssets = assetsWithIdx
+    if (filterYear) displayedAssets = displayedAssets?.filter(row => getYear(row) === filterYear)
+    if (filterMonth) displayedAssets = displayedAssets?.filter(row => getMonth(row) === filterMonth)
+    if (filterBU) displayedAssets = displayedAssets?.filter(row => getBU(row) === filterBU)
+
+    if (filterModel) displayedAssets = displayedAssets?.filter(row => getModel(row) === filterModel)
+    if (filterUser) {
+        if (filterUser === 'STOCK') {
+            displayedAssets = displayedAssets?.filter(getIsStock)
+        } else {
+            displayedAssets = displayedAssets?.filter(row => getUser(row) === filterUser)
+        }
+    }
+
+    const buOptions = [
+        { label: '전체 BU', value: '' },
+        ...uniqueBUs.map(bu => ({ label: bu, value: bu }))
+    ]
+
+    const userOptions = [
+        { label: '전체 User', value: '' },
+        { label: '📦 재고 (STOCK)', value: 'STOCK' },
+        ...uniqueUsers.filter(u => u.toUpperCase() !== 'STOCK').map(u => ({ label: u, value: u }))
+    ]
 
     // ── 검색 필터링 ──
     if (searchQuery.trim()) {
@@ -219,27 +260,61 @@ const AssetList = () => {
     return (
         <div>
             <div className="flex items-center justify-between mb-2">
-                <h1>{titleMap[type] || `${type} Management`}</h1>
-                <div className="flex gap-1" style={{ alignItems: 'center' }}>
-                    {(type === 'NewHire' || type === 'Resign' || type === 'Lease' || type === 'iPad') && (
-                        <div style={{ display: 'flex', gap: '5px', marginRight: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                    <h1 style={{ margin: 0 }}>{titleMap[type] || `${type} Management`}</h1>
+                    {['Lease', 'iPad', 'Monitor'].includes(type) && (
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <div style={{ backgroundColor: '#f0fdf4', color: '#166534', padding: '4px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.9rem', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>
+                                📦 재고(STOCK): {stockCount}건
+                            </div>
+                            <div style={{ backgroundColor: '#eff6ff', color: '#1e3a8a', padding: '4px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.9rem', border: '1px solid #bfdbfe', whiteSpace: 'nowrap' }}>
+                                📋 조회된 총 수량: {displayedAssets?.length || 0}건
+                            </div>
+                        </div>
+                    )}
+                </div>
+                <div className="flex gap-1" style={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', flex: 1 }}>
+                    {(type === 'NewHire' || type === 'Resign' || type === 'Lease' || type === 'iPad' || type === 'Monitor') && (
+                        <div style={{ display: 'flex', gap: '5px', marginRight: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                                 <span style={{ position: 'absolute', left: '10px', color: '#9ca3af' }}>🔍</span>
                                 <input 
                                     className="form-input" 
-                                    style={{ padding: '4px 10px 4px 30px', minWidth: '200px' }} 
+                                    style={{ padding: '4px 10px 4px 30px', width: '130px' }} 
                                     placeholder="전체 검색..." 
                                     value={searchQuery} 
                                     onChange={e => setSearchQuery(e.target.value)} 
                                 />
                             </div>
-                            <select className="form-input" style={{ padding: '4px 8px', minWidth: '100px' }} value={filterYear} onChange={e => setFilterYear(e.target.value)}>
+                            <select className="form-input" style={{ width: 'auto', padding: '4px 8px' }} value={filterYear} onChange={e => setFilterYear(e.target.value)}>
                                 <option value="">전체 연도</option>
                                 {uniqueYears.map(y => <option key={y} value={y}>{y}년</option>)}
                             </select>
-                            <select className="form-input" style={{ padding: '4px 8px', minWidth: '90px' }} value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
+                            <select className="form-input" style={{ width: 'auto', padding: '4px 8px' }} value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
                                 <option value="">전체 월</option>
                                 {uniqueMonths.map(m => <option key={m} value={m}>{m}월</option>)}
+                            </select>
+                            <div style={{ width: '160px' }}>
+                                <SearchableSelect 
+                                    options={buOptions}
+                                    value={filterBU}
+                                    onChange={setFilterBU}
+                                    placeholder="전체 BU"
+                                    width="100%"
+                                />
+                            </div>
+                            <div style={{ width: '160px' }}>
+                                <SearchableSelect 
+                                    options={userOptions}
+                                    value={filterUser}
+                                    onChange={setFilterUser}
+                                    placeholder="전체 User"
+                                    width="100%"
+                                />
+                            </div>
+                            <select className="form-input" style={{ width: 'auto', maxWidth: '140px', padding: '4px 8px' }} value={filterModel} onChange={e => setFilterModel(e.target.value)}>
+                                <option value="">전체 Model</option>
+                                {uniqueModels.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
                         </div>
                     )}

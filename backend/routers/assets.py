@@ -210,12 +210,25 @@ def get_asset_list(asset_type: str):
     
     df = dfs[asset_type]
     
-    # 신규 입사자의 경우 실시간 자산 정보 매칭(Enrichment) 수행
-    if asset_type == "NewHire" and not df.empty:
+    # 신규 입사자 및 퇴사자의 경우 실시간 자산 정보 매칭(Enrichment) 수행
+    if asset_type in ["NewHire", "Resign"] and not df.empty:
         df = _enrich_data_with_assets(df, dfs)
         
     df = df.where(pd.notnull(df), None)
     return df.to_dict(orient="records")
+# ── User Lookup (Auto-fill) ──────────────────────────
+@router.get("/user/lookup/{email}")
+def lookup_user(email: str):
+    email = email.strip().lower()
+    dfs = load_from_db()
+    if "All_User" in dfs and not dfs["All_User"].empty and "email" in dfs["All_User"].columns:
+        df = dfs["All_User"]
+        mask = df["email"].astype(str).str.strip().str.lower() == email
+        if mask.any():
+            match = df[mask].iloc[0]
+            val = lambda k: str(match.get(k, "")) if pd.notnull(match.get(k)) else ""
+            return {"NAME": val("NAME"), "korean_name": val("이름"), "BU": val("BU"), "ROLE": val("ROLE")}
+    raise HTTPException(status_code=404, detail="User not found in All_User")
 
 # ── Excel Upload ─────────────────────────────────────
 @router.post("/upload")
@@ -233,8 +246,11 @@ def download_asset_csv(asset_type: str):
     dfs = load_from_db()
     if asset_type not in dfs:
         raise HTTPException(status_code=404, detail=f"Asset type '{asset_type}' not found")
-    
     df = dfs[asset_type]
+    
+    if asset_type in ["NewHire", "Resign"] and not df.empty:
+        df = _enrich_data_with_assets(df, dfs)
+        
     csv_bytes = df.to_csv(index=False).encode("utf-8-sig")
     return StreamingResponse(
         io.BytesIO(csv_bytes),
@@ -505,52 +521,12 @@ def register_resign(entry: ResignEntry):
     
     update_db("Resign", df)
     
-    # ── 대시보드(All_User)에서 자동 삭제 및 자산 반납(STOCK 처리) 자동 연동 ──
-    df_all = dfs.get("All_User", pd.DataFrame())
-    eng_name, user_bu = email.split('@')[0], "Unknown"
-    
-    if not df_all.empty and "email" in df_all.columns:
-        # Get User Info for return remarks before deletion
-        mask = df_all["email"].astype(str).str.strip().str.lower() == email
-        if mask.any():
-            user_row = df_all[mask].iloc[0]
-            if "NAME" in user_row and pd.notnull(user_row["NAME"]): eng_name = str(user_row["NAME"]).strip()
-            if "BU" in user_row and pd.notnull(user_row["BU"]): user_bu = str(user_row["BU"]).strip()
-            
-        df_all["_email_lower"] = df_all["email"].astype(str).str.strip().str.lower()
-        df_all = df_all[df_all["_email_lower"] != email].drop(columns=["_email_lower"])
-        update_db("All_User", df_all)
+    # ── 대시보드(All_User)에서 자동 삭제 및 자산 반납(STOCK 처리) 자동 연동 제거 ──
+    # 자산 반납 확인 프로세스를 거친 후, UI에서 '퇴사 확정(삭제)' 버튼을 클릭했을 때만 
+    # 대시보드에서 제거되도록 안전 잠금을 적용함.
+    # 따라서 등록 단계에서는 대시보드(All_User)에서 정보를 유지함.
         
-    # ── 자산(Asset) 테이블 반납 플로우 연동 (email 제거 및 STOCK 처리) ──
-    today_str = datetime.now().strftime("%Y%m%d")
-    teams_label = f"{eng_name}/{user_bu}" if user_bu != "Unknown" else eng_name
-    
-    def auto_return_process(table_key, extra_updates=None):
-        if table_key in dfs and not dfs[table_key].empty and "email" in dfs[table_key].columns:
-            m = dfs[table_key]["email"].astype(str).str.strip().str.lower() == email
-            if m.any():
-                dfs[table_key].loc[m, "email"] = ""
-                if extra_updates:
-                    for col, val in extra_updates.items():
-                        if col in dfs[table_key].columns:
-                            dfs[table_key].loc[m, col] = val
-                update_db(table_key, dfs[table_key])
-                
-    auto_return_process("Lease", {
-        "User": "STOCK", "BU": "IT", 
-        "Additional Information": f"{today_str}/{email}/퇴사반납"
-    })
-    auto_return_process("iPad", {
-        "User": "STOCK", "BU": "IT", "Role": "IT", 
-        "Additional Information": f"{today_str}/{email}/퇴사반납"
-    })
-    auto_return_process("Teams", {
-        "Business Title": f"{teams_label} 기존 사용 번호 (퇴사)"
-    })
-    auto_return_process("Monitor")
-    auto_return_process("Printer")
-        
-    return {"message": f"{email} 퇴사 확정 완료 (자산은 반납 처리되었으며 퇴사자 관리 탭에 이력 보관, 대시보드 삭제 완료)"}
+    return {"message": f"{email} 퇴사 예정자 등록 완료 (대시보드 유지 상태. 자산은 리스트에서 확인 후 수동 반납해주세요)"}
 
 # ── Asset Return ─────────────────────────────────────
 @router.post("/resign/return")
@@ -579,7 +555,7 @@ def process_asset_return_endpoint(req: AssetReturnRequest):
     if eng_name == "Unknown":
         eng_name = email.split('@')[0]
     
-    teams_label = f"{eng_name}/{user_bu}" if user_bu != "Unknown" else eng_name
+    teams_label = f"{user_bu}/{eng_name}" if user_bu != "Unknown" else eng_name
     
     def process_table(table_key, label, extra_updates=None):
         if table_key in dfs and not dfs[table_key].empty and "email" in dfs[table_key].columns:
@@ -617,15 +593,41 @@ def process_asset_return_endpoint(req: AssetReturnRequest):
         if res: updated_tables.append(res)
     
     if asset_type in (None, "Monitor", ""):
-        res = process_table("Monitor", "모니터")
+        res = process_table("Monitor", "모니터", {
+            "Additional Information": f"{today_str}/{email}/반납"
+        })
         if res: updated_tables.append(res)
     
     if asset_type in (None, "Printer", ""):
-        res = process_table("Printer", "프린터")
+        res = process_table("Printer", "프린터", {
+            "Additional Information": f"{today_str}/{email}/반납"
+        })
         if res: updated_tables.append(res)
     
+    # ALWAYS clear Resign table to fix any desync or stuck users
+    # ALWAYS clear Resign table to fix any desync or stuck users
+    if "Resign" in dfs and not dfs["Resign"].empty and "email" in dfs["Resign"].columns:
+        mask = dfs["Resign"]["email"].str.strip().str.lower() == email
+        if mask.any():
+            cols_to_clear = []
+            if req.asset_type == "Lease": cols_to_clear = ["노트북"]
+            elif req.asset_type == "iPad": cols_to_clear = ["아이패드"]
+            elif req.asset_type == "Monitor": cols_to_clear = ["모니터"]
+            elif req.asset_type == "Printer": cols_to_clear = ["복합기"]
+            elif req.asset_type == "Teams": cols_to_clear = ["Teams"]
+            else: cols_to_clear = ["노트북", "아이패드", "모니터", "복합기", "Teams"]
+
+            for col in cols_to_clear:
+                if col in dfs["Resign"].columns:
+                    dfs["Resign"].loc[mask, col] = "-"
+            update_db("Resign", dfs["Resign"])
+            # Return success even if we only caught up a desynced Resign table
+            if not updated_tables:
+                return {"success": True, "message": "동기화 완료: 기존 반납 상태가 대시보드에 반영되었습니다."}
+
     if updated_tables:
         return {"success": True, "message": f"반납 처리 완료: {', '.join(updated_tables)}"}
+        
     return {"success": False, "message": "해당 이메일로 할당된 자산이 없습니다."}
 
 # ── Delete from Master ───────────────────────────────
@@ -634,18 +636,28 @@ def delete_from_master(req: DeleteFromMasterRequest):
     email = req.email.strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="이메일이 없습니다.")
-    
     try:
-        conn = get_connection(ASSET_DB_FILE)
-        c = conn.cursor()
-        c.execute("DELETE FROM All_User WHERE LOWER(email) = ?", (email,))
-        deleted = c.rowcount
-        conn.commit()
-        conn.close()
+        dfs = load_from_db()
+        if "All_User" not in dfs or dfs["All_User"].empty:
+            return {"success": False, "message": "All_User 데이터를 찾을 수 없습니다."}
+            
+        df_all = dfs["All_User"].copy()
+        if "email" not in df_all.columns:
+            return {"success": False, "message": "email 컬럼이 없습니다."}
+            
+        initial_len = len(df_all)
+        
+        # Remove user by email
+        df_all["_email_lower"] = df_all["email"].astype(str).str.strip().str.lower()
+        df_all = df_all[df_all["_email_lower"] != email].drop(columns=["_email_lower"])
+        
+        deleted = initial_len - len(df_all)
         
         if deleted > 0:
-            return {"success": True, "message": f"Local DB: {deleted}명 삭제 완료"}
-        return {"success": False, "message": "삭제할 데이터 없음"}
+            update_db("All_User", df_all)
+            return {"success": True, "message": f"{deleted}명 마스터 DB(구글시트/로컬) 완전 삭제 완료"}
+            
+        return {"success": False, "message": "삭제할 데이터가 마스터 DB에 없습니다."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -774,8 +786,21 @@ def _enrich_data_with_assets(target_df, dfs):
         if not email: continue
         for df_col, map_key in enrich_cols.items():
             val = target_df.at[idx, df_col]
-            if pd.isna(val) or str(val).strip() in ["", "-", "nan", "None", ".", "0"]:
-                new_val = asset_map[map_key].get(email)
+            new_val = asset_map[map_key].get(email)
+            
+            if map_key in ["노트북", "아이패드", "모니터", "Teams", "복합기"]:
+                # Assets MUST always reflect the LIVE master DB state
                 target_df.at[idx, df_col] = str(new_val) if new_val else "-"
+            else:
+                # NAME and BU inherit master data ONLY if missing
+                if pd.isna(val) or str(val).strip() in ["", "-", "nan", "None", ".", "0"]:
+                    target_df.at[idx, df_col] = str(new_val) if new_val else "-"
+                
+    # Add deletion flag based on master DB
+    target_df["_is_deleted"] = True
+    if "All_User" in dfs and not dfs["All_User"].empty and "email" in dfs["All_User"].columns:
+        master_emails = set(dfs["All_User"]["email"].dropna().astype(str).str.strip().str.lower())
+        if "email" in target_df.columns:
+            target_df["_is_deleted"] = ~target_df["email"].astype(str).str.strip().str.lower().isin(master_emails)
     
     return target_df

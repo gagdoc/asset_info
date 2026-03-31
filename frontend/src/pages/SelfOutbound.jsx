@@ -162,29 +162,30 @@ const SelfOutbound = () => {
                         placeholder="성함 검색 (이름/이메일)" 
                         searchFields={["name", "email", "bu"]}
                         width="100%"
+                        allowCustom={true}
                     />
                 </div>
 
                 <button 
                     type="submit" 
-                    disabled={mutation.isLoading}
+                    disabled={mutation.isPending}
                     style={{ 
                         width: '100%', 
                         padding: '14px', 
                         borderRadius: '12px', 
                         border: 'none', 
-                        backgroundColor: mutation.isLoading ? '#cbd5e0' : '#4f46e5',
+                        backgroundColor: mutation.isPending ? '#cbd5e0' : '#4f46e5',
                         color: '#fff',
                         fontSize: '1.1rem',
                         fontWeight: 'bold',
-                        cursor: mutation.isLoading ? 'not-allowed' : 'pointer',
+                        cursor: mutation.isPending ? 'not-allowed' : 'pointer',
                         transition: 'background-color 0.2s',
                         marginTop: '1rem'
                     }}
                 >
                     출고 등록 완료
                 </button>
-                <LoadingModal isOpen={mutation.isLoading} message="출고 내역을 안전하게 저장 중입니다..." />
+                <LoadingModal isOpen={mutation.isPending} message="출고 내역을 안전하게 저장 중입니다..." />
                 <LoadingModal isOpen={isInitialLoading} message="필요한 정보를 불러오는 중입니다..." />
             </form>
 

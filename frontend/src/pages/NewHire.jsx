@@ -95,6 +95,24 @@ const RegisterForm = ({ deptConfig, queryClient, addToast }) => {
         ?.filter(d => d.BU === form.BU && d.ROLE)
         ?.map(d => d.ROLE) || []
 
+    const handleEmailBlur = async () => {
+        if (!form.email || !form.email.includes('@')) return;
+        try {
+            const { data } = await axios.get(`/api/assets/user/lookup/${encodeURIComponent(form.email.trim())}`);
+            setForm(prev => ({
+                ...prev,
+                NAME: prev.NAME || data.NAME || '',
+                korean_name: prev.korean_name || data.korean_name || '',
+                BU: prev.BU || data.BU || '',
+                ROLE: prev.ROLE || data.ROLE || ''
+            }));
+            const name = data.korean_name ? `${data.korean_name}(${data.NAME})` : data.NAME;
+            if (name) addToast(`✅ ${name} 님의 기본 정보를 불러왔습니다.`, 'success');
+        } catch (e) {
+            // New hires are often not in All_User, ignore error silently
+        }
+    }
+
     const handleSubmit = async (e) => {
         e.preventDefault()
         if (!form.join_date) {
@@ -151,6 +169,7 @@ const RegisterForm = ({ deptConfig, queryClient, addToast }) => {
                             type="email"
                             value={form.email}
                             onChange={e => setForm({ ...form, email: e.target.value })}
+                            onBlur={handleEmailBlur}
                             placeholder="user@stryker.com"
                         />
                     </div>

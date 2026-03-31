@@ -39,6 +39,20 @@ const RegisterTab = ({ queryClient, addToast }) => {
     const [email, setEmail] = useState('')
     const [resignDate, setResignDate] = useState('')
     const [submitting, setSubmitting] = useState(false)
+    const [previewInfo, setPreviewInfo] = useState('')
+
+    const handleEmailBlur = async () => {
+        if (!email.trim() || !email.includes('@')) return;
+        try {
+            const { data } = await axios.get(`/api/assets/user/lookup/${encodeURIComponent(email.trim())}`);
+            const name = data.korean_name ? `${data.korean_name}(${data.NAME})` : data.NAME;
+            if (name) {
+                setPreviewInfo(`✅ ${name} 님의 정보를 확인했습니다.`);
+            }
+        } catch (e) {
+            setPreviewInfo('⚠️ 등록되지 않은 이메일입니다. 입력하신 정보로 신규 생성됩니다.');
+        }
+    }
 
     const handleSubmit = async (e) => {
         e.preventDefault()
@@ -55,6 +69,7 @@ const RegisterTab = ({ queryClient, addToast }) => {
             addToast(`✅ ${email} 등록 및 자산 정보 연동 완료!`, 'success')
             setEmail('')
             setResignDate('')
+            setPreviewInfo('')
             queryClient.invalidateQueries(['assets', 'Resign'])
         } catch (err) {
             addToast('등록 실패: ' + (err.response?.data?.detail || err.message), 'error')
@@ -74,7 +89,8 @@ const RegisterTab = ({ queryClient, addToast }) => {
                     </div>
                     <div className="form-group">
                         <label className="form-label">이메일 주소 *</label>
-                        <input className="form-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="user@stryker.com" required />
+                        <input className="form-input" type="email" value={email} onChange={e => {setEmail(e.target.value); setPreviewInfo('');}} onBlur={handleEmailBlur} placeholder="user@stryker.com" required />
+                        {previewInfo && <div style={{ fontSize: '0.85em', marginTop: '5px', color: previewInfo.startsWith('✅') ? '#059669' : '#d97706' }}>{previewInfo}</div>}
                     </div>
                 </div>
                 <button className="btn btn-primary" type="submit" disabled={submitting}>
@@ -86,86 +102,67 @@ const RegisterTab = ({ queryClient, addToast }) => {
 }
 
 const ListTab = ({ resigns, isLoading, queryClient, addToast }) => {
-    const [selectedRows, setSelectedRows] = useState(new Set())
 
     if (isLoading) return <div className="loading"><div className="spinner" /> 로딩중...</div>
 
     const columns = resigns?.length > 0 ? Object.keys(resigns[0]) : []
     const priorityCols = ['년', 'F', '월', '날짜', 'NAME', 'email', '설명', 'BU', '노트북', '아이패드', '모니터', '복합기', 'Teams', '추가사항']
     const orderedCols = priorityCols.filter(c => columns.includes(c))
-    const otherCols = columns.filter(c => !priorityCols.includes(c))
+    const otherCols = columns.filter(c => !priorityCols.includes(c) && c !== '_is_deleted')
     const displayCols = [...orderedCols, ...otherCols]
 
-    // ── Asset Return ──
-    const handleReturn = async () => {
-        if (selectedRows.size === 0) return
-        let count = 0
-        for (const idx of selectedRows) {
-            const row = resigns[idx]
-            if (!row?.email) continue
-            try {
-                const { data } = await axios.post('/api/assets/resign/return', {
-                    email: row.email,
-                    name: row.NAME,
-                    bu: row.BU,
-                })
-                if (data.success) {
-                    addToast(`${row.email}: ${data.message}`, 'success')
-                    count++
-                } else {
-                    addToast(`${row.email}: ${data.message}`, 'info')
-                }
-            } catch (err) {
-                addToast(`${row.email}: 처리 실패`, 'error')
+    const assetCols = ['노트북', '아이패드', '모니터', '복합기', 'Teams']
+    const checkHasAssets = (row) => {
+        return assetCols.some(col => row[col] && String(row[col]).trim() !== '' && String(row[col]).trim() !== '-' && String(row[col]).trim() !== 'null' && String(row[col]).trim() !== 'undefined')
+    }
+
+    // ── Single Row Actions ──
+    const handleSingleReturn = async (row, assetName, assetType) => {
+        if (!row?.email) return
+        if (!window.confirm(`[${assetName}] 자산을 반납 처리 하시겠습니까?\n확인 시 해당 자산이 즉각 반납 상태로 전환됩니다.`)) return;
+
+        try {
+            const { data } = await axios.post('/api/assets/resign/return', {
+                email: row.email,
+                name: row.NAME,
+                bu: row.BU,
+                asset_type: assetType
+            })
+            if (data.success) {
+                addToast(`${row.email}: ${data.message}`, 'success')
+            } else {
+                addToast(`${row.email}: ${data.message}`, 'info')
             }
-        }
-        if (count > 0) {
             queryClient.invalidateQueries(['assets', 'Resign'])
-            setSelectedRows(new Set())
+        } catch (err) {
+            addToast(`${row.email}: 반납 처리 실패`, 'error')
         }
     }
 
-    // ── Delete from master ──
-    const handleDeleteMaster = async () => {
-        if (selectedRows.size === 0) return
-        if (!confirm('선택된 퇴사자를 마스터 DB에서 영구 삭제하시겠습니까?')) return
-
-        for (const idx of selectedRows) {
-            const row = resigns[idx]
-            if (!row?.email) continue
-
-            // First return assets
-            try {
-                await axios.post('/api/assets/resign/return', { email: row.email, name: row.NAME, bu: row.BU })
-            } catch (e) { /* ignore */ }
-
-            // Then delete from master
-            try {
-                const { data } = await axios.post('/api/assets/resign/delete-master', { email: row.email, name: row.NAME })
-                if (data.success) {
-                    addToast(`✅ ${row.NAME || row.email} 삭제 완료`, 'success')
-                } else {
-                    addToast(`❌ ${row.NAME || row.email}: ${data.message}`, 'error')
-                }
-            } catch (err) {
-                addToast(`삭제 실패: ${row.email}`, 'error')
+    const handleSingleDelete = async (row) => {
+        if (!row?.email) return
+        if (!confirm(`'${row.NAME || row.email}' 님의 퇴사를 확정하고 마스터 DB에서 영구 삭제하시겠습니까?`)) return
+        
+        try {
+            const { data } = await axios.post('/api/assets/resign/delete-master', { email: row.email, name: row.NAME })
+            if (data.success) {
+                addToast(`✅ ${row.NAME || row.email} 퇴사 확정 및 마스터 삭제 완료`, 'success')
+            } else {
+                addToast(`❌ ${row.NAME || row.email}: ${data.message}`, 'error')
             }
+        } catch (err) {
+            addToast(`퇴사 확정 실패: ${row.email}`, 'error')
         }
         queryClient.invalidateQueries(['assets', 'Resign'])
         queryClient.invalidateQueries(['dashboardSummary'])
-        setSelectedRows(new Set())
     }
 
     return (
         <div>
             <div className="flex items-center justify-between mb-2">
-                <div className="flex gap-1">
-                    <button className="btn btn-sm" disabled={selectedRows.size === 0} onClick={handleReturn}>
-                        🔄 선택된 퇴사자 반납 처리 ({selectedRows.size})
-                    </button>
-                    <button className="btn btn-danger btn-sm" disabled={selectedRows.size === 0} onClick={handleDeleteMaster}>
-                        🏃‍♂️ 퇴사 확정 (마스터 삭제)
-                    </button>
+                <div className="flex gap-1" style={{ visibility: 'hidden' }}>
+                    {/* Placeholder for removed bulk buttons to maintain layout spacing */}
+                    <button className="btn btn-sm">placeholder</button> 
                 </div>
                 <div className="flex gap-1">
                     <button className="btn btn-sm" onClick={() => window.open('/api/assets/Resign/download', '_blank')}>📥 CSV</button>
@@ -179,28 +176,67 @@ const ListTab = ({ resigns, isLoading, queryClient, addToast }) => {
                         <table className="data-table">
                             <thead>
                                 <tr>
-                                    <th style={{ width: '40px' }}><input type="checkbox" onChange={() => {
-                                        selectedRows.size === resigns.length ? setSelectedRows(new Set()) : setSelectedRows(new Set(resigns.map((_, i) => i)))
-                                    }} checked={selectedRows.size === resigns?.length} /></th>
+                                    <th style={{ width: '80px', textAlign: 'center' }}>상태</th>
+                                    <th style={{ width: '100px', textAlign: 'center' }}>액션</th>
                                     {displayCols.map(col => <th key={col}>{col}</th>)}
                                 </tr>
                             </thead>
                             <tbody>
-                                {resigns.map((row, idx) => (
-                                    <tr key={idx}>
-                                        <td className="checkbox-cell">
-                                            <input type="checkbox" checked={selectedRows.has(idx)}
-                                                onChange={(e) => {
-                                                    const s = new Set(selectedRows)
-                                                    e.target.checked ? s.add(idx) : s.delete(idx)
-                                                    setSelectedRows(s)
-                                                }} />
-                                        </td>
-                                        {displayCols.map(col => (
-                                            <td key={col}>{row[col] !== null && row[col] !== undefined ? String(row[col]) : '-'}</td>
-                                        ))}
-                                    </tr>
-                                ))}
+                                {resigns.map((row, idx) => {
+                                    const hasAssets = checkHasAssets(row)
+                                    const isDeleted = row._is_deleted === true
+                                    
+                                    let statusColor = hasAssets ? '#c53030' : '#166534'
+                                    let statusText = hasAssets ? '🔴 보유중' : '🟢 반납 완료'
+                                    let bgColor = hasAssets ? '#fff5f5' : '#f0fdf4'
+
+                                    if (isDeleted) {
+                                        statusColor = '#6b7280'
+                                        statusText = '✔️ 처리 완료'
+                                        bgColor = '#f9fafb'
+                                    }
+
+                                    return (
+                                        <tr key={idx} style={{ backgroundColor: bgColor }}>
+                                            <td style={{ textAlign: 'center', fontWeight: 'bold', color: statusColor }}>
+                                                {statusText}
+                                            </td>
+                                            <td style={{ textAlign: 'center' }}>
+                                                {isDeleted ? (
+                                                    <span style={{ fontSize: '0.85rem', color: '#9ca3af', fontWeight: 'bold' }}>완료됨</span>
+                                                ) : hasAssets ? (
+                                                    <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>자산 클릭하여 반납</span>
+                                                ) : (
+                                                    <button className="btn btn-danger btn-sm" onClick={() => handleSingleDelete(row)} style={{ padding: '2px 8px', fontSize: '0.8rem' }}>
+                                                        🏃‍♂️ 퇴사 확정
+                                                    </button>
+                                                )}
+                                            </td>
+                                            {displayCols.map(col => {
+                                                const val = row[col] !== null && row[col] !== undefined ? String(row[col]) : '-'
+                                                const isValValid = val.trim() !== '' && val.trim() !== '-' && val.trim() !== 'null' && val.trim() !== 'undefined'
+                                                
+                                                let renderContent = val
+                                                
+                                                if (!isDeleted && isValValid) {
+                                                    if (col === '노트북') {
+                                                        renderContent = <span className="text-blue-600 hover:underline cursor-pointer font-bold" onClick={() => handleSingleReturn(row, '노트북', 'Lease')}>{val}</span>
+                                                    } else if (col === '아이패드') {
+                                                        renderContent = <span className="text-blue-600 hover:underline cursor-pointer font-bold" onClick={() => handleSingleReturn(row, '아이패드', 'iPad')}>{val}</span>
+                                                    } else if (col === 'Teams') {
+                                                        renderContent = <span className="text-blue-600 hover:underline cursor-pointer font-bold" onClick={() => handleSingleReturn(row, 'Teams', 'Teams')}>{val}</span>
+                                                    } else if (col === '모니터') {
+                                                        renderContent = <span className="text-blue-600 hover:underline cursor-pointer font-bold" onClick={() => handleSingleReturn(row, '모니터', 'Monitor')}>{val}</span>
+                                                    } else if (col === '복합기') {
+                                                        renderContent = <span className="text-blue-600 hover:underline cursor-pointer font-bold" onClick={() => handleSingleReturn(row, '복합기', 'Printer')}>{val}</span>
+                                                    }
+                                                }
+
+                                                return <td key={col}>{renderContent}</td>
+                                            })}
+                                        </tr>
+                                    )
+                                })}
                             </tbody>
                         </table>
                     </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 
-const SearchableSelect = ({ options, value, onChange, placeholder, displayField = "label", valueField = "value", searchFields = ["label"], width = "200px" }) => {
+const SearchableSelect = ({ options, value, onChange, placeholder, displayField = "label", valueField = "value", searchFields = ["label"], width = "200px", allowCustom = false }) => {
     const [isOpen, setIsOpen] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
     const containerRef = useRef(null)
@@ -27,6 +27,14 @@ const SearchableSelect = ({ options, value, onChange, placeholder, displayField 
         (options || []).find(opt => opt[valueField] === value), 
     [options, value, valueField])
 
+    // If custom value allowed, the display name can be the value itself if not found in options
+    const displayValue = selectedOption ? selectedOption[displayField] : (allowCustom && value ? value : placeholder)
+
+    const isExactMatch = useMemo(() => {
+        if (!searchTerm) return true
+        return (options || []).some(opt => opt[displayField].toLowerCase() === searchTerm.toLowerCase())
+    }, [options, searchTerm, displayField])
+
     return (
         <div ref={containerRef} style={{ position: 'relative', width }}>
             <div 
@@ -43,8 +51,8 @@ const SearchableSelect = ({ options, value, onChange, placeholder, displayField 
                     minHeight: '38px'
                 }}
             >
-                <span style={{ color: selectedOption ? '#000' : '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {selectedOption ? selectedOption[displayField] : placeholder}
+                <span style={{ color: (selectedOption || (allowCustom && value)) ? '#000' : '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {displayValue}
                 </span>
                 <span style={{ fontSize: '0.8em', color: '#666' }}>{isOpen ? '▲' : '▼'}</span>
             </div>
@@ -68,12 +76,35 @@ const SearchableSelect = ({ options, value, onChange, placeholder, displayField 
                         <input 
                             autoFocus
                             type="text" 
-                            placeholder="검색..." 
+                            placeholder="검색 또는 직접 입력..." 
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             style={{ width: '100%', padding: '6px', border: '1px solid #ddd', borderRadius: '4px', boxSizing: 'border-box' }}
                         />
                     </div>
+                    
+                    {allowCustom && searchTerm && !isExactMatch && (
+                        <div 
+                            onClick={() => {
+                                onChange(searchTerm)
+                                setIsOpen(false)
+                                setSearchTerm('')
+                            }}
+                            style={{ 
+                                padding: '10px 12px', 
+                                cursor: 'pointer',
+                                backgroundColor: '#f0fdf4',
+                                borderBottom: '1px solid #dcfce7',
+                                color: '#166534',
+                                fontWeight: 'bold'
+                            }}
+                            onMouseOver={(e) => e.target.style.backgroundColor = '#dcfce7'}
+                            onMouseOut={(e) => e.target.style.backgroundColor = '#f0fdf4'}
+                        >
+                            ✨ 직접 입력: "{searchTerm}" (선택)
+                        </div>
+                    )}
+
                     {filteredOptions.length > 0 ? filteredOptions.map((opt, idx) => (
                         <div 
                             key={idx}
@@ -94,7 +125,7 @@ const SearchableSelect = ({ options, value, onChange, placeholder, displayField 
                             <div style={{ fontWeight: value === opt[valueField] ? 'bold' : 'normal' }}>{opt[displayField]}</div>
                             {opt.subLabel && <div style={{ fontSize: '0.8em', color: '#666' }}>{opt.subLabel}</div>}
                         </div>
-                    )) : (
+                    )) : !allowCustom && (
                         <div style={{ padding: '12px', textAlign: 'center', color: '#999' }}>검색 결과가 없습니다.</div>
                     )}
                 </div>
