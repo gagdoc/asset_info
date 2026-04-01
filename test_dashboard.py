@@ -6,7 +6,7 @@ from backend.routers.assets import get_dashboard_integrated
 
 async def main():
     print("Fetching dashboard integrated data...")
-    res = await get_dashboard_integrated()
+    res = get_dashboard_integrated()
     print("Total rows:", len(res))
     if len(res) > 0:
         print("Sample row:", res[0])

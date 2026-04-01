@@ -58,7 +58,14 @@ const Dashboard = () => {
         resignMutation.mutate(resignForm)
     }
 
-    if (isSummaryLoading) return <div className="loading"><div className="spinner" /> 데이터 로딩중...</div>
+    if (isSummaryLoading || isIntegratedLoading) return <div className="loading"><div className="spinner" /> 데이터 로딩중...</div>
+    
+    if (!summary || !integratedData) return (
+        <div className="card alert alert-danger">
+            ⚠️ 데이터를 불러올 수 없습니다. 서버가 실행 중인지 확인해 주세요.
+            <button className="btn btn-sm mt-2" onClick={() => queryClient.invalidateQueries()}>다시 시도</button>
+        </div>
+    )
 
     const stats = [
         { label: '총 운용 인원', value: summary?.total_users || 0, suffix: '명', color: '#4f46e5' },
@@ -97,7 +104,7 @@ const Dashboard = () => {
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="dashboard-header-action flex justify-between items-center" style={{ marginBottom: '1.5rem' }}>
                 <h1>📊 통합 자산 현황 (대시보드)</h1>
                 <div style={{ display: 'flex', gap: '10px' }}>
                     <button className="btn btn-danger" onClick={() => setShowResignModal(true)}>
@@ -109,7 +116,7 @@ const Dashboard = () => {
             {/* 퇴사자 처리 모달 */}
             {showResignModal && (
                 <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-                    <div className="modal-content card" style={{ padding: '2rem', width: '600px', backgroundColor: '#fff' }}>
+                    <div className="modal-content card modal" style={{ padding: '2rem', maxWidth: '600px', width: '100%', backgroundColor: '#fff' }}>
                         <h2 style={{ marginTop: 0, color: '#ef4444' }}>👋 퇴사자 처리 연동</h2>
                         <form onSubmit={handleResignSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                             <div>
@@ -125,7 +132,7 @@ const Dashboard = () => {
                             {selectedResignUser && (
                                 <div style={{ backgroundColor: '#f9fafb', padding: '15px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.9rem' }}>
                                     <h4 style={{ margin: '0 0 10px 0', color: '#4b5563' }}>📋 자동 조회된 자산 내역 (이관 시 첨부됨)</h4>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                    <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                                         <div><strong>부서:</strong> {selectedResignUser.BU} / {selectedResignUser.ROLE}</div>
                                         <div><strong>노트북:</strong> {selectedResignUser.Lease_List !== '-' ? selectedResignUser.Lease_List : '없음'}</div>
                                         <div><strong>아이패드:</strong> {selectedResignUser.Ipad_List !== '-' ? selectedResignUser.Ipad_List : '없음'}</div>
@@ -166,9 +173,9 @@ const Dashboard = () => {
             </div>
 
             <div className="card">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-2 table-header-action">
                     <h3>📋 자산 통합 상세 조회</h3>
-                    <div style={{ position: 'relative', width: '300px' }}>
+                    <div style={{ position: 'relative', width: '100%', maxWidth: '300px' }}>
                         <input
                             className="form-input"
                             placeholder="🔍 통합 검색 (이름, 이메일, 자산번호 등)"

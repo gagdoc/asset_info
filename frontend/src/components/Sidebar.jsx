@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
-import { FaHome, FaLaptop, FaTabletAlt, FaPrint, FaDesktop, FaPhone, FaUserPlus, FaUserTimes, FaBoxOpen, FaCog, FaUpload, FaExternalLinkAlt } from 'react-icons/fa'
+import { FaHome, FaLaptop, FaTabletAlt, FaPrint, FaDesktop, FaPhone, FaUserPlus, FaUserTimes, FaBoxOpen, FaCog, FaUpload, FaExternalLinkAlt, FaTimes } from 'react-icons/fa'
 
-const Sidebar = () => {
+const Sidebar = ({ isOpen, onClose }) => {
     const assetItems = [
         { name: '노트북 (Lease)', path: '/assets/Lease', icon: <FaLaptop /> },
         { name: '아이패드 (iPad)', path: '/assets/iPad', icon: <FaTabletAlt /> },
@@ -22,43 +22,51 @@ const Sidebar = () => {
     ]
 
     return (
-        <aside className="sidebar">
-            <div className="sidebar-logo">
-                <h2>📦 Asset Manager</h2>
-                <small>사내 자산 & 소모품 관리</small>
+        <>
+        {isOpen && <div className="sidebar-overlay" onClick={onClose}></div>}
+        <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
+            <div className="sidebar-logo" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                    <h2>📦 Asset Manager</h2>
+                    <small>사내 자산 & 소모품 관리</small>
+                </div>
+                <button className="btn-icon mobile-close-btn" onClick={onClose} style={{ color: 'white', display: 'none' }}>
+                    <FaTimes size={20} />
+                </button>
             </div>
 
-            <NavLink to="/dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <NavLink to="/dashboard" onClick={onClose} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                 <FaHome /> <span>대시보드</span>
             </NavLink>
 
             <div className="sidebar-section">자산 관리</div>
             {assetItems.map(item => (
-                <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                <NavLink key={item.path} to={item.path} onClick={onClose} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                     {item.icon} <span>{item.name}</span>
                 </NavLink>
             ))}
 
             <div className="sidebar-section">인사 관리</div>
             {personItems.map(item => (
-                <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                <NavLink key={item.path} to={item.path} onClick={onClose} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                     {item.icon} <span>{item.name}</span>
                 </NavLink>
             ))}
 
             <div className="sidebar-section">시스템</div>
             {systemItems.map(item => (
-                <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                <NavLink key={item.path} to={item.path} onClick={onClose} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                     {item.icon} <span>{item.name}</span>
                 </NavLink>
             ))}
 
             <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                <NavLink to="/register" className="nav-link" style={{ color: '#818cf8', fontWeight: '600' }}>
+                <NavLink to="/register" onClick={onClose} className="nav-link" style={{ color: '#818cf8', fontWeight: '600' }}>
                     <FaExternalLinkAlt /> <span>출고 등록 (자가용)</span>
                 </NavLink>
             </div>
         </aside>
+        </>
     )
 }
 

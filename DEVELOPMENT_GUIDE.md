@@ -585,4 +585,48 @@ AI 어시스턴트(Antigravity 등)와 협업 시 **토큰 사용량을 최소�
 
 ---
 
+## 15. 배포 및 운영 가이드 (Google Cloud Run)
+
+이 프로젝트는 **Google Cloud Run**을 통해 상용 환경에 배포되어 있으며, 자동화된 배포 스크립트를 제공합니다.
+
+### 15-1. 배포 구조
+- **환경**: Google Cloud Run (Managed)
+- **리전**: `asia-northeast3` (Seoul)
+- **인증**: 서비스 계정 키(`data/*.json`)를 사용하여 `deploy.sh`에서 자동 처리
+- **데이터 저장**: Google Sheets API (Real-time sync)
+
+### 15-2. 배포 절차 (Publishing)
+수정 사항을 클라우드에 반영하려면 터미널에서 다음 명령어를 실행하면 됩니다.
+
+```bash
+./deploy.sh
+```
+
+이 스크립트는 다음 작업을 자동으로 수행합니다:
+1. 서비스 계정 인증 및 프로젝트 설정
+2. 로컬 소스 코드를 클라우드로 업로드하여 빌드
+3. `asset-info` 서비스의 새로운 리비전 배포
+4. `GOOGLE_CREDENTIALS_JSON` 환경 변수 주입 (시트 접근용)
+
+### 15-3. 설정 파일 (`deployment_config.json`)
+배포 대상 프로젝트와 서비스 이름은 이 파일에서 관리합니다.
+```json
+{
+  "project_id": "st-asset-project",
+  "service_name": "asset-info",
+  "service_account_key": "data/st-asset-project-8000c6bb9905.json",
+  "region": "asia-northeast3"
+}
+```
+
+### 15-4. 필수 IAM 권한 (GCP Console)
+서비스 계정(`asset-manager@...`)이 원활하게 작동하려면 다음 역할이 필요합니다:
+- **Cloud Run 관리자**: 서비스 배포 및 설정
+- **Cloud Build 편집자**: 소스 코드 빌드 및 이미지 생성
+- **Artifact Registry 관리자**: 빌드된 이미지 저장 관리
+- **저장소 관리자 (Storage Admin)**: 빌드 중 임시 파일 저장 버킷 접근
+- **서비스 사용량 소비지**: API 호출 권한
+
+---
+
 *문의사항은 개발팀에게 연락하세요.*

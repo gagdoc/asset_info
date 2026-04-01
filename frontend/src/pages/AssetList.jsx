@@ -245,6 +245,13 @@ const AssetList = () => {
     }
 
     if (isLoading) return <div className="loading"><div className="spinner" /> 데이터 로딩중...</div>
+    
+    if (!assets) return (
+        <div className="card alert alert-danger">
+            ⚠️ 데이터를 불러올 수 없습니다. 서버 연결을 확인해 주세요.
+            <button className="btn btn-sm mt-2" onClick={() => queryClient.invalidateQueries(['assets', type])}>다시 시도</button>
+        </div>
+    )
 
     const titleMap = {
         'Lease': '💻 PC/노트북 (Lease) 관리',
@@ -259,7 +266,7 @@ const AssetList = () => {
 
     return (
         <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-2 dashboard-header-action">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                     <h1 style={{ margin: 0 }}>{titleMap[type] || `${type} Management`}</h1>
                     {['Lease', 'iPad', 'Monitor'].includes(type) && (
@@ -450,7 +457,7 @@ const AssetList = () => {
 
             {isModalOpen && (
                 <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-                    <div className="card" style={{ width: '80%', maxWidth: '800px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    <div className="card modal" style={{ width: '90%', maxWidth: '800px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: '#fff' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '1rem', borderBottom: '1px solid #eee' }}>
                             <h3 style={{ margin: 0 }}>📍 상세 정보 수정</h3>
                             <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>✖</button>

@@ -187,6 +187,12 @@ const SelfOutbound = () => {
                 </button>
                 <LoadingModal isOpen={mutation.isPending} message="출고 내역을 안전하게 저장 중입니다..." />
                 <LoadingModal isOpen={isInitialLoading} message="필요한 정보를 불러오는 중입니다..." />
+
+                {!isInitialLoading && (!itemsList || !usersList) && (
+                    <div className="alert alert-danger mt-2" style={{ fontSize: '0.85rem' }}>
+                        ⚠️ 정보를 불러오지 못했습니다. 서버 상태를 확인해 주세요.
+                    </div>
+                )}
             </form>
 
             {isSuccess && (
