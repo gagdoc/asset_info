@@ -107,6 +107,15 @@ const Dashboard = () => {
             <div className="dashboard-header-action flex justify-between items-center" style={{ marginBottom: '1.5rem' }}>
                 <h1>📊 통합 자산 현황 (대시보드)</h1>
                 <div style={{ display: 'flex', gap: '10px' }}>
+                    <button 
+                        className="btn btn-secondary" 
+                        onClick={() => {
+                            queryClient.invalidateQueries(['dashboardSummary'])
+                            queryClient.invalidateQueries(['dashboardIntegrated'])
+                        }}
+                    >
+                        🔄 최신 정보 불러오기
+                    </button>
                     <button className="btn btn-danger" onClick={() => setShowResignModal(true)}>
                         👋 퇴사자 처리
                     </button>
