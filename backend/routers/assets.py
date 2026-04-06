@@ -52,6 +52,11 @@ class BuRoleEntry(BaseModel):
     BU: str
     ROLE: str = ""
 
+class BulkSearchRequest(BaseModel):
+    search_input: str
+    search_type: str = "all"
+    search_target: str = "all"
+
 # ── Dashboard ────────────────────────────────────────
 @router.get("/dashboard")
 def get_dashboard_data():
@@ -200,6 +205,143 @@ def get_dashboard_integrated():
     # Final sort/filter
     result_df = view_df[desired_cols].where(pd.notnull(view_df[desired_cols]), "-")
     return result_df.to_dict(orient="records")
+
+@router.post("/bulk-search")
+def bulk_search_assets(req: BulkSearchRequest):
+    """
+    Search multiple identifiers across selected targets and column types.
+    Returns: { "found": [...], "notFound": [...] }
+    """
+    import re
+    import pandas as pd
+    # 분리기(개행, 쉼표, 세미콜론)를 기준으로 입력어 분리
+    terms = [t.strip() for t in re.split(r'[\n,;]+', req.search_input) if t.strip()]
+    if not terms:
+        return {"found": [], "notFound": []}
+
+    found_results = []
+    found_terms = set()
+
+    # Determine which columns to search based on search_type
+    def filter_columns_by_type(all_cols, table_key):
+        if req.search_type == "email":
+            return [c for c in all_cols if c.lower() in ["email"]]
+        elif req.search_type == "serial_laptop":
+            if table_key == "Lease":
+                return [c for c in all_cols if c in ["S/N", "SNOW Tag"]]
+            elif table_key == "dashboard":
+                return [c for c in all_cols if c == "Lease_List"]
+            return []
+        elif req.search_type == "serial_ipad":
+            if table_key == "iPad":
+                return [c for c in all_cols if c in ["S/N", "전화 번호", "Model"]]
+            elif table_key == "dashboard":
+                return [c for c in all_cols if c == "Ipad_List"]
+            return []
+        # if "all", return all provided columns
+        return all_cols
+
+    if req.search_target == "dashboard":
+        # Search within integrated dashboard view
+        dashboard_data = get_dashboard_integrated()
+        if dashboard_data:
+            df = pd.DataFrame(dashboard_data)
+            base_cols = df.columns.tolist()
+            search_cols = filter_columns_by_type(base_cols, "dashboard")
+            
+            for term in terms:
+                term_lower = term.lower()
+                matched_for_term = False
+                
+                if search_cols:
+                    for col in search_cols:
+                        mask = df[col].astype(str).str.lower().str.contains(term_lower, na=False, regex=False)
+                        if mask.any():
+                            matched_rows = df[mask].copy()
+                            for _, row in matched_rows.iterrows():
+                                row_dict = row.where(pd.notnull(row), None).to_dict()
+                                # Only add if not already added to avoid exact duplicate for same term
+                                res_entry = {
+                                    "type": "대시보드",
+                                    "table_key": "dashboard",
+                                    "match_col": col,
+                                    "match_term": term,
+                                    "data": row_dict
+                                }
+                                # Simple deduplication
+                                if not any(r["data"] == row_dict and r["match_term"] == term for r in found_results):
+                                    found_results.append(res_entry)
+                                matched_for_term = True
+
+                if matched_for_term:
+                    found_terms.add(term)
+
+    else:
+        dfs = load_from_db()
+        search_targets = {
+            "Lease": ["S/N", "SNOW Tag", "email", "User", "Model"],
+            "iPad": ["S/N", "전화 번호", "email", "User", "Model"],
+            "Teams": ["Number formated for Country", "LineURI", "email", "Business Title"],
+            "Monitor": ["Model", "email", "User"],
+            "Printer": ["Model", "email", "프린터정보"],
+            "All_User": ["email", "NAME", "이름"]
+        }
+        type_labels = {
+            "Lease": "노트북",
+            "iPad": "아이패드",
+            "Teams": "Teams",
+            "Monitor": "모니터",
+            "Printer": "복합기",
+            "All_User": "사용자(마스터)"
+        }
+        
+        # Filter table targets
+        target_keys = list(search_targets.keys())
+        if req.search_target == "laptop":
+            target_keys = ["Lease"]
+        elif req.search_target == "ipad":
+            target_keys = ["iPad"]
+
+        for term in terms:
+            term_lower = term.lower()
+            matched_for_term = False
+            
+            for table_key in target_keys:
+                if table_key not in dfs or dfs[table_key].empty:
+                    continue
+                    
+                df = dfs[table_key]
+                available_cols = [c for c in search_targets[table_key] if c in df.columns]
+                search_cols = filter_columns_by_type(available_cols, table_key)
+                if not search_cols:
+                    continue
+                    
+                for col in search_cols:
+                    mask = df[col].astype(str).str.lower().str.contains(term_lower, na=False, regex=False)
+                    if mask.any():
+                        matched_rows = df[mask].copy()
+                        for _, row in matched_rows.iterrows():
+                            # Null 처리 및 dict 변환
+                            row_dict = row.where(pd.notnull(row), None).to_dict()
+                            res_entry = {
+                                "type": type_labels.get(table_key, table_key),
+                                "table_key": table_key,
+                                "match_col": col,
+                                "match_term": term,
+                                "data": row_dict
+                            }
+                            found_results.append(res_entry)
+                            matched_for_term = True
+            
+            if matched_for_term:
+                found_terms.add(term)
+
+    not_found = [t for t in terms if t not in found_terms]
+    
+    return {
+        "found": found_results,
+        "notFound": not_found
+    }
 
 # ── Asset List (Read) ────────────────────────────────
 @router.get("/{asset_type}")
@@ -544,7 +686,7 @@ def process_asset_return_endpoint(req: AssetReturnRequest):
     
     if (eng_name == "Unknown" or user_bu == "Unknown") and "All_User" in dfs and not dfs["All_User"].empty:
         clean_email = email.split('@')[0] if '@' in email else email
-        mask = dfs["All_User"]["email"].str.strip().str.lower().str.contains(clean_email, na=False)
+        mask = dfs["All_User"]["email"].str.strip().str.lower().str.contains(clean_email, na=False, regex=False)
         user_row = dfs["All_User"][mask]
         if not user_row.empty:
             if eng_name == "Unknown":

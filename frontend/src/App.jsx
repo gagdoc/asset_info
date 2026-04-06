@@ -11,6 +11,7 @@ import Resign from './pages/Resign'
 import DeptConfig from './pages/DeptConfig'
 import ExcelUpload from './pages/ExcelUpload'
 import SelfOutbound from './pages/SelfOutbound'
+import BulkSearch from './pages/BulkSearch'
 
 function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -45,6 +46,7 @@ function App() {
               <Route path="/config" element={<DeptConfig />} />
               <Route path="/upload" element={<ExcelUpload />} />
               <Route path="/register" element={<SelfOutbound />} />
+              <Route path="/bulk-search" element={<BulkSearch />} />
             </Routes>
           </main>
         </div>
