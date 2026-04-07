@@ -4,7 +4,7 @@ import { FaSearch, FaExclamationTriangle, FaCheckCircle, FaTrashAlt } from 'reac
 import { useToast } from '../components/Toast'
 import LoadingModal from '../components/LoadingModal'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
+const API_BASE = '/api'
 
 export default function BulkSearch() {
   const [searchInput, setSearchInput] = useState('')
