@@ -104,26 +104,27 @@ def get_dashboard_integrated():
     if cols_present:
         view_df.drop(columns=cols_present, inplace=True)
 
-    # Filter valid emails
+    # Filter valid emails (원본 대소문자 보존)
     if "email" in view_df.columns:
-        view_df["email"] = view_df["email"].astype(str).str.strip().str.lower()
-        view_df = view_df[~view_df["email"].isin(["nan", "", "none", "null"])]
+        view_df["email"] = view_df["email"].astype(str).str.strip()
+        view_df = view_df[~view_df["email"].str.lower().isin(["nan", "", "none", "null"])]
+        view_df["_email_key"] = view_df["email"].str.lower()
     else:
         return []
 
     # Helper: Group by email and join values with duplicate marker
     def _group_asset(df, email_col, val_col, target_key):
         if df.empty or email_col not in df.columns or val_col not in df.columns:
-            return pd.DataFrame(columns=["email", target_key])
+            return pd.DataFrame(columns=["_email_key", target_key])
         
         subset = df[[email_col, val_col]].dropna().copy()
-        subset["email"] = subset["email"].astype(str).str.strip().str.lower()
+        subset["_email_key"] = subset[email_col].astype(str).str.strip().str.lower()
         subset[val_col] = subset[val_col].astype(str).str.strip()
         
         # Filter out invalid values
         subset = subset[~subset[val_col].isin(["", "-", "nan", "None", "null"])]
         if subset.empty:
-            return pd.DataFrame(columns=["email", target_key])
+            return pd.DataFrame(columns=["_email_key", target_key])
 
         # Group and Join
         def _join_logic(x):
@@ -132,7 +133,7 @@ def get_dashboard_integrated():
             prefix = "[중복!] " if len(unique_vals) > 1 else ""
             return prefix + ", ".join(unique_vals)
 
-        grouped = subset.groupby("email")[val_col].apply(_join_logic).reset_index()
+        grouped = subset.groupby("_email_key")[val_col].apply(_join_logic).reset_index()
         return grouped.rename(columns={val_col: target_key})
 
     # 1. Lease
@@ -140,19 +141,19 @@ def get_dashboard_integrated():
         cols = dfs["Lease"].columns
         target_col = "S/N" if "S/N" in cols else (cols[3] if len(cols) > 3 else cols[0])
         l_sub = _group_asset(dfs["Lease"], "email", target_col, "Lease_List")
-        view_df = pd.merge(view_df, l_sub, on="email", how="left")
+        view_df = pd.merge(view_df, l_sub, on="_email_key", how="left")
 
     # 2. iPad
     if "iPad" in dfs and not dfs["iPad"].empty:
         cols = dfs["iPad"].columns
         target_col = "S/N" if "S/N" in cols else ("Model" if "Model" in cols else cols[0])
         i_sub = _group_asset(dfs["iPad"], "email", target_col, "Ipad_List")
-        view_df = pd.merge(view_df, i_sub, on="email", how="left")
+        view_df = pd.merge(view_df, i_sub, on="_email_key", how="left")
 
     # 3. Monitor
     if "Monitor" in dfs and not dfs["Monitor"].empty:
         m_sub = _group_asset(dfs["Monitor"], "email", "Model", "Monitor")
-        view_df = pd.merge(view_df, m_sub, on="email", how="left")
+        view_df = pd.merge(view_df, m_sub, on="_email_key", how="left")
 
     # 4. Teams
     if "Teams" in dfs and not dfs["Teams"].empty:
@@ -160,7 +161,7 @@ def get_dashboard_integrated():
         target_col = next((c for c in ["LineURI", "Number", "전화번호", "Number formated for Country"] if c in cols), None)
         if target_col:
             t_sub = _group_asset(dfs["Teams"], "email", target_col, "TeamsNum")
-            view_df = pd.merge(view_df, t_sub, on="email", how="left")
+            view_df = pd.merge(view_df, t_sub, on="_email_key", how="left")
 
     # 5. Printer
     if "Printer" in dfs and not dfs["Printer"].empty:
@@ -168,13 +169,13 @@ def get_dashboard_integrated():
         target_col = next((c for c in ["Additional Information 2", "프린터정보", "Model"] if c in cols), None)
         if target_col:
             p_sub = _group_asset(dfs["Printer"], "email", target_col, "Printer")
-            view_df = pd.merge(view_df, p_sub, on="email", how="left")
+            view_df = pd.merge(view_df, p_sub, on="_email_key", how="left")
 
     # 6. Resign Info
     if "Resign" in dfs and not dfs["Resign"].empty and "email" in dfs["Resign"].columns:
         try:
             r_sub = dfs["Resign"].copy()
-            r_sub["email"] = r_sub["email"].astype(str).str.strip().str.lower()
+            r_sub["_email_key"] = r_sub["email"].astype(str).str.strip().str.lower()
             
             if all(c in r_sub.columns for c in ["년도", "월", "날짜"]):
                 r_sub["퇴사정보"] = r_sub.apply(lambda x: f"{int(x['년도'])}년 {int(x['월'])}월 {int(x['날짜'])}일 퇴사" if pd.notnull(x["년도"]) else "퇴사자", axis=1)
@@ -183,9 +184,13 @@ def get_dashboard_integrated():
             else:
                 r_sub["퇴사정보"] = "퇴사자 목록 포함"
             
-            r_sub = r_sub[["email", "퇴사정보"]].drop_duplicates("email")
-            view_df = pd.merge(view_df, r_sub, on="email", how="left")
+            r_sub = r_sub[["_email_key", "퇴사정보"]].drop_duplicates("_email_key")
+            view_df = pd.merge(view_df, r_sub, on="_email_key", how="left")
         except: pass
+
+    # 임시 병합 키 제거
+    if "_email_key" in view_df.columns:
+        view_df.drop(columns=["_email_key"], inplace=True)
 
     # Fill missing cols and handle NaNs
     view_df["퇴사정보"] = view_df.get("퇴사정보", pd.Series()).fillna("-")
