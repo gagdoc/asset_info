@@ -299,9 +299,13 @@ const OutboundTab = ({ month }) => {
     const [showForm, setShowForm] = useState(false)
     const [formData, setFormData] = useState({ date: '', item_name: '', quantity: '1', user_name: '', outbound_type: '일반' })
 
-    const isTonner = (name) => {
+    const [filterCategory, setFilterCategory] = useState('')
+
+    const isTonner = (name, category) => {
         const n = (name || '').toLowerCase()
+        const c = (category || '').toLowerCase()
         return n.includes('tonner') || n.includes('toner') || n.includes('토너')
+            || c.includes('tonner') || c.includes('toner') || c.includes('토너')
     }
 
     const { data: history, isLoading } = useQuery({
@@ -376,9 +380,29 @@ const OutboundTab = ({ month }) => {
         }
     })
 
-    const itemOptions = useMemo(() => 
-        (itemsList || []).map(it => ({ label: it.item_name, value: it.item_name })), 
+    // 분류 목록
+    const categories = useMemo(() =>
+        Array.from(new Set((itemsList || []).map(it => it.category).filter(Boolean))).sort(),
     [itemsList])
+
+    // 분류 필터 적용된 품목 옵션 (분류+품목명 같이 표시)
+    const itemOptions = useMemo(() => {
+        const filtered = filterCategory
+            ? (itemsList || []).filter(it => it.category === filterCategory)
+            : (itemsList || [])
+        return filtered.map(it => ({
+            label: it.item_name,
+            value: it.item_name,
+            subLabel: it.category,
+            category: it.category
+        }))
+    }, [itemsList, filterCategory])
+
+    // 현재 선택된 품목의 분류 (isTonner 판단용)
+    const selectedItemCategory = useMemo(() => {
+        if (!formData.item_name || !itemsList) return ''
+        return (itemsList.find(it => it.item_name === formData.item_name) || {}).category || ''
+    }, [formData.item_name, itemsList])
 
     const userOptions = useMemo(() => 
         (usersList || []).map(u => {
@@ -430,34 +454,92 @@ const OutboundTab = ({ month }) => {
             </div>
 
             {showForm && (
-                <form onSubmit={handleSubmit} style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>출고 날짜</label>
-                        <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }} required />
-                    </div>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>품목</label>
-                        <SearchableSelect
-                            options={itemOptions}
-                            value={formData.item_name}
-                            onChange={val => setFormData({...formData, item_name: val, outbound_type: '일반'})}
-                            placeholder="품목 선택"
-                            width="250px"
-                        />
-                    </div>
-                    {isTonner(formData.item_name) && (
+                <form onSubmit={handleSubmit} style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                        {/* 출고 날짜 */}
                         <div>
-                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>출고 유형</label>
-                            <div style={{ display: 'flex', gap: '8px' }}>
+                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>출고 날짜</label>
+                            <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }} required />
+                        </div>
+
+                        {/* 분류 필터 */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>분류 (ITEM)</label>
+                            <select
+                                value={filterCategory}
+                                onChange={e => {
+                                    setFilterCategory(e.target.value)
+                                    setFormData(f => ({ ...f, item_name: '', outbound_type: '일반' }))
+                                }}
+                                style={{ padding: '8px 10px', borderRadius: '4px', border: '1px solid #ddd', minWidth: '130px', height: '37px' }}
+                            >
+                                <option value="">전체 분류</option>
+                                {categories.map(cat => (
+                                    <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* 품목 선택 */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>
+                                품목
+                                {filterCategory && <span style={{ marginLeft: '6px', fontSize: '0.85em', color: '#6366f1', fontWeight: 'bold' }}>[{filterCategory}]</span>}
+                            </label>
+                            <SearchableSelect
+                                options={itemOptions}
+                                value={formData.item_name}
+                                onChange={val => setFormData(f => ({ ...f, item_name: val, outbound_type: '일반' }))}
+                                placeholder={filterCategory ? `${filterCategory} 품목 선택` : '품목 검색/선택'}
+                                width="260px"
+                            />
+                        </div>
+
+                        {/* 수량 */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>수량</label>
+                            <input type="number" min="1" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} style={{ padding: '8px', width: '80px', borderRadius: '4px', border: '1px solid #ddd' }} required />
+                        </div>
+
+                        {/* 사용자 이름 */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>사용자 이름</label>
+                            <SearchableSelect
+                                options={userOptions}
+                                value={formData.user_name}
+                                onChange={val => setFormData({...formData, user_name: val})}
+                                placeholder="사용자 검색 (이름/이메일)"
+                                searchFields={["name", "email", "bu"]}
+                                width="300px"
+                                allowCustom={true}
+                            />
+                        </div>
+
+                        <button type="submit" className="btn btn-primary" disabled={mutation.isPending}>
+                            확인
+                        </button>
+                    </div>
+
+                    {/* Tonner 선택 시 일반/위탁 구분 — 별도 행으로 눈에 띄게 표시 */}
+                    {isTonner(formData.item_name, selectedItemCategory) && (
+                        <div style={{
+                            marginTop: '12px', padding: '12px 16px',
+                            background: '#fff7ed', border: '2px solid #f97316',
+                            borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '16px'
+                        }}>
+                            <span style={{ fontWeight: 'bold', color: '#c2410c', fontSize: '0.95em' }}>
+                                🖨️ Tonner 출고 유형 선택
+                            </span>
+                            <div style={{ display: 'flex', gap: '10px' }}>
                                 {['일반', '위탁'].map(type => (
                                     <label key={type} style={{
-                                        display: 'flex', alignItems: 'center', gap: '5px',
-                                        padding: '6px 14px', borderRadius: '20px', cursor: 'pointer',
-                                        border: `2px solid ${formData.outbound_type === type ? (type === '위탁' ? '#f97316' : '#3b82f6') : '#ddd'}`,
-                                        backgroundColor: formData.outbound_type === type ? (type === '위탁' ? '#fff7ed' : '#eff6ff') : '#fff',
+                                        display: 'flex', alignItems: 'center', gap: '6px',
+                                        padding: '7px 18px', borderRadius: '20px', cursor: 'pointer',
+                                        border: `2px solid ${formData.outbound_type === type ? (type === '위탁' ? '#f97316' : '#3b82f6') : '#d1d5db'}`,
+                                        backgroundColor: formData.outbound_type === type ? (type === '위탁' ? '#fed7aa' : '#dbeafe') : '#fff',
                                         fontWeight: formData.outbound_type === type ? 'bold' : 'normal',
-                                        color: formData.outbound_type === type ? (type === '위탁' ? '#c2410c' : '#1d4ed8') : '#555',
-                                        transition: 'all 0.15s'
+                                        color: formData.outbound_type === type ? (type === '위탁' ? '#9a3412' : '#1e40af') : '#6b7280',
+                                        transition: 'all 0.15s', fontSize: '0.95em'
                                     }}>
                                         <input
                                             type="radio"
@@ -471,27 +553,13 @@ const OutboundTab = ({ month }) => {
                                     </label>
                                 ))}
                             </div>
+                            <span style={{ fontSize: '0.82em', color: '#92400e' }}>
+                                {formData.outbound_type === '위탁'
+                                    ? '위탁: 견적서 제외 · 위탁 토너 내역에 별도 기록'
+                                    : '일반: 월별 견적서에 합산'}
+                            </span>
                         </div>
                     )}
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>수량</label>
-                        <input type="number" min="1" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} style={{ padding: '8px', width: '80px', borderRadius: '4px', border: '1px solid #ddd' }} required />
-                    </div>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>사용자 이름</label>
-                        <SearchableSelect 
-                            options={userOptions} 
-                            value={formData.user_name} 
-                            onChange={val => setFormData({...formData, user_name: val})} 
-                            placeholder="사용자 검색 (이름/이메일)" 
-                            searchFields={["name", "email", "bu"]}
-                            width="300px"
-                            allowCustom={true}
-                        />
-                    </div>
-                    <button type="submit" className="btn btn-primary" disabled={mutation.isPending}>
-                        확인
-                    </button>
                 </form>
             )}
 
