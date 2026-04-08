@@ -3,7 +3,7 @@ from backend.services.consumables_service import (
     get_available_months, get_items_list, get_outbound_history,
     get_estimate, add_outbound, save_item, update_outbound_history,
     delete_outbound_history, get_item_outbound_history,
-    create_month_sheet, invalidate_cache
+    create_month_sheet, invalidate_cache, get_tonner_consignment_history
 )
 from typing import List, Dict, Any
 
@@ -105,3 +105,9 @@ def delete_outbound(month: str = Query(...), row_index: int = Query(...)):
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete outbound record")
     return {"status": "success"}
+
+@router.get("/tonner-consignment")
+def list_tonner_consignment(month: str = Query(None, description="조회할 월 (없으면 전체)")):
+    """위탁 출고된 Tonner 내역 조회"""
+    history = get_tonner_consignment_history(month=month)
+    return history

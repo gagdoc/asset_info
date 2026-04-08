@@ -84,8 +84,8 @@ def create_month_sheet(month_name: str, start_date: str) -> bool:
         ws = ss.add_worksheet(title=month_name, rows=1000, cols=20)
         
         # 헤더 기록
-        headers = ['날짜', '품목 명', '수량 (개)', '사용자 이름']
-        ws.update('A1:D1', [headers])
+        headers = ['날짜', '품목 명', '수량 (개)', '사용자 이름', '출고유형']
+        ws.update('A1:E1', [headers])
         
         # 시작 안내 데이터 한 줄 추가 (옵션)
         if start_date:
@@ -225,8 +225,8 @@ def _get_outbound_history_impl(month: str):
     if not ss: return []
     try:
         ws = ss.worksheet(month)
-        # A부터 D열까지 (날짜, 품목, 수량, 이름)
-        records = ws.get_values("A2:D")
+        # A부터 E열까지 (날짜, 품목, 수량, 이름, 출고유형)
+        records = ws.get_values("A2:E")
         history = []
         for i, r in enumerate(records):
             if not r or not str(r[0]).strip() or str(r[0]).strip() == "날짜": continue
@@ -235,7 +235,8 @@ def _get_outbound_history_impl(month: str):
                 "date": str(r[0]).strip() if len(r) > 0 else "",
                 "item_name": str(r[1]).strip() if len(r) > 1 else "",
                 "quantity": str(r[2]).strip() if len(r) > 2 else "",
-                "user_name": str(r[3]).strip() if len(r) > 3 else ""
+                "user_name": str(r[3]).strip() if len(r) > 3 else "",
+                "outbound_type": str(r[4]).strip() if len(r) > 4 else "일반"  # E열: 출고유형 (기본값 일반)
             })
         return history
     except Exception as e:
@@ -264,8 +265,11 @@ def get_estimate(month: str):
         }
 
     # 2. 아이템별 그룹화 (수량 합산, 사용자별 수량 병합)
+    # 위탁 출고는 견적서에서 제외 — 별도 위탁 토너 내역으로 관리
     agg = {}
     for h in history:
+        if h.get('outbound_type', '일반') == '위탁':
+            continue
         i_name = h.get('item_name', '').strip()
         if not i_name: continue
         
@@ -322,20 +326,26 @@ def get_estimate(month: str):
     return estimate
 
 def add_outbound(month: str, data: dict) -> bool:
-    """월별 출고 시트 왼쪽 A~D열의 빈 칸 맨 아래에 데이터를 기록합니다."""
+    """월별 출고 시트 왼쪽 A~E열의 빈 칸 맨 아래에 데이터를 기록합니다."""
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
         ws = ss.worksheet(month)
         col_A = ws.col_values(1) # A열 (날짜) 데이터들
         next_row = len(col_A) + 1 # 최초로 빈 행
-        
-        # update() 메서드를 활용하여 A~D 열에 값 대입
-        ws.update(f"A{next_row}:D{next_row}", [[
-            data.get('date', ''), 
-            data.get('item_name', ''), 
-            data.get('quantity', ''), 
-            data.get('user_name', '')
+
+        # E열: 출고유형 (일반/위탁), 기본값은 일반
+        outbound_type = data.get('outbound_type', '일반')
+        if not outbound_type or outbound_type.strip() == '':
+            outbound_type = '일반'
+
+        # update() 메서드를 활용하여 A~E 열에 값 대입
+        ws.update(f"A{next_row}:E{next_row}", [[
+            data.get('date', ''),
+            data.get('item_name', ''),
+            data.get('quantity', ''),
+            data.get('user_name', ''),
+            outbound_type
         ]])
         invalidate_cache()
         # 데이터 변경 시 재고리스트 요약 시트 동기화
@@ -351,11 +361,15 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
     if not ss: return False
     try:
         ws = ss.worksheet(month)
-        ws.update(f"A{row_index}:D{row_index}", [[
-            data.get('date', ''), 
-            data.get('item_name', ''), 
-            data.get('quantity', ''), 
-            data.get('user_name', '')
+        outbound_type = data.get('outbound_type', '일반')
+        if not outbound_type or outbound_type.strip() == '':
+            outbound_type = '일반'
+        ws.update(f"A{row_index}:E{row_index}", [[
+            data.get('date', ''),
+            data.get('item_name', ''),
+            data.get('quantity', ''),
+            data.get('user_name', ''),
+            outbound_type
         ]])
         invalidate_cache()
         # 데이터 변경 시 재고리스트 요약 시트 동기화
@@ -433,15 +447,15 @@ def get_item_outbound_history(item_name: str):
     """특정 품목의 과거 출고 이력을 모든 월별 시트에서 검색하여 년-월별 집계 가능하게 반환"""
     _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss_outbound: return []
-    
+
     months = [ws.title for ws in ss_outbound.worksheets() if "월" in ws.title and ws.title != "품목리스트"]
     if not months: return []
-    
-    ranges = [f"{m}!A2:D" for m in months]
+
+    ranges = [f"{m}!A2:E" for m in months]
     batch_res = ss_outbound.values_batch_get(ranges)
-    
+
     history = []
-    
+
     for month_title, res in zip(months, batch_res.get('valueRanges', [])):
         values = res.get('values', [])
         for row in values:
@@ -452,8 +466,47 @@ def get_item_outbound_history(item_name: str):
                     "month": month_title,
                     "date": str(row[0]).strip() if len(row) > 0 else "",
                     "quantity": qty,
-                    "user_name": str(row[3]).strip() if len(row) > 3 else ""
+                    "user_name": str(row[3]).strip() if len(row) > 3 else "",
+                    "outbound_type": str(row[4]).strip() if len(row) > 4 else "일반"
                 })
+    return history
+
+
+def get_tonner_consignment_history(month: str = None):
+    """위탁 출고된 Tonner 내역을 반환. month가 없으면 전체 월 조회."""
+    _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
+    if not ss_outbound: return []
+
+    if month:
+        months = [month]
+    else:
+        months = [ws.title for ws in ss_outbound.worksheets() if "월" in ws.title and ws.title != "품목리스트"]
+    if not months: return []
+
+    ranges = [f"{m}!A2:E" for m in months]
+    batch_res = ss_outbound.values_batch_get(ranges)
+
+    history = []
+    for month_title, res in zip(months, batch_res.get('valueRanges', [])):
+        values = res.get('values', [])
+        for i, row in enumerate(values):
+            if len(row) < 3: continue
+            outbound_type = str(row[4]).strip() if len(row) > 4 else "일반"
+            if outbound_type != '위탁': continue
+            item_name = str(row[1]).strip()
+            # 품목명에 Tonner / 토너 포함 여부 체크
+            if 'tonner' not in item_name.lower() and '토너' not in item_name:
+                continue
+            qty_str = str(row[2]).strip().replace(',', '')
+            qty = int(qty_str) if qty_str.isdigit() else 0
+            history.append({
+                "month": month_title,
+                "date": str(row[0]).strip() if len(row) > 0 else "",
+                "item_name": item_name,
+                "quantity": qty,
+                "user_name": str(row[3]).strip() if len(row) > 3 else "",
+                "outbound_type": "위탁"
+            })
     return history
 
 def sync_inventory_summary_sheet():

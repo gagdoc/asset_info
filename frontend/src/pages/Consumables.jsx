@@ -114,6 +114,13 @@ const Consumables = () => {
                 >
                     📍 재고 추적 관리
                 </button>
+                <button
+                    className={`btn ${activeTab === 'tonner-consignment' ? 'btn-primary' : ''}`}
+                    onClick={() => setActiveTab('tonner-consignment')}
+                    style={{ backgroundColor: activeTab === 'tonner-consignment' ? '' : '#fff7ed', border: '1px solid #f97316', color: activeTab === 'tonner-consignment' ? '' : '#c2410c' }}
+                >
+                    🖨️ 위탁 토너 내역
+                </button>
             </div>
 
             {activeTab === 'estimate' && selectedMonth && <EstimateTab month={selectedMonth} />}
@@ -121,6 +128,7 @@ const Consumables = () => {
             {activeTab === 'create-month' && <CreateMonthTab />}
             {activeTab === 'items' && <ItemsTab month={selectedMonth} />}
             {activeTab === 'tracked' && <TrackedItemsTab month={selectedMonth} />}
+            {activeTab === 'tonner-consignment' && <TonnerConsignmentTab month={selectedMonth} months={monthsData} />}
             
             {(activeTab === 'estimate' || activeTab === 'outbound') && !selectedMonth && (
                 <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>조회할 월(Month) 데이터를 불러오는 중입니다...</div>
@@ -289,7 +297,12 @@ const EstimateTab = ({ month }) => {
 const OutboundTab = ({ month }) => {
     const queryClient = useQueryClient()
     const [showForm, setShowForm] = useState(false)
-    const [formData, setFormData] = useState({ date: '', item_name: '', quantity: '1', user_name: '' })
+    const [formData, setFormData] = useState({ date: '', item_name: '', quantity: '1', user_name: '', outbound_type: '일반' })
+
+    const isTonner = (name) => {
+        const n = (name || '').toLowerCase()
+        return n.includes('tonner') || n.includes('toner') || n.includes('토너')
+    }
 
     const { data: history, isLoading } = useQuery({
         queryKey: ['consumables-outbound', month],
@@ -388,8 +401,9 @@ const OutboundTab = ({ month }) => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries(['consumables-outbound', month])
+            queryClient.invalidateQueries(['tonner-consignment'])
             setShowForm(false)
-            setFormData({ date: '', item_name: '', quantity: '1', user_name: '' })
+            setFormData({ date: '', item_name: '', quantity: '1', user_name: '', outbound_type: '일반' })
             alert("출고 내역이 추가되었습니다.")
         },
         onError: () => alert("오류가 발생했습니다. 구글 시트를 확인하세요.")
@@ -423,14 +437,42 @@ const OutboundTab = ({ month }) => {
                     </div>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>품목</label>
-                        <SearchableSelect 
-                            options={itemOptions} 
-                            value={formData.item_name} 
-                            onChange={val => setFormData({...formData, item_name: val})} 
-                            placeholder="품목 선택" 
+                        <SearchableSelect
+                            options={itemOptions}
+                            value={formData.item_name}
+                            onChange={val => setFormData({...formData, item_name: val, outbound_type: '일반'})}
+                            placeholder="품목 선택"
                             width="250px"
                         />
                     </div>
+                    {isTonner(formData.item_name) && (
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>출고 유형</label>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                {['일반', '위탁'].map(type => (
+                                    <label key={type} style={{
+                                        display: 'flex', alignItems: 'center', gap: '5px',
+                                        padding: '6px 14px', borderRadius: '20px', cursor: 'pointer',
+                                        border: `2px solid ${formData.outbound_type === type ? (type === '위탁' ? '#f97316' : '#3b82f6') : '#ddd'}`,
+                                        backgroundColor: formData.outbound_type === type ? (type === '위탁' ? '#fff7ed' : '#eff6ff') : '#fff',
+                                        fontWeight: formData.outbound_type === type ? 'bold' : 'normal',
+                                        color: formData.outbound_type === type ? (type === '위탁' ? '#c2410c' : '#1d4ed8') : '#555',
+                                        transition: 'all 0.15s'
+                                    }}>
+                                        <input
+                                            type="radio"
+                                            name="outbound_type"
+                                            value={type}
+                                            checked={formData.outbound_type === type}
+                                            onChange={() => setFormData({...formData, outbound_type: type})}
+                                            style={{ display: 'none' }}
+                                        />
+                                        {type === '위탁' ? '🔄 위탁' : '✅ 일반'}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     <div>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>수량</label>
                         <input type="number" min="1" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} style={{ padding: '8px', width: '80px', borderRadius: '4px', border: '1px solid #ddd' }} required />
@@ -464,25 +506,28 @@ const OutboundTab = ({ month }) => {
                         <th>출고 품목명</th>
                         <th>지급 수량</th>
                         <th>지급 대상자</th>
+                        <th style={{ textAlign: 'center' }}>유형</th>
                         <th style={{ textAlign: 'center', width: '120px' }}>관리</th>
                     </tr>
                 </thead>
                 <tbody>
                     {history?.length > 0 ? history.map((row, idx) => {
                         const isEditing = editingRow === row.row_index;
+                        const rowType = row.outbound_type || '일반';
+                        const isConsignment = rowType === '위탁';
                         return (
-                            <tr key={idx} style={{ backgroundColor: isEditing ? '#f8f9fa' : 'transparent' }}>
+                            <tr key={idx} style={{ backgroundColor: isEditing ? '#f8f9fa' : isConsignment ? '#fff7ed' : 'transparent' }}>
                                 {isEditing ? (
                                     <>
                                         <td>
                                             <input type="date" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})} style={{ width: '130px', padding: '4px', borderRadius: '4px', border: '1px solid #ddd' }} />
                                         </td>
                                         <td>
-                                            <SearchableSelect 
-                                                options={itemOptions} 
-                                                value={editForm.item_name} 
-                                                onChange={val => setEditForm({...editForm, item_name: val})} 
-                                                placeholder="품목 선택" 
+                                            <SearchableSelect
+                                                options={itemOptions}
+                                                value={editForm.item_name}
+                                                onChange={val => setEditForm({...editForm, item_name: val})}
+                                                placeholder="품목 선택"
                                                 width="180px"
                                             />
                                         </td>
@@ -490,15 +535,29 @@ const OutboundTab = ({ month }) => {
                                             <input type="number" min="1" value={editForm.quantity} onChange={e => setEditForm({...editForm, quantity: e.target.value})} style={{ width: '60px', padding: '4px', textAlign: 'center', borderRadius: '4px', border: '1px solid #ddd' }} />
                                         </td>
                                         <td>
-                                            <SearchableSelect 
-                                                options={userOptions} 
-                                                value={editForm.user_name} 
-                                                onChange={val => setEditForm({...editForm, user_name: val})} 
-                                                placeholder="사용자 검색 (이름/이메일)" 
+                                            <SearchableSelect
+                                                options={userOptions}
+                                                value={editForm.user_name}
+                                                onChange={val => setEditForm({...editForm, user_name: val})}
+                                                placeholder="사용자 검색 (이름/이메일)"
                                                 searchFields={["name", "email", "bu"]}
                                                 width="200px"
                                                 allowCustom={true}
                                             />
+                                        </td>
+                                        <td style={{ textAlign: 'center' }}>
+                                            {isTonner(editForm.item_name) ? (
+                                                <select
+                                                    value={editForm.outbound_type || '일반'}
+                                                    onChange={e => setEditForm({...editForm, outbound_type: e.target.value})}
+                                                    style={{ padding: '4px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '0.85em' }}
+                                                >
+                                                    <option value="일반">일반</option>
+                                                    <option value="위탁">위탁</option>
+                                                </select>
+                                            ) : (
+                                                <span style={{ color: '#aaa', fontSize: '0.85em' }}>일반</span>
+                                            )}
                                         </td>
                                         <td style={{ textAlign: 'center' }}>
                                             <button className="btn btn-primary" style={{ padding: '2px 6px', fontSize: '0.8rem', marginRight: '4px' }} onClick={handleEditSave} disabled={updateMutation.isPending}>💾</button>
@@ -512,6 +571,15 @@ const OutboundTab = ({ month }) => {
                                         <td style={{ textAlign: 'center' }}>{row.quantity}</td>
                                         <td>{row.user_name?.replace(/\s*\(.*\)$/, '').replace(/\./g, ' ')}</td>
                                         <td style={{ textAlign: 'center' }}>
+                                            <span style={{
+                                                display: 'inline-block', padding: '2px 8px', borderRadius: '10px', fontSize: '0.8em', fontWeight: 'bold',
+                                                backgroundColor: isConsignment ? '#fed7aa' : '#dbeafe',
+                                                color: isConsignment ? '#c2410c' : '#1e40af'
+                                            }}>
+                                                {isConsignment ? '위탁' : '일반'}
+                                            </span>
+                                        </td>
+                                        <td style={{ textAlign: 'center' }}>
                                             <button className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8em', marginRight: '4px' }} onClick={() => handleEditStart(row)}>✏️</button>
                                             <button className="btn btn-danger" style={{ padding: '2px 6px', fontSize: '0.8em' }} onClick={() => handleDelete(row.row_index)} disabled={deleteMutation.isPending}>🗑️</button>
                                         </td>
@@ -520,7 +588,7 @@ const OutboundTab = ({ month }) => {
                             </tr>
                         )
                     }) : (
-                        <tr><td colSpan="5" style={{ textAlign: 'center' }}>출고 내역이 비어 있습니다.</td></tr>
+                        <tr><td colSpan="6" style={{ textAlign: 'center' }}>출고 내역이 비어 있습니다.</td></tr>
                     )}
                 </tbody>
             </table>
@@ -928,5 +996,123 @@ const CreateMonthTab = () => {
     )
 }
 
+
+const TonnerConsignmentTab = ({ month, months }) => {
+    const [filterMonth, setFilterMonth] = useState(month || '')
+
+    const { data: history, isLoading } = useQuery({
+        queryKey: ['tonner-consignment', filterMonth],
+        queryFn: async () => {
+            const url = filterMonth
+                ? `/api/consumables/tonner-consignment?month=${encodeURIComponent(filterMonth)}`
+                : '/api/consumables/tonner-consignment'
+            const { data } = await axios.get(url)
+            return data
+        }
+    })
+
+    // 월별 그룹 + 합계
+    const grouped = useMemo(() => {
+        if (!history) return {}
+        return history.reduce((acc, row) => {
+            const key = row.month
+            if (!acc[key]) acc[key] = { rows: [], total: 0 }
+            acc[key].rows.push(row)
+            acc[key].total += Number(row.quantity) || 0
+            return acc
+        }, {})
+    }, [history])
+
+    const grandTotal = history?.reduce((s, r) => s + (Number(r.quantity) || 0), 0) || 0
+
+    return (
+        <div className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
+                <div>
+                    <h3 style={{ margin: 0 }}>🖨️ 위탁 토너 출고 내역</h3>
+                    <p style={{ margin: '4px 0 0', fontSize: '0.9em', color: '#666' }}>
+                        위탁으로 출고된 Tonner 전용 내역 — 견적서 합산에서 제외되며 별도 재고 카운트에 반영됩니다.
+                    </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <label style={{ fontWeight: 'bold', fontSize: '0.9em' }}>📅 월 필터:</label>
+                    <select
+                        value={filterMonth}
+                        onChange={e => setFilterMonth(e.target.value)}
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #ddd', minWidth: '140px' }}
+                    >
+                        <option value="">전체 월</option>
+                        {(months || []).map(m => (
+                            <option key={m} value={m}>{m}</option>
+                        ))}
+                    </select>
+                </div>
+            </div>
+
+            {isLoading && <LoadingModal isOpen={isLoading} message="위탁 토너 내역을 불러오는 중..." />}
+
+            {!isLoading && history?.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '2rem', color: '#999', background: '#fafafa', borderRadius: '8px' }}>
+                    위탁 출고된 Tonner 내역이 없습니다.
+                </div>
+            )}
+
+            {!isLoading && history?.length > 0 && (
+                <>
+                    {/* 월별 그룹 표시 */}
+                    {Object.entries(grouped).map(([grpMonth, { rows, total }]) => (
+                        <div key={grpMonth} style={{ marginBottom: '1.5rem' }}>
+                            <div style={{
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                background: '#fff7ed', borderLeft: '4px solid #f97316',
+                                padding: '8px 14px', borderRadius: '4px', marginBottom: '6px'
+                            }}>
+                                <span style={{ fontWeight: 'bold', color: '#c2410c' }}>{grpMonth}</span>
+                                <span style={{ fontSize: '0.9em', color: '#7c3aed', fontWeight: 'bold' }}>
+                                    총 {total.toLocaleString()}개
+                                </span>
+                            </div>
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>출고 날짜</th>
+                                        <th>품목명</th>
+                                        <th style={{ textAlign: 'center' }}>수량</th>
+                                        <th>사용 / 담당자</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {rows.map((row, idx) => (
+                                        <tr key={idx}>
+                                            <td>{row.date}</td>
+                                            <td>
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                    {row.item_name}
+                                                    <span style={{ padding: '1px 6px', borderRadius: '8px', fontSize: '0.75em', backgroundColor: '#fed7aa', color: '#c2410c', fontWeight: 'bold' }}>위탁</span>
+                                                </span>
+                                            </td>
+                                            <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{Number(row.quantity).toLocaleString()}</td>
+                                            <td>{row.user_name?.replace(/\s*\(.*\)$/, '').replace(/\./g, ' ')}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ))}
+
+                    {/* 총계 */}
+                    <div style={{
+                        display: 'flex', justifyContent: 'flex-end',
+                        padding: '10px 16px', background: '#f1f5f9', borderRadius: '6px',
+                        fontWeight: 'bold', fontSize: '1em', color: '#1e293b'
+                    }}>
+                        전체 위탁 토너 출고 합계:&nbsp;
+                        <span style={{ color: '#7c3aed', fontSize: '1.1em' }}>{grandTotal.toLocaleString()}개</span>
+                    </div>
+                </>
+            )}
+        </div>
+    )
+}
 
 export default Consumables
