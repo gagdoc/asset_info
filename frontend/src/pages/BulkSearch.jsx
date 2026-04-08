@@ -66,7 +66,7 @@ export default function BulkSearch() {
     if (type === '아이패드') return data['S/N'] || data['전화 번호'] || '-'
     if (type === 'Teams') {
       // Teams 전화번호 우선 표시
-      return data['Number formated for Country'] || data['LineURI'] || data['Number'] || data['전화번호'] || '-'
+      return data['TeamsNumber'] || data['Number'] || data['전화번호'] || '-'
     }
     if (type === '대시보드') return data['email'] || '-'
     if (type === '사용자(마스터)') return data['email'] || '-'
@@ -331,7 +331,7 @@ export default function BulkSearch() {
                               </>
                             ) : (
                               <>
-                                <div>{d.Model || d['Business Title'] || d['프린터정보'] || '-'}</div>
+                                <div>{d.Model || d['History'] || d['프린터정보'] || '-'}</div>
                                 <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{d['SNOW Tag'] || d['Additional Information'] || ''}</div>
                               </>
                             )}

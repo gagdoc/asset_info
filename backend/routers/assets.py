@@ -158,7 +158,7 @@ def get_dashboard_integrated():
     # 4. Teams
     if "Teams" in dfs and not dfs["Teams"].empty:
         cols = dfs["Teams"].columns
-        target_col = next((c for c in ["LineURI", "Number", "전화번호", "Number formated for Country"] if c in cols), None)
+        target_col = next((c for c in ["TeamsNumber", "Number", "전화번호"] if c in cols), None)
         if target_col:
             t_sub = _group_asset(dfs["Teams"], "email", target_col, "TeamsNum")
             view_df = pd.merge(view_df, t_sub, on="_email_key", how="left")
@@ -286,7 +286,7 @@ def bulk_search_assets(req: BulkSearchRequest):
         search_targets = {
             "Lease": ["S/N", "SNOW Tag", "email", "User", "Model"],
             "iPad": ["S/N", "전화 번호", "email", "User", "Model"],
-            "Teams": ["Number formated for Country", "LineURI", "email", "Business Title"],
+            "Teams": ["TeamsNumber", "Number", "email", "History"],
             "Monitor": ["Model", "email", "User"],
             "Printer": ["Model", "email", "프린터정보"],
             "All_User": ["email", "NAME", "이름"]
@@ -735,7 +735,7 @@ def process_asset_return_endpoint(req: AssetReturnRequest):
     
     if asset_type in (None, "Teams", ""):
         res = process_table("Teams", "팀즈 번호", {
-            "Business Title": f"{teams_label} 사용한 번호"
+            "History": f"{teams_label} 사용한 번호"
         })
         if res: updated_tables.append(res)
     
@@ -910,7 +910,7 @@ def _enrich_data_with_assets(target_df, dfs):
     
     if "Teams" in dfs and not dfs["Teams"].empty:
         cols = dfs["Teams"].columns
-        target_col = next((c for c in ["LineURI", "Number", "전화번호"] if c in cols), None)
+        target_col = next((c for c in ["TeamsNumber", "Number", "전화번호"] if c in cols), None)
         if not target_col:
             target_col = next((c for c in cols if c != "email"), cols[0])
         asset_map["Teams"].update(robust_to_dict(dfs["Teams"], "email", target_col))

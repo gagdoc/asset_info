@@ -85,6 +85,18 @@ def _post_process(data: dict) -> dict:
 
         elif key == "All_User" and "NAME" in df.columns:
             df = df.sort_values(by="NAME", na_position="last")
+            
+        if key == "Teams":
+            renames = {}
+            if "LineURI" in df.columns:
+                renames["LineURI"] = "TeamsNumber"
+            if "Business Title" in df.columns:
+                renames["Business Title"] = "History"
+            if renames:
+                df.rename(columns=renames, inplace=True)
+            if "Number formated for Country" in df.columns:
+                df.drop(columns=["Number formated for Country"], inplace=True)
+                
         data[key] = df
     return data
 
