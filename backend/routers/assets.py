@@ -297,7 +297,7 @@ def bulk_search_assets(req: BulkSearchRequest):
             "Teams": "Teams",
             "Monitor": "모니터",
             "Printer": "복합기",
-            "All_User": "사용자(마스터)"
+            "All_User": "대시보드"
         }
         
         # Filter table targets
