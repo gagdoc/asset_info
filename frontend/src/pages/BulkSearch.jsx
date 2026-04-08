@@ -1,10 +1,17 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import axios from 'axios'
 import { FaSearch, FaExclamationTriangle, FaCheckCircle, FaTrashAlt, FaSort, FaSortUp, FaSortDown } from 'react-icons/fa'
 import { useToast } from '../components/Toast'
 import LoadingModal from '../components/LoadingModal'
 
 const API_BASE = '/api'
+const STORAGE_KEY = 'bulkSearch_state'
+
+const readStorage = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '{}')
+  } catch { return {} }
+}
 
 const TYPE_BADGE_COLOR = {
   '대시보드': '#4f46e5',
@@ -17,18 +24,25 @@ const TYPE_BADGE_COLOR = {
 }
 
 export default function BulkSearch() {
-  const [searchInput, setSearchInput] = useState('')
-  const [searchType, setSearchType] = useState('all')
-  const [searchTarget, setSearchTarget] = useState('all')
-  const [results, setResults] = useState(null)
+  const [searchInput, setSearchInput] = useState(() => readStorage().searchInput ?? '')
+  const [searchType, setSearchType] = useState(() => readStorage().searchType ?? 'all')
+  const [searchTarget, setSearchTarget] = useState(() => readStorage().searchTarget ?? 'all')
+  const [results, setResults] = useState(() => readStorage().results ?? null)
   const [isSearching, setIsSearching] = useState(false)
 
   // 결과 내 검색 & 정렬
-  const [resultFilter, setResultFilter] = useState('')
-  const [sortKey, setSortKey] = useState(null)   // 'name' | 'bu'
-  const [sortDir, setSortDir] = useState('asc')
+  const [resultFilter, setResultFilter] = useState(() => readStorage().resultFilter ?? '')
+  const [sortKey, setSortKey] = useState(() => readStorage().sortKey ?? null)
+  const [sortDir, setSortDir] = useState(() => readStorage().sortDir ?? 'asc')
 
   const { showToast } = useToast()
+
+  // 상태 변경 시 sessionStorage에 저장 (페이지 이동 후 복귀 시 유지)
+  useEffect(() => {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+      searchInput, searchType, searchTarget, results, resultFilter, sortKey, sortDir
+    }))
+  }, [searchInput, searchType, searchTarget, results, resultFilter, sortKey, sortDir])
 
   const handleSearch = async () => {
     if (!searchInput.trim()) {
@@ -59,6 +73,10 @@ export default function BulkSearch() {
     setResults(null)
     setResultFilter('')
     setSortKey(null)
+    setSortDir('asc')
+    setSearchType('all')
+    setSearchTarget('all')
+    sessionStorage.removeItem(STORAGE_KEY)
   }
 
   const getIdentifier = (data, type) => {
