@@ -6,13 +6,22 @@ import LoadingModal from '../components/LoadingModal'
 
 const SelfOutbound = () => {
     const queryClient = useQueryClient()
-    const [formData, setFormData] = useState({ 
-        date: new Date().toISOString().split('T')[0], 
-        item_name: '', 
-        quantity: '1', 
-        user_name: '' 
+    const [formData, setFormData] = useState({
+        date: new Date().toISOString().split('T')[0],
+        item_name: '',
+        quantity: '1',
+        user_name: '',
+        outbound_type: '일반'
     })
+    const [filterCategory, setFilterCategory] = useState('')
     const [isSuccess, setIsSuccess] = useState(false)
+
+    const isTonner = (name, category) => {
+        const n = (name || '').toLowerCase()
+        const c = (category || '').toLowerCase()
+        return n.includes('tonner') || n.includes('toner') || n.includes('토너')
+            || c.includes('tonner') || c.includes('toner') || c.includes('토너')
+    }
 
     // 1. 가용한 월 목록 조회 (최신 월 자동 선택용)
     const { data: monthsData, isLoading: isMonthsLoading } = useQuery({
@@ -43,9 +52,21 @@ const SelfOutbound = () => {
 
     const isInitialLoading = isMonthsLoading || isItemsLoading || isUsersLoading;
 
-    const itemOptions = useMemo(() => 
-        (itemsList || []).map(it => ({ label: it.item_name, value: it.item_name })), 
+    const categories = useMemo(() =>
+        Array.from(new Set((itemsList || []).map(it => it.category).filter(Boolean))).sort(),
     [itemsList])
+
+    const itemOptions = useMemo(() => {
+        const filtered = filterCategory
+            ? (itemsList || []).filter(it => it.category === filterCategory)
+            : (itemsList || [])
+        return filtered.map(it => ({ label: it.item_name, value: it.item_name, category: it.category }))
+    }, [itemsList, filterCategory])
+
+    const selectedItemCategory = useMemo(() => {
+        if (!formData.item_name || !itemsList) return ''
+        return (itemsList.find(it => it.item_name === formData.item_name) || {}).category || ''
+    }, [formData.item_name, itemsList])
 
     const userOptions = useMemo(() => 
         (usersList || []).map(u => {
@@ -70,12 +91,14 @@ const SelfOutbound = () => {
         },
         onSuccess: () => {
             setIsSuccess(true)
-            setFormData({ 
-                date: new Date().toISOString().split('T')[0], 
-                item_name: '', 
-                quantity: '1', 
-                user_name: '' 
+            setFormData({
+                date: new Date().toISOString().split('T')[0],
+                item_name: '',
+                quantity: '1',
+                user_name: '',
+                outbound_type: '일반'
             })
+            setFilterCategory('')
             setTimeout(() => setIsSuccess(false), 3000)
             alert("출고 등록이 완료되었습니다. 감사합니다!")
         },
@@ -125,15 +148,98 @@ const SelfOutbound = () => {
                 </div>
 
                 <div>
-                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#4a5568' }}>어떤 물건인가요?</label>
-                    <SearchableSelect 
-                        options={itemOptions} 
-                        value={formData.item_name} 
-                        onChange={val => setFormData({...formData, item_name: val})} 
-                        placeholder="품목 검색 및 선택" 
+                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#4a5568' }}>대분류 (CATEGORY)</label>
+                    <select
+                        value={filterCategory}
+                        onChange={e => {
+                            setFilterCategory(e.target.value)
+                            setFormData(f => ({ ...f, item_name: '', outbound_type: '일반' }))
+                        }}
+                        style={{
+                            width: '100%',
+                            padding: '12px',
+                            borderRadius: '8px',
+                            border: '1px solid #e2e8f0',
+                            fontSize: '1rem',
+                            backgroundColor: '#fff'
+                        }}
+                    >
+                        <option value="">전체 분류</option>
+                        {categories.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                    </select>
+                </div>
+
+                <div>
+                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#4a5568' }}>
+                        어떤 물건인가요?
+                        {filterCategory && <span style={{ marginLeft: '6px', fontSize: '0.85em', color: '#6366f1' }}>[{filterCategory}]</span>}
+                    </label>
+                    <SearchableSelect
+                        options={itemOptions}
+                        value={formData.item_name}
+                        onChange={val => {
+                            const cat = (itemsList || []).find(it => it.item_name === val)?.category || ''
+                            setFilterCategory(cat)
+                            setFormData(f => ({ ...f, item_name: val, outbound_type: '일반' }))
+                        }}
+                        placeholder={filterCategory ? `${filterCategory} 품목 검색 및 선택` : '품목 검색 및 선택'}
                         width="100%"
                     />
                 </div>
+
+                {/* Toner 선택 시 일반/위탁 옵션 */}
+                {isTonner(formData.item_name, selectedItemCategory) && (
+                    <div style={{
+                        padding: '12px 16px',
+                        background: '#fff7ed',
+                        border: '2px solid #f97316',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px'
+                    }}>
+                        <span style={{ fontWeight: 'bold', color: '#c2410c', fontSize: '0.95em' }}>
+                            🖨️ Tonner 출고 유형 선택
+                        </span>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            {['일반', '위탁'].map(type => (
+                                <label key={type} style={{
+                                    flex: 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '6px',
+                                    padding: '10px',
+                                    borderRadius: '20px',
+                                    cursor: 'pointer',
+                                    border: `2px solid ${formData.outbound_type === type ? (type === '위탁' ? '#f97316' : '#3b82f6') : '#d1d5db'}`,
+                                    backgroundColor: formData.outbound_type === type ? (type === '위탁' ? '#fed7aa' : '#dbeafe') : '#fff',
+                                    fontWeight: formData.outbound_type === type ? 'bold' : 'normal',
+                                    color: formData.outbound_type === type ? (type === '위탁' ? '#9a3412' : '#1e40af') : '#6b7280',
+                                    transition: 'all 0.15s',
+                                    fontSize: '0.95em'
+                                }}>
+                                    <input
+                                        type="radio"
+                                        name="outbound_type"
+                                        value={type}
+                                        checked={formData.outbound_type === type}
+                                        onChange={() => setFormData({...formData, outbound_type: type})}
+                                        style={{ display: 'none' }}
+                                    />
+                                    {type === '위탁' ? '🔄 위탁' : '✅ 일반'}
+                                </label>
+                            ))}
+                        </div>
+                        <span style={{ fontSize: '0.82em', color: '#92400e' }}>
+                            {formData.outbound_type === '위탁'
+                                ? '위탁: 견적서 제외 · 위탁 토너 내역에 별도 기록'
+                                : '일반: 월별 견적서에 합산'}
+                        </span>
+                    </div>
+                )}
 
                 <div>
                     <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#4a5568' }}>몇 개인가요?</label>

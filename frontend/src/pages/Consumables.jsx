@@ -464,7 +464,7 @@ const OutboundTab = ({ month }) => {
 
                         {/* 분류 필터 */}
                         <div>
-                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>분류 (ITEM)</label>
+                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>대분류 (CATEGORY)</label>
                             <select
                                 value={filterCategory}
                                 onChange={e => {
@@ -489,7 +489,11 @@ const OutboundTab = ({ month }) => {
                             <SearchableSelect
                                 options={itemOptions}
                                 value={formData.item_name}
-                                onChange={val => setFormData(f => ({ ...f, item_name: val, outbound_type: '일반' }))}
+                                onChange={val => {
+                                    const cat = (itemsList || []).find(it => it.item_name === val)?.category || ''
+                                    setFilterCategory(cat)
+                                    setFormData(f => ({ ...f, item_name: val, outbound_type: '일반' }))
+                                }}
                                 placeholder={filterCategory ? `${filterCategory} 품목 선택` : '품목 검색/선택'}
                                 width="260px"
                             />
