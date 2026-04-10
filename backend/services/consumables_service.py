@@ -230,13 +230,17 @@ def _get_outbound_history_impl(month: str):
         history = []
         for i, r in enumerate(records):
             if not r or not str(r[0]).strip() or str(r[0]).strip() == "날짜": continue
+            outbound_type = str(r[4]).strip() if len(r) > 4 else "일반"
+            # 위탁 출고는 월별 출고 내역에서 제외 — 위탁 토너 내역에서 별도 관리
+            if outbound_type == '위탁':
+                continue
             history.append({
                 "row_index": i + 2, # 시트 내 실제 행 번호 (A2부터 시작)
                 "date": str(r[0]).strip() if len(r) > 0 else "",
                 "item_name": str(r[1]).strip() if len(r) > 1 else "",
                 "quantity": str(r[2]).strip() if len(r) > 2 else "",
                 "user_name": str(r[3]).strip() if len(r) > 3 else "",
-                "outbound_type": str(r[4]).strip() if len(r) > 4 else "일반"  # E열: 출고유형 (기본값 일반)
+                "outbound_type": outbound_type
             })
         return history
     except Exception as e:
