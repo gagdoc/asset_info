@@ -498,9 +498,6 @@ def get_tonner_consignment_history(month: str = None):
             outbound_type = str(row[4]).strip() if len(row) > 4 else "일반"
             if outbound_type != '위탁': continue
             item_name = str(row[1]).strip()
-            # 품목명에 Tonner / 토너 포함 여부 체크
-            if 'tonner' not in item_name.lower() and '토너' not in item_name:
-                continue
             qty_str = str(row[2]).strip().replace(',', '')
             qty = int(qty_str) if qty_str.isdigit() else 0
             history.append({
