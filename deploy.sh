@@ -30,19 +30,39 @@ DEPLOY_DIR=$(mktemp -d)
 git clone --depth=1 "$GITHUB_REPO" "$DEPLOY_DIR"
 echo "✅ 클론 완료: $DEPLOY_DIR"
 
-# 4. Deploy to Cloud Run using --source (GitHub 최신 코드 기준)
+# 4. Deploy to Cloud Run using --source (GitHub 최신 코드 기준, 충돌 시 재시도)
 echo "🚀 Building and Deploying directly to Google Cloud Run..."
-# Using custom delimiter ^|^ to safely pass JSON string with commas/quotes
-gcloud run deploy "$SERVICE_NAME" \
-  --source "$DEPLOY_DIR" \
-  --platform managed \
-  --region "$REGION" \
-  --allow-unauthenticated \
-  --set-env-vars="^|^GOOGLE_CREDENTIALS_JSON=$JSON_CREDS"
+
+MAX_RETRIES=3
+RETRY_DELAY=15
+SUCCESS=false
+
+for i in $(seq 1 $MAX_RETRIES); do
+  echo "🔄 배포 시도 $i/$MAX_RETRIES..."
+  if gcloud run deploy "$SERVICE_NAME" \
+    --source "$DEPLOY_DIR" \
+    --platform managed \
+    --region "$REGION" \
+    --allow-unauthenticated \
+    --set-env-vars="^|^GOOGLE_CREDENTIALS_JSON=$JSON_CREDS"; then
+    SUCCESS=true
+    break
+  else
+    if [ $i -lt $MAX_RETRIES ]; then
+      echo "⚠️  배포 실패. ${RETRY_DELAY}초 후 재시도..."
+      sleep $RETRY_DELAY
+    fi
+  fi
+done
 
 # 5. 임시 디렉토리 정리
 rm -rf "$DEPLOY_DIR"
 echo "🧹 임시 파일 정리 완료"
+
+if [ "$SUCCESS" = false ]; then
+  echo "❌ 배포 실패 ($MAX_RETRIES회 시도). Cloud Build 로그를 확인하세요."
+  exit 1
+fi
 
 echo "✅ Deployment successful!"
 gcloud run services describe "$SERVICE_NAME" --platform managed --region "$REGION" --format 'value(status.url)'
