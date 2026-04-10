@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { FaBars } from 'react-icons/fa'
 import { ToastProvider } from './components/Toast'
+import ErrorBoundary from './components/ErrorBoundary'
 import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
 import AssetList from './pages/AssetList'
@@ -36,6 +37,7 @@ function App() {
           )}
           
           <main className="main-content">
+            <ErrorBoundary>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
@@ -48,6 +50,7 @@ function App() {
               <Route path="/register" element={<SelfOutbound />} />
               <Route path="/bulk-search" element={<BulkSearch />} />
             </Routes>
+            </ErrorBoundary>
           </main>
         </div>
       </div>

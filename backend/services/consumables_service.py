@@ -24,9 +24,12 @@ SCOPES = [
 ]
 
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 _CACHE = {}
-_CACHE_TTL = 30  # 30초 캐싱 (잦은 API 호출 방지용)
+_CACHE_TTL = 120  # 120초 캐싱 (Google Sheets API 과다 호출 방지)
 
 def _get_cached(key, func, *args):
     now = time.time()
@@ -40,6 +43,29 @@ def _get_cached(key, func, *args):
 
 def invalidate_cache():
     _CACHE.clear()
+
+def _retry_sheets_op(func, max_retries=3, initial_delay=1.0):
+    """Google Sheets API 호출을 재시도합니다 (지수 백오프).
+    읽기 전용 작업에 사용하세요. 쓰기 작업은 중복 방지를 위해 직접 호출합니다."""
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            last_exc = e
+            if attempt < max_retries - 1:
+                delay = initial_delay * (2 ** attempt)
+                logger.warning(f"Sheets API 오류 (시도 {attempt+1}/{max_retries}): {e}. {delay:.1f}초 후 재시도...")
+                time.sleep(delay)
+    raise last_exc
+
+def _get_worksheet_safe(ss, sheet_name: str):
+    """워크시트를 안전하게 가져옵니다. 없으면 None 반환."""
+    try:
+        return ss.worksheet(sheet_name)
+    except Exception as e:
+        logger.error(f"워크시트 '{sheet_name}' 없음 또는 접근 오류: {e}")
+        return None
 
 def _get_consumables_client(spreadsheet_id: str = None):
     """
@@ -138,9 +164,12 @@ def _get_items_list_impl(month=None):
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss_master: return []
     try:
-        ws = ss_master.worksheet("품목리스트")
-        # A부터 E열까지 (분류, 품목, 가격, 관리여부, 초기수량)
-        records = ws.get_values("A2:F")
+        ws = _get_worksheet_safe(ss_master, "품목리스트")
+        if not ws:
+            logger.error("'품목리스트' 시트를 찾을 수 없습니다.")
+            return []
+        # A부터 F열까지 (분류, 품목, 가격, 관리여부, 초기수량, 발주수량)
+        records = _retry_sheets_op(lambda: ws.get_values("A2:F"))
         items = []
         tracked_item_names = set()
 
@@ -224,9 +253,12 @@ def _get_outbound_history_impl(month: str):
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return []
     try:
-        ws = ss.worksheet(month)
+        ws = _get_worksheet_safe(ss, month)
+        if not ws:
+            logger.warning(f"출고 내역 시트 없음: {month}")
+            return []
         # A부터 E열까지 (날짜, 품목, 수량, 이름, 출고유형)
-        records = ws.get_values("A2:E")
+        records = _retry_sheets_op(lambda: ws.get_values("A2:E"))
         history = []
         for i, r in enumerate(records):
             if not r or not str(r[0]).strip() or str(r[0]).strip() == "날짜": continue
@@ -334,8 +366,11 @@ def add_outbound(month: str, data: dict) -> bool:
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
-        ws = ss.worksheet(month)
-        col_A = ws.col_values(1) # A열 (날짜) 데이터들
+        ws = _get_worksheet_safe(ss, month)
+        if not ws:
+            logger.error(f"출고 등록 실패: '{month}' 시트 없음")
+            return False
+        col_A = _retry_sheets_op(lambda: ws.col_values(1))  # A열 (날짜) 데이터들
         next_row = len(col_A) + 1 # 최초로 빈 행
 
         # E열: 출고유형 (일반/위탁), 기본값은 일반
@@ -364,7 +399,8 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
-        ws = ss.worksheet(month)
+        ws = _get_worksheet_safe(ss, month)
+        if not ws: return False
         outbound_type = data.get('outbound_type', '일반')
         if not outbound_type or outbound_type.strip() == '':
             outbound_type = '일반'
@@ -388,7 +424,8 @@ def delete_outbound_history(month: str, row_index: int) -> bool:
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
-        ws = ss.worksheet(month)
+        ws = _get_worksheet_safe(ss, month)
+        if not ws: return False
         ws.delete_rows(row_index)
         invalidate_cache()
         # 데이터 변경 시 재고리스트 요약 시트 동기화
@@ -403,7 +440,8 @@ def save_item(data: dict) -> bool:
     _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss: return False
     try:
-        ws = ss.worksheet("품목리스트")
+        ws = _get_worksheet_safe(ss, "품목리스트")
+        if not ws: return False
         target_item = data.get('item_name', '').strip()
         row_idx = data.get('row_index') # 만약 인라인 수정 등에서 행 번호를 직접 보낸다면 우선순위 가짐
         
@@ -512,25 +550,25 @@ def get_tonner_consignment_history(month: str = None):
 
 def sync_inventory_summary_sheet():
     """
-    현재 등록된 모든 소모품의 마스터 정보와 '전체 기간' 기준 재고 현황을 
+    현재 등록된 모든 소모품의 마스터 정보와 '전체 기간' 기준 재고 현황을
     '재고리스트' 구글 시트에 일괄 업데이트합니다.
     """
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss_master: return False
-    
+
     try:
         # 1. 최신 데이터 가져오기 (전체 기간 기준)
         items = _get_items_list_impl(month=None)
-        
+
         # 2. 시트 데이터 구성을 위한 헤더 및 행 생성
         headers = ['분류', '품목명', '단가', '재고추적여부', '고정재고(기준)', '현재재고(입고량)', '총출고량', '최종잔여재고', '상태']
         rows = [headers]
-        
+
         for it in items:
             is_tracked = "O" if it.get("is_tracked") else "X"
             dispatched = it.get("dispatched_qty", 0) if it.get("is_tracked") else "-"
             current = it.get("current_stock", 0) if it.get("is_tracked") else "-"
-            
+
             status = "-"
             if it.get("is_tracked"):
                 base = it.get("base_qty", 1)
@@ -547,12 +585,15 @@ def sync_inventory_summary_sheet():
                 current,
                 status
             ])
-            
-        # 3. '재고리스트' 시트에 덮어쓰기
-        ws = ss_master.worksheet("재고리스트")
+
+        # 3. '재고리스트' 시트에 덮어쓰기 (없으면 건너뜀)
+        ws = _get_worksheet_safe(ss_master, "재고리스트")
+        if not ws:
+            logger.warning("'재고리스트' 시트가 없어 동기화를 건너뜁니다.")
+            return False
         ws.clear()
         ws.update("A1", rows)
         return True
     except Exception as e:
-        print(f"Error syncing inventory summary sheet: {e}")
+        logger.error(f"재고리스트 동기화 오류: {e}")
         return False
