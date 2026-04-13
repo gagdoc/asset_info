@@ -250,11 +250,12 @@ def bulk_search_assets(req: BulkSearchRequest):
             return []
         return all_cols
 
-    def make_mask(series, term_lower):
-        """이메일은 정확 일치, 그 외는 포함(contains) 검색"""
-        normalized = series.astype(str).str.lower().str.strip()
+    def make_mask(series, term_lower, term_original):
+        """이메일: 대소문자 구분 + 완전 일치, 그 외: 소문자 포함(contains)"""
         if req.search_type == "email":
-            return normalized == term_lower
+            # 이메일은 대소문자까지 완전 일치만 허용
+            return series.astype(str).str.strip() == term_original
+        normalized = series.astype(str).str.lower().str.strip()
         return normalized.str.contains(term_lower, na=False, regex=False)
 
     if req.search_target == "dashboard":
@@ -266,7 +267,7 @@ def bulk_search_assets(req: BulkSearchRequest):
             for term in terms:
                 term_lower = term.lower().strip()
                 for col in search_cols:
-                    mask = make_mask(df[col], term_lower)
+                    mask = make_mask(df[col], term_lower, term.strip())
                     if mask.any():
                         # term당 첫 번째 매칭 행 1건만 반환 (이메일 1개 = 사용자 1명)
                         first_idx = df[mask].index[0]
@@ -320,7 +321,7 @@ def bulk_search_assets(req: BulkSearchRequest):
 
                 # 테이블당 term 1건만 추가 (첫 번째 매칭 컬럼/행)
                 for col in search_cols:
-                    mask = make_mask(df[col], term_lower)
+                    mask = make_mask(df[col], term_lower, term.strip())
                     if mask.any():
                         first_idx = df[mask].index[0]
                         row = df.loc[first_idx]
