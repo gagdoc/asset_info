@@ -263,7 +263,7 @@ def bulk_search_assets(req: BulkSearchRequest):
                         mask = df[col].astype(str).str.lower().str.contains(term_lower, na=False, regex=False)
                         if mask.any():
                             matched_rows = df[mask].copy()
-                            for _, row in matched_rows.iterrows():
+                            for idx, row in matched_rows.iterrows():
                                 row_dict = row.where(pd.notnull(row), None).to_dict()
                                 # Only add if not already added to avoid exact duplicate for same term
                                 res_entry = {
@@ -271,6 +271,7 @@ def bulk_search_assets(req: BulkSearchRequest):
                                     "table_key": "dashboard",
                                     "match_col": col,
                                     "match_term": term,
+                                    "row_index": int(idx),
                                     "data": row_dict
                                 }
                                 # Simple deduplication
@@ -325,7 +326,7 @@ def bulk_search_assets(req: BulkSearchRequest):
                     mask = df[col].astype(str).str.lower().str.contains(term_lower, na=False, regex=False)
                     if mask.any():
                         matched_rows = df[mask].copy()
-                        for _, row in matched_rows.iterrows():
+                        for idx, row in matched_rows.iterrows():
                             # Null 처리 및 dict 변환
                             row_dict = row.where(pd.notnull(row), None).to_dict()
                             res_entry = {
@@ -333,6 +334,7 @@ def bulk_search_assets(req: BulkSearchRequest):
                                 "table_key": table_key,
                                 "match_col": col,
                                 "match_term": term,
+                                "row_index": int(idx),
                                 "data": row_dict
                             }
                             found_results.append(res_entry)
