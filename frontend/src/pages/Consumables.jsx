@@ -1070,7 +1070,11 @@ const CreateMonthTab = () => {
 
 
 const TonnerConsignmentTab = ({ month, months }) => {
+    const queryClient = useQueryClient()
     const [filterMonth, setFilterMonth] = useState(month || '')
+    const [editingKey, setEditingKey] = useState(null) // "month-rowIndex"
+    const [editForm, setEditForm] = useState({})
+    const [confirmModal, setConfirmModal] = useState({ isOpen: false, row: null })
 
     const { data: history, isLoading } = useQuery({
         queryKey: ['tonner-consignment', filterMonth],
@@ -1082,6 +1086,69 @@ const TonnerConsignmentTab = ({ month, months }) => {
             return data
         }
     })
+
+    const { data: itemsList } = useQuery({
+        queryKey: ['consumables-items'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/consumables/items')
+            return data
+        }
+    })
+
+    const { data: usersList } = useQuery({
+        queryKey: ['integrated-users'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/assets/dashboard/integrated')
+            return data
+        }
+    })
+
+    const itemOptions = useMemo(() =>
+        (itemsList || []).map(it => ({ label: it.item_name, value: it.item_name })),
+    [itemsList])
+
+    const userOptions = useMemo(() =>
+        (usersList || []).map(u => {
+            const nameOnly = (u.이름 || u.NAME || '').replace(/\./g, ' ')
+            const fullNameWithBU = `${nameOnly}${u.BU ? ` (${u.BU})` : ''}`
+            return { label: nameOnly, value: fullNameWithBU, name: nameOnly, email: u.email, bu: u.BU }
+        }).sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+    [usersList])
+
+    const updateMutation = useMutation({
+        mutationFn: async ({ month: m, row_index, ...data }) =>
+            axios.put('/api/consumables/outbound', { month: m, row_index, ...data, outbound_type: '위탁' }),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['tonner-consignment'])
+            setEditingKey(null)
+            alert("수정되었습니다.")
+        },
+        onError: () => alert("수정 중 오류가 발생했습니다.")
+    })
+
+    const deleteMutation = useMutation({
+        mutationFn: async ({ month: m, row_index }) =>
+            axios.delete(`/api/consumables/outbound?month=${encodeURIComponent(m)}&row_index=${row_index}`),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['tonner-consignment'])
+            setConfirmModal({ isOpen: false, row: null })
+            alert("삭제되었습니다.")
+        },
+        onError: () => alert("삭제 중 오류가 발생했습니다.")
+    })
+
+    const handleEditStart = (row) => {
+        setEditingKey(`${row.month}-${row.row_index}`)
+        setEditForm({ ...row })
+    }
+
+    const handleEditSave = () => {
+        if (!editForm.date || !editForm.item_name || !editForm.quantity || !editForm.user_name) {
+            alert("모든 필드를 입력해야 합니다.")
+            return
+        }
+        updateMutation.mutate(editForm)
+    }
 
     // 월별 그룹 + 합계
     const grouped = useMemo(() => {
@@ -1121,7 +1188,9 @@ const TonnerConsignmentTab = ({ month, months }) => {
                 </div>
             </div>
 
-            {isLoading && <LoadingModal isOpen={isLoading} message="위탁 토너 내역을 불러오는 중..." />}
+            <LoadingModal isOpen={isLoading} message="위탁 토너 내역을 불러오는 중..." />
+            <LoadingModal isOpen={updateMutation.isPending} message="수정 중입니다..." />
+            <LoadingModal isOpen={deleteMutation.isPending} message="삭제 중입니다..." />
 
             {!isLoading && history?.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '2rem', color: '#999', background: '#fafafa', borderRadius: '8px' }}>
@@ -1131,7 +1200,6 @@ const TonnerConsignmentTab = ({ month, months }) => {
 
             {!isLoading && history?.length > 0 && (
                 <>
-                    {/* 월별 그룹 표시 */}
                     {Object.entries(grouped).map(([grpMonth, { rows, total }]) => (
                         <div key={grpMonth} style={{ marginBottom: '1.5rem' }}>
                             <div style={{
@@ -1151,22 +1219,72 @@ const TonnerConsignmentTab = ({ month, months }) => {
                                         <th>품목명</th>
                                         <th style={{ textAlign: 'center' }}>수량</th>
                                         <th>사용 / 담당자</th>
+                                        <th style={{ textAlign: 'center' }}>관리</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {rows.map((row, idx) => (
-                                        <tr key={idx}>
-                                            <td>{row.date}</td>
-                                            <td>
-                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                                    {row.item_name}
-                                                    <span style={{ padding: '1px 6px', borderRadius: '8px', fontSize: '0.75em', backgroundColor: '#fed7aa', color: '#c2410c', fontWeight: 'bold' }}>위탁</span>
-                                                </span>
-                                            </td>
-                                            <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{Number(row.quantity).toLocaleString()}</td>
-                                            <td>{row.user_name?.replace(/\s*\(.*\)$/, '').replace(/\./g, ' ')}</td>
-                                        </tr>
-                                    ))}
+                                    {rows.map((row, idx) => {
+                                        const rowKey = `${row.month}-${row.row_index}`
+                                        const isEditing = editingKey === rowKey
+                                        return isEditing ? (
+                                            <tr key={idx} style={{ background: '#fefce8' }}>
+                                                <td>
+                                                    <input type="date" value={editForm.date}
+                                                        onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
+                                                        style={{ padding: '4px', borderRadius: '4px', border: '1px solid #ddd', width: '130px' }} />
+                                                </td>
+                                                <td>
+                                                    <SearchableSelect
+                                                        options={itemOptions}
+                                                        value={editForm.item_name}
+                                                        onChange={val => setEditForm(f => ({ ...f, item_name: val }))}
+                                                        placeholder="품목 선택"
+                                                        width="200px"
+                                                    />
+                                                </td>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <input type="number" min="1" value={editForm.quantity}
+                                                        onChange={e => setEditForm(f => ({ ...f, quantity: e.target.value }))}
+                                                        style={{ padding: '4px', width: '60px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center' }} />
+                                                </td>
+                                                <td>
+                                                    <SearchableSelect
+                                                        options={userOptions}
+                                                        value={editForm.user_name}
+                                                        onChange={val => setEditForm(f => ({ ...f, user_name: val }))}
+                                                        placeholder="담당자 선택"
+                                                        searchFields={["name", "email", "bu"]}
+                                                        width="220px"
+                                                        allowCustom={true}
+                                                    />
+                                                </td>
+                                                <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                                    <button className="btn btn-primary" style={{ padding: '4px 10px', fontSize: '0.85em', marginRight: '4px' }}
+                                                        onClick={handleEditSave} disabled={updateMutation.isPending}>저장</button>
+                                                    <button className="btn" style={{ padding: '4px 10px', fontSize: '0.85em' }}
+                                                        onClick={() => setEditingKey(null)}>취소</button>
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            <tr key={idx}>
+                                                <td>{row.date}</td>
+                                                <td>
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                        {row.item_name}
+                                                        <span style={{ padding: '1px 6px', borderRadius: '8px', fontSize: '0.75em', backgroundColor: '#fed7aa', color: '#c2410c', fontWeight: 'bold' }}>위탁</span>
+                                                    </span>
+                                                </td>
+                                                <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{Number(row.quantity).toLocaleString()}</td>
+                                                <td>{row.user_name?.replace(/\s*\(.*\)$/, '').replace(/\./g, ' ')}</td>
+                                                <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                                    <button title="수정" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', marginRight: '4px' }}
+                                                        onClick={() => handleEditStart(row)}>✏️</button>
+                                                    <button title="삭제" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem' }}
+                                                        onClick={() => setConfirmModal({ isOpen: true, row })}>🗑️</button>
+                                                </td>
+                                            </tr>
+                                        )
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -1183,6 +1301,13 @@ const TonnerConsignmentTab = ({ month, months }) => {
                     </div>
                 </>
             )}
+
+            <ConfirmModal
+                isOpen={confirmModal.isOpen}
+                message={`"${confirmModal.row?.item_name}" 위탁 출고 내역을 삭제하시겠습니까?`}
+                onConfirm={() => deleteMutation.mutate({ month: confirmModal.row.month, row_index: confirmModal.row.row_index })}
+                onCancel={() => setConfirmModal({ isOpen: false, row: null })}
+            />
         </div>
     )
 }

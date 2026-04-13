@@ -540,6 +540,7 @@ def get_tonner_consignment_history(month: str = None):
             qty = int(qty_str) if qty_str.isdigit() else 0
             history.append({
                 "month": month_title,
+                "row_index": i + 2,  # 시트 내 실제 행 번호 (A2부터 시작)
                 "date": str(row[0]).strip() if len(row) > 0 else "",
                 "item_name": item_name,
                 "quantity": qty,
