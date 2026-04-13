@@ -66,6 +66,10 @@ const Sidebar = ({ isOpen, onClose }) => {
                     <FaExternalLinkAlt /> <span>출고 등록 (자가용)</span>
                 </NavLink>
             </div>
+
+            <div style={{ padding: '0.75rem 1rem 0.5rem', fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', textAlign: 'center', letterSpacing: '0.03em' }}>
+                v2026.04.13
+            </div>
         </aside>
         </>
     )
