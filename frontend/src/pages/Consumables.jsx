@@ -675,8 +675,16 @@ const OutboundTab = ({ month }) => {
     )
 }
 
+const isTonnerItem = (name, category) => {
+    const n = (name || '').toLowerCase()
+    const c = (category || '').toLowerCase()
+    return n.includes('tonner') || n.includes('toner') || n.includes('토너')
+        || c.includes('tonner') || c.includes('toner') || c.includes('토너')
+}
+
 const ItemsTab = ({ month }) => {
     const queryClient = useQueryClient()
+    const [viewMode, setViewMode] = useState('general') // 'general' | 'tonner'
     const [showForm, setShowForm] = useState(false)
     const [formData, setFormData] = useState({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
     const [searchTerm, setSearchTerm] = useState('')
@@ -719,9 +727,14 @@ const ItemsTab = ({ month }) => {
 
     if (isLoading) return <LoadingModal isOpen={isLoading} message="소모품 마스터 리스트를 불러오는 중입니다..." />
 
-    const categories = Array.from(new Set(items?.map(it => it.category).filter(Boolean)))
-    
-    const filteredItems = items?.filter(item => {
+    // viewMode에 따라 일반 / 토너 분리
+    const allGeneral = items?.filter(it => !isTonnerItem(it.item_name, it.category)) || []
+    const allTonner  = items?.filter(it =>  isTonnerItem(it.item_name, it.category)) || []
+    const sourceItems = viewMode === 'tonner' ? allTonner : allGeneral
+
+    const categories = Array.from(new Set(sourceItems.map(it => it.category).filter(Boolean)))
+
+    const filteredItems = sourceItems.filter(item => {
         const matchSearch = item.item_name.toLowerCase().includes(searchTerm.toLowerCase()) || item.category.toLowerCase().includes(searchTerm.toLowerCase())
         const matchCat = filterCategory ? item.category === filterCategory : true
         return matchSearch && matchCat
@@ -729,9 +742,10 @@ const ItemsTab = ({ month }) => {
 
     return (
         <div className="card">
+            {/* 헤더 */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <h3 style={{ margin: 0 }}>
-                    소모품 마스터 리스트 (단가표) 
+                    소모품 마스터 리스트 (단가표)
                     {month && <span style={{ fontSize: '0.85em', color: '#0ea5e9', marginLeft: '10px' }}>- {month} 기준 재고</span>}
                 </h3>
                 <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' }); }}>
@@ -739,6 +753,39 @@ const ItemsTab = ({ month }) => {
                 </button>
             </div>
 
+            {/* 일반 / Tonner 서브 탭 */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0' }}>
+                <button
+                    onClick={() => { setViewMode('general'); setFilterCategory(''); setSearchTerm('') }}
+                    style={{
+                        padding: '8px 20px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.95em',
+                        borderBottom: viewMode === 'general' ? '3px solid #4f46e5' : '3px solid transparent',
+                        color: viewMode === 'general' ? '#4f46e5' : '#64748b',
+                        background: 'none', marginBottom: '-2px'
+                    }}
+                >
+                    📦 일반 소모품
+                    <span style={{ marginLeft: '6px', padding: '1px 7px', borderRadius: '10px', fontSize: '0.8em', backgroundColor: viewMode === 'general' ? '#e0e7ff' : '#f1f5f9', color: viewMode === 'general' ? '#4f46e5' : '#64748b' }}>
+                        {allGeneral.length}
+                    </span>
+                </button>
+                <button
+                    onClick={() => { setViewMode('tonner'); setFilterCategory(''); setSearchTerm('') }}
+                    style={{
+                        padding: '8px 20px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.95em',
+                        borderBottom: viewMode === 'tonner' ? '3px solid #f97316' : '3px solid transparent',
+                        color: viewMode === 'tonner' ? '#c2410c' : '#64748b',
+                        background: 'none', marginBottom: '-2px'
+                    }}
+                >
+                    🖨️ Tonner
+                    <span style={{ marginLeft: '6px', padding: '1px 7px', borderRadius: '10px', fontSize: '0.8em', backgroundColor: viewMode === 'tonner' ? '#fff7ed' : '#f1f5f9', color: viewMode === 'tonner' ? '#c2410c' : '#64748b' }}>
+                        {allTonner.length}
+                    </span>
+                </button>
+            </div>
+
+            {/* 품목 추가 폼 */}
             {showForm && (
                 <form onSubmit={handleSubmit} style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                     <div>
@@ -753,12 +800,10 @@ const ItemsTab = ({ month }) => {
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>단가 (원)</label>
                         <input type="text" placeholder="18,000" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} style={{ padding: '8px', width: '100px' }} required />
                     </div>
-
                     <div style={{ marginLeft: '10px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#1976d2', fontWeight: 'bold' }}>재고 추적 🎯</label>
                         <input type="checkbox" checked={formData.is_tracked} onChange={e => setFormData({...formData, is_tracked: e.target.checked})} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
                     </div>
-
                     {formData.is_tracked && (
                         <>
                             <div>
@@ -771,27 +816,27 @@ const ItemsTab = ({ month }) => {
                             </div>
                         </>
                     )}
-
                     <button type="submit" className="btn btn-primary" disabled={mutation.isPending} style={{ marginLeft: 'auto' }}>
                         저장하기
                     </button>
-                    <div style={{ fontSize: '0.8em', color: '#666', marginTop: '5px', width: '100%' }}>* 품목명이 같을 경우 수정되고, 다를 경우 덧붙여집니다. 재고 추적 시 '현재 재고'를 입력해두면 총 출고량을 차감한 진짜 잔여 재고를 자동 계산합니다.</div>
+                    <div style={{ fontSize: '0.8em', color: '#666', marginTop: '5px', width: '100%' }}>* 품목명이 같을 경우 수정되고, 다를 경우 덧붙여집니다.</div>
                 </form>
             )}
 
             <LoadingModal isOpen={mutation.isPending} message="소모품 정보를 저장 중입니다..." />
 
+            {/* 검색 / 필터 */}
             <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem', background: '#f8f9fa', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <input 
-                    type="text" 
-                    placeholder="🔍 소모품명 또는 대분류 검색..." 
-                    value={searchTerm} 
-                    onChange={e => setSearchTerm(e.target.value)} 
-                    style={{ padding: '8px', flex: 1, borderRadius: '4px', border: '1px solid #ccc' }} 
+                <input
+                    type="text"
+                    placeholder={viewMode === 'tonner' ? '🔍 토너 품목명 또는 분류 검색...' : '🔍 소모품명 또는 대분류 검색...'}
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    style={{ padding: '8px', flex: 1, borderRadius: '4px', border: '1px solid #ccc' }}
                 />
-                <select 
-                    value={filterCategory} 
-                    onChange={e => setFilterCategory(e.target.value)} 
+                <select
+                    value={filterCategory}
+                    onChange={e => setFilterCategory(e.target.value)}
                     style={{ padding: '8px', width: '200px', borderRadius: '4px', border: '1px solid #ccc' }}
                 >
                     <option value="">📂 전체 분류 (All)</option>
@@ -799,11 +844,12 @@ const ItemsTab = ({ month }) => {
                 </select>
             </div>
 
+            {/* 테이블 */}
             <table className="data-table">
                 <thead>
                     <tr>
                         <th>대분류 (Category)</th>
-                        <th>소모품명 (Item Name)</th>
+                        <th>{viewMode === 'tonner' ? '토너 품목명' : '소모품명 (Item Name)'}</th>
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
                         <th style={{ textAlign: 'center' }}>고정 재고(기준)</th>
                         <th style={{ textAlign: 'center' }}>현재 재고(입고량)</th>
@@ -812,24 +858,18 @@ const ItemsTab = ({ month }) => {
                     </tr>
                 </thead>
                 <tbody>
-                    {filteredItems?.length > 0 ? filteredItems.map((item, idx) => {
+                    {filteredItems.length > 0 ? filteredItems.map((item, idx) => {
                         const handleInlineUpdate = (field, newVal) => {
-                            const updatedData = { ...item, [field]: newVal }
-                            mutation.mutate(updatedData)
+                            mutation.mutate({ ...item, [field]: newVal })
                         }
-
                         let statusBadge = <span style={{ color: '#aaa', fontSize: '0.85em' }}>추적안함 (-)</span>
                         if (item.is_tracked) {
                             const current = item.current_stock || 0
                             const base = item.base_qty || 1
                             const isLow = current < base
-                            
                             statusBadge = (
-                                <span style={{ 
-                                    padding: '3px 8px', 
-                                    borderRadius: '12px', 
-                                    fontSize: '0.85em', 
-                                    fontWeight: 'bold',
+                                <span style={{
+                                    padding: '3px 8px', borderRadius: '12px', fontSize: '0.85em', fontWeight: 'bold',
                                     display: 'inline-block',
                                     backgroundColor: isLow ? '#ffebee' : '#e8f5e9',
                                     color: isLow ? '#d32f2f' : '#2e7d32',
@@ -839,9 +879,8 @@ const ItemsTab = ({ month }) => {
                                 </span>
                             )
                         }
-
                         return (
-                            <tr key={idx}>
+                            <tr key={idx} style={viewMode === 'tonner' ? { backgroundColor: '#fffbf7' } : {}}>
                                 <EditableCell value={item.category} onSave={(val) => handleInlineUpdate('category', val)} />
                                 <EditableCell value={item.item_name} onSave={(val) => handleInlineUpdate('item_name', val)} bold={true} />
                                 <EditableCell value={item.price} onSave={(val) => handleInlineUpdate('price', val)} align="right" />
@@ -854,7 +893,9 @@ const ItemsTab = ({ month }) => {
                             </tr>
                         )
                     }) : (
-                        <tr><td colSpan="5" style={{ textAlign: 'center' }}>조건에 맞는 품목이 없습니다.</td></tr>
+                        <tr><td colSpan="7" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
+                            {viewMode === 'tonner' ? '등록된 Tonner 품목이 없습니다.' : '조건에 맞는 품목이 없습니다.'}
+                        </td></tr>
                     )}
                 </tbody>
             </table>

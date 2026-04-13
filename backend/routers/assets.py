@@ -215,22 +215,27 @@ def get_dashboard_integrated():
 def bulk_search_assets(req: BulkSearchRequest):
     """
     Search multiple identifiers across selected targets and column types.
-    Returns: { "found": [...], "notFound": [...] }
+    Returns: { "found": [...], "notFound": [...], "found_count": int }
+
+    규칙:
+    - 이메일 검색: 정확 일치(exact match), 대소문자 무시
+    - 시리얼/전체 검색: 부분 일치(contains)
+    - 검색어 1개당 결과 1건 원칙 (대시보드: term당 1건, 개별테이블: table당 1건)
+    - found_count = 실제 매칭된 고유 검색어 수 (행 수 X)
     """
     import re
     import pandas as pd
-    # 분리기(개행, 쉼표, 세미콜론)를 기준으로 입력어 분리
+
     terms = [t.strip() for t in re.split(r'[\n,;]+', req.search_input) if t.strip()]
     if not terms:
-        return {"found": [], "notFound": []}
+        return {"found": [], "notFound": [], "found_count": 0}
 
     found_results = []
     found_terms = set()
 
-    # Determine which columns to search based on search_type
     def filter_columns_by_type(all_cols, table_key):
         if req.search_type == "email":
-            return [c for c in all_cols if c.lower() in ["email"]]
+            return [c for c in all_cols if c.lower() == "email"]
         elif req.search_type == "serial_laptop":
             if table_key == "Lease":
                 return [c for c in all_cols if c in ["S/N", "SNOW Tag"]]
@@ -243,64 +248,57 @@ def bulk_search_assets(req: BulkSearchRequest):
             elif table_key == "dashboard":
                 return [c for c in all_cols if c == "Ipad_List"]
             return []
-        # if "all", return all provided columns
         return all_cols
 
+    def make_mask(series, term_lower, term_original):
+        """이메일: 대소문자 구분 + 완전 일치, 그 외: 소문자 포함(contains)"""
+        if req.search_type == "email":
+            # 이메일은 대소문자까지 완전 일치만 허용
+            return series.astype(str).str.strip() == term_original
+        normalized = series.astype(str).str.lower().str.strip()
+        return normalized.str.contains(term_lower, na=False, regex=False)
+
     if req.search_target == "dashboard":
-        # Search within integrated dashboard view
         dashboard_data = get_dashboard_integrated()
         if dashboard_data:
             df = pd.DataFrame(dashboard_data)
-            base_cols = df.columns.tolist()
-            search_cols = filter_columns_by_type(base_cols, "dashboard")
-            
-            for term in terms:
-                term_lower = term.lower()
-                matched_for_term = False
-                
-                if search_cols:
-                    for col in search_cols:
-                        mask = df[col].astype(str).str.lower().str.contains(term_lower, na=False, regex=False)
-                        if mask.any():
-                            matched_rows = df[mask].copy()
-                            for _, row in matched_rows.iterrows():
-                                row_dict = row.where(pd.notnull(row), None).to_dict()
-                                # Only add if not already added to avoid exact duplicate for same term
-                                res_entry = {
-                                    "type": "대시보드",
-                                    "table_key": "dashboard",
-                                    "match_col": col,
-                                    "match_term": term,
-                                    "data": row_dict
-                                }
-                                # Simple deduplication
-                                if not any(r["data"] == row_dict and r["match_term"] == term for r in found_results):
-                                    found_results.append(res_entry)
-                                matched_for_term = True
+            search_cols = filter_columns_by_type(df.columns.tolist(), "dashboard")
 
-                if matched_for_term:
-                    found_terms.add(term)
+            for term in terms:
+                term_lower = term.lower().strip()
+                for col in search_cols:
+                    mask = make_mask(df[col], term_lower, term.strip())
+                    if mask.any():
+                        # term당 첫 번째 매칭 행 1건만 반환 (이메일 1개 = 사용자 1명)
+                        first_idx = df[mask].index[0]
+                        row = df.loc[first_idx]
+                        row_dict = row.where(pd.notnull(row), None).to_dict()
+                        found_results.append({
+                            "type": "대시보드",
+                            "table_key": "dashboard",
+                            "match_col": col,
+                            "match_term": term,
+                            "row_index": int(first_idx),
+                            "data": row_dict,
+                        })
+                        found_terms.add(term)
+                        break  # 이 term 완료
 
     else:
         dfs = load_from_db()
         search_targets = {
-            "Lease": ["S/N", "SNOW Tag", "email", "User", "Model"],
-            "iPad": ["S/N", "전화 번호", "email", "User", "Model"],
-            "Teams": ["TeamsNumber", "Number", "email", "History"],
-            "Monitor": ["Model", "email", "User"],
-            "Printer": ["Model", "email", "프린터정보"],
-            "All_User": ["email", "NAME", "이름"]
+            "Lease":    ["S/N", "SNOW Tag", "email", "User", "Model"],
+            "iPad":     ["S/N", "전화 번호", "email", "User", "Model"],
+            "Teams":    ["TeamsNumber", "Number", "email", "History"],
+            "Monitor":  ["Model", "email", "User"],
+            "Printer":  ["Model", "email", "프린터정보"],
+            "All_User": ["email", "NAME", "이름"],
         }
         type_labels = {
-            "Lease": "노트북",
-            "iPad": "아이패드",
-            "Teams": "Teams",
-            "Monitor": "모니터",
-            "Printer": "복합기",
-            "All_User": "대시보드"
+            "Lease": "노트북", "iPad": "아이패드", "Teams": "Teams",
+            "Monitor": "모니터", "Printer": "복합기", "All_User": "대시보드",
         }
-        
-        # Filter table targets
+
         target_keys = list(search_targets.keys())
         if req.search_target == "laptop":
             target_keys = ["Lease"]
@@ -308,44 +306,46 @@ def bulk_search_assets(req: BulkSearchRequest):
             target_keys = ["iPad"]
 
         for term in terms:
-            term_lower = term.lower()
+            term_lower = term.lower().strip()
             matched_for_term = False
-            
+
             for table_key in target_keys:
                 if table_key not in dfs or dfs[table_key].empty:
                     continue
-                    
+
                 df = dfs[table_key]
                 available_cols = [c for c in search_targets[table_key] if c in df.columns]
                 search_cols = filter_columns_by_type(available_cols, table_key)
                 if not search_cols:
                     continue
-                    
+
+                # 테이블당 term 1건만 추가 (첫 번째 매칭 컬럼/행)
                 for col in search_cols:
-                    mask = df[col].astype(str).str.lower().str.contains(term_lower, na=False, regex=False)
+                    mask = make_mask(df[col], term_lower, term.strip())
                     if mask.any():
-                        matched_rows = df[mask].copy()
-                        for _, row in matched_rows.iterrows():
-                            # Null 처리 및 dict 변환
-                            row_dict = row.where(pd.notnull(row), None).to_dict()
-                            res_entry = {
-                                "type": type_labels.get(table_key, table_key),
-                                "table_key": table_key,
-                                "match_col": col,
-                                "match_term": term,
-                                "data": row_dict
-                            }
-                            found_results.append(res_entry)
-                            matched_for_term = True
-            
+                        first_idx = df[mask].index[0]
+                        row = df.loc[first_idx]
+                        row_dict = row.where(pd.notnull(row), None).to_dict()
+                        found_results.append({
+                            "type": type_labels.get(table_key, table_key),
+                            "table_key": table_key,
+                            "match_col": col,
+                            "match_term": term,
+                            "row_index": int(first_idx),
+                            "data": row_dict,
+                        })
+                        matched_for_term = True
+                        break  # 이 테이블에서 첫 매칭으로 종료
+
             if matched_for_term:
                 found_terms.add(term)
 
     not_found = [t for t in terms if t not in found_terms]
-    
+
     return {
         "found": found_results,
-        "notFound": not_found
+        "notFound": not_found,
+        "found_count": len(found_terms),  # 실제 매칭된 고유 검색어 수
     }
 
 # ── Asset List (Read) ────────────────────────────────

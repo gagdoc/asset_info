@@ -147,6 +147,20 @@ export default function BulkSearch() {
     return list
   }, [results, resultFilter, sortKey, sortDir])
 
+  // 이메일 기준 중복 감지: 같은 email이 같은 table_key에 2건 이상 있는 경우
+  const duplicateGroups = useMemo(() => {
+    if (!results?.found) return []
+    const counts = {}
+    for (const item of results.found) {
+      const email = (item.data?.email || '').toLowerCase().trim()
+      if (!email || ['nan', 'none', 'null', ''].includes(email)) continue
+      const key = `${email}::${item.table_key}`
+      if (!counts[key]) counts[key] = { email, type: item.type, count: 0 }
+      counts[key].count++
+    }
+    return Object.values(counts).filter(g => g.count > 1)
+  }, [results])
+
   return (
     <div className="page-container">
       <div className="page-header">
@@ -220,11 +234,17 @@ export default function BulkSearch() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
             <div className="card" style={{ padding: '1.5rem', textAlign: 'center', borderTop: '4px solid var(--primary-color)' }}>
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>발견된 항목</div>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--primary-color)' }}>{results.found.length}</div>
+              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--primary-color)' }}>{results.found_count ?? results.found.length}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>고유 검색어 수</div>
             </div>
             <div className="card" style={{ padding: '1.5rem', textAlign: 'center', borderTop: '4px solid var(--danger-color)' }}>
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>찾지 못한 항목</div>
               <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>{results.notFound.length}</div>
+            </div>
+            <div className="card" style={{ padding: '1.5rem', textAlign: 'center', borderTop: '4px solid #f59e0b' }}>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>이메일 중복</div>
+              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#f59e0b' }}>{duplicateGroups.length}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>그룹</div>
             </div>
           </div>
 
@@ -256,12 +276,43 @@ export default function BulkSearch() {
             </div>
           )}
 
+          {/* 이메일 중복 항목 */}
+          {duplicateGroups.length > 0 && (
+            <div className="card" style={{ marginBottom: '2rem', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+              <div className="card-header" style={{ backgroundColor: 'rgba(245, 158, 11, 0.07)', color: '#b45309', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <FaExclamationTriangle /> <h3>이메일 중복 항목 리스트</h3>
+              </div>
+              <div className="card-body">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  {duplicateGroups.map((g, idx) => (
+                    <span key={idx} style={{
+                      backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                      color: '#92400e',
+                      padding: '0.3rem 0.8rem',
+                      borderRadius: '20px',
+                      fontSize: '0.85rem',
+                      border: '1px solid rgba(245, 158, 11, 0.3)'
+                    }}>
+                      {g.email}
+                      <span style={{ marginLeft: '6px', fontWeight: 'bold', color: '#b45309' }}>
+                        ({g.type} {g.count}건)
+                      </span>
+                    </span>
+                  ))}
+                </div>
+                <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  * 위 이메일은 동일 테이블에 2건 이상 등록된 중복 데이터입니다. 자산 리스트에서 확인 후 정리해 주세요.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* 검색 결과 테이블 */}
           {results.found.length > 0 && (
             <div className="card">
               <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--success-color)' }}>
-                  <FaCheckCircle /> <h3 style={{ margin: 0 }}>검색 결과 ({filteredFound.length} / {results.found.length}건)</h3>
+                  <FaCheckCircle /> <h3 style={{ margin: 0 }}>검색 결과 ({filteredFound.length} / {results.found.length}행)</h3>
                 </div>
                 {/* 결과 내 검색 */}
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
