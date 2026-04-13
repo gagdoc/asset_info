@@ -234,7 +234,8 @@ export default function BulkSearch() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
             <div className="card" style={{ padding: '1.5rem', textAlign: 'center', borderTop: '4px solid var(--primary-color)' }}>
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>발견된 항목</div>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--primary-color)' }}>{results.found.length}</div>
+              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--primary-color)' }}>{results.found_count ?? results.found.length}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>고유 검색어 수</div>
             </div>
             <div className="card" style={{ padding: '1.5rem', textAlign: 'center', borderTop: '4px solid var(--danger-color)' }}>
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>찾지 못한 항목</div>
@@ -311,7 +312,7 @@ export default function BulkSearch() {
             <div className="card">
               <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--success-color)' }}>
-                  <FaCheckCircle /> <h3 style={{ margin: 0 }}>검색 결과 ({filteredFound.length} / {results.found.length}건)</h3>
+                  <FaCheckCircle /> <h3 style={{ margin: 0 }}>검색 결과 ({filteredFound.length} / {results.found.length}행)</h3>
                 </div>
                 {/* 결과 내 검색 */}
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
