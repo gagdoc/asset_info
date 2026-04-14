@@ -18,6 +18,7 @@ const Consumables = () => {
             queryClient.invalidateQueries(['consumables-items'])
             queryClient.invalidateQueries(['consumables-months'])
             queryClient.invalidateQueries(['consumables-estimate'])
+            queryClient.invalidateQueries(['toner-inventory'])
             alert("구글 시트와 동기화되었습니다.")
         } catch (error) {
             console.error("Sync error:", error)
@@ -121,6 +122,13 @@ const Consumables = () => {
                 >
                     🖨️ 위탁 토너 내역
                 </button>
+                <button
+                    className={`btn ${activeTab === 'toner-inventory' ? 'btn-primary' : ''}`}
+                    onClick={() => setActiveTab('toner-inventory')}
+                    style={{ backgroundColor: activeTab === 'toner-inventory' ? '' : '#f0fdf4', border: '1px solid #22c55e', color: activeTab === 'toner-inventory' ? '' : '#15803d' }}
+                >
+                    📊 토너 재고 관리
+                </button>
             </div>
 
             {activeTab === 'estimate' && selectedMonth && <EstimateTab month={selectedMonth} />}
@@ -129,6 +137,7 @@ const Consumables = () => {
             {activeTab === 'items' && <ItemsTab month={selectedMonth} />}
             {activeTab === 'tracked' && <TrackedItemsTab month={selectedMonth} />}
             {activeTab === 'tonner-consignment' && <TonnerConsignmentTab month={selectedMonth} months={monthsData} />}
+            {activeTab === 'toner-inventory' && <TonnerInventoryTab />}
             
             {(activeTab === 'estimate' || activeTab === 'outbound') && !selectedMonth && (
                 <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>조회할 월(Month) 데이터를 불러오는 중입니다...</div>
@@ -426,6 +435,7 @@ const OutboundTab = ({ month }) => {
         onSuccess: () => {
             queryClient.invalidateQueries(['consumables-outbound', month])
             queryClient.invalidateQueries(['tonner-consignment'])
+            queryClient.invalidateQueries(['toner-inventory'])
             setShowForm(false)
             setFormData({ date: '', item_name: '', quantity: '1', user_name: '', outbound_type: '일반' })
             alert("출고 내역이 추가되었습니다.")
@@ -1223,6 +1233,222 @@ const TonnerConsignmentTab = ({ month, months }) => {
                         <span style={{ color: '#7c3aed', fontSize: '1.1em' }}>{grandTotal.toLocaleString()}개</span>
                     </div>
                 </>
+            )}
+        </div>
+    )
+}
+
+const TonnerInventoryTab = () => {
+    const queryClient = useQueryClient()
+    const [editingRow, setEditingRow] = useState(null)   // row_index being edited
+    const [editForm, setEditForm] = useState({})
+    const [searchTerm, setSearchTerm] = useState('')
+
+    const { data: invData, isLoading, refetch, isFetching } = useQuery({
+        queryKey: ['toner-inventory'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/consumables/toner-inventory')
+            return data
+        }
+    })
+
+    const updateMutation = useMutation({
+        mutationFn: async (rowData) => axios.put('/api/consumables/toner-inventory', rowData),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['toner-inventory'])
+            setEditingRow(null)
+            alert("저장되었습니다.")
+        },
+        onError: () => alert("저장 중 오류가 발생했습니다.")
+    })
+
+    const headers    = invData?.headers    || []
+    const items      = invData?.items      || []
+    const nameCol    = invData?.name_col
+    const stockCol   = invData?.stock_col
+    const modelCol   = invData?.model_col
+
+    const filtered = searchTerm
+        ? items.filter(it => headers.some(h => String(it[h] || '').toLowerCase().includes(searchTerm.toLowerCase())))
+        : items
+
+    const handleEditStart = (item) => {
+        setEditingRow(item.row_index)
+        setEditForm({ ...item })
+    }
+
+    const handleEditSave = () => {
+        updateMutation.mutate(editForm)
+    }
+
+    const handleSync = async () => {
+        await axios.get('/api/consumables/clear-cache')
+        refetch()
+    }
+
+    // 재고 상태 뱃지
+    const StockBadge = ({ item }) => {
+        if (stockCol == null || item[stockCol] == null) return <span style={{ color: '#aaa', fontSize: '0.85em' }}>-</span>
+        const qty = item.current_stock ?? 0
+        const isLow = qty <= 0
+        return (
+            <span style={{
+                padding: '3px 10px', borderRadius: '12px', fontSize: '0.85em', fontWeight: 'bold', display: 'inline-block',
+                backgroundColor: isLow ? '#fee2e2' : '#dcfce7',
+                color: isLow ? '#ef4444' : '#22c55e',
+                border: `1px solid ${isLow ? '#fca5a5' : '#86efac'}`
+            }}>
+                {isLow ? `🚨 재고 없음 (${qty}개)` : `✅ 재고 있음 (${qty}개)`}
+            </span>
+        )
+    }
+
+    return (
+        <div className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
+                <div>
+                    <h3 style={{ margin: 0 }}>📊 토너 재고 관리</h3>
+                    <p style={{ margin: '4px 0 0', fontSize: '0.85em', color: '#64748b' }}>
+                        전용 구글 시트 기준 — 일반 출고 시 자동 차감 · 더블클릭으로 인라인 수정
+                    </p>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="btn btn-secondary" onClick={handleSync} disabled={isFetching} style={{ fontSize: '0.9em' }}>
+                        {isFetching ? '동기화 중...' : '🔄 시트 동기화'}
+                    </button>
+                </div>
+            </div>
+
+            {/* 요약 카드 */}
+            {items.length > 0 && (() => {
+                const lowStock  = items.filter(it => (it.current_stock ?? 0) <= 0)
+                const goodStock = items.filter(it => (it.current_stock ?? 0) > 0)
+                return (
+                    <div style={{ display: 'flex', gap: '12px', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '10px 18px', minWidth: '120px' }}>
+                            <div style={{ fontSize: '0.75em', color: '#15803d', fontWeight: 'bold' }}>✅ 재고 있음</div>
+                            <div style={{ fontSize: '1.5em', fontWeight: 'bold', color: '#22c55e' }}>{goodStock.length}</div>
+                        </div>
+                        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', padding: '10px 18px', minWidth: '120px' }}>
+                            <div style={{ fontSize: '0.75em', color: '#dc2626', fontWeight: 'bold' }}>🚨 재고 없음</div>
+                            <div style={{ fontSize: '1.5em', fontWeight: 'bold', color: '#ef4444' }}>{lowStock.length}</div>
+                        </div>
+                        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 18px', minWidth: '120px' }}>
+                            <div style={{ fontSize: '0.75em', color: '#64748b', fontWeight: 'bold' }}>전체 품목</div>
+                            <div style={{ fontSize: '1.5em', fontWeight: 'bold', color: '#334155' }}>{items.length}</div>
+                        </div>
+                    </div>
+                )
+            })()}
+
+            {/* 검색 */}
+            <div style={{ marginBottom: '1rem' }}>
+                <input
+                    type="text"
+                    placeholder="🔍 토너명 / 기종 검색..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    style={{ padding: '8px 12px', width: '100%', boxSizing: 'border-box', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.95em' }}
+                />
+            </div>
+
+            {isLoading && <LoadingModal isOpen={isLoading} message="토너 재고 데이터를 불러오는 중입니다..." />}
+            <LoadingModal isOpen={updateMutation.isPending} message="저장 중입니다..." />
+
+            {!isLoading && headers.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8', background: '#f8fafc', borderRadius: '8px' }}>
+                    토너 재고 시트에 데이터가 없거나 연결할 수 없습니다.<br/>
+                    <small>구글 시트 권한 및 TONER_SPREADSHEET_ID 환경변수를 확인하세요.</small>
+                </div>
+            )}
+
+            {!isLoading && headers.length > 0 && (
+                <div className="table-wrapper" style={{ overflowX: 'auto' }}>
+                    <table className="data-table">
+                        <thead>
+                            <tr>
+                                {headers.map(h => (
+                                    <th key={h} style={{
+                                        backgroundColor: h === stockCol ? '#f0fdf4' : h === nameCol ? '#eff6ff' : h === modelCol ? '#fefce8' : undefined,
+                                        color: h === stockCol ? '#15803d' : h === nameCol ? '#1d4ed8' : h === modelCol ? '#854d0e' : undefined,
+                                        whiteSpace: 'nowrap'
+                                    }}>
+                                        {h === stockCol ? `📦 ${h}` : h === nameCol ? `🖨️ ${h}` : h === modelCol ? `🔧 ${h}` : h}
+                                    </th>
+                                ))}
+                                <th style={{ textAlign: 'center', width: '80px' }}>상태</th>
+                                <th style={{ textAlign: 'center', width: '60px' }}>수정</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filtered.length > 0 ? filtered.map((item) => {
+                                const isEditing = editingRow === item.row_index
+                                const isLow = (item.current_stock ?? 1) <= 0
+                                return (
+                                    <tr key={item.row_index} style={{ backgroundColor: isEditing ? '#fefce8' : isLow ? '#fff5f5' : 'transparent' }}>
+                                        {isEditing ? (
+                                            <>
+                                                {headers.map(h => (
+                                                    <td key={h} style={{ padding: '4px' }}>
+                                                        <input
+                                                            type={h === stockCol ? 'number' : 'text'}
+                                                            value={editForm[h] ?? ''}
+                                                            onChange={e => setEditForm(f => ({ ...f, [h]: e.target.value }))}
+                                                            style={{ width: '100%', padding: '4px 6px', borderRadius: '4px', border: '1px solid #93c5fd', boxSizing: 'border-box', minWidth: h === stockCol ? '70px' : '100px' }}
+                                                        />
+                                                    </td>
+                                                ))}
+                                                <td></td>
+                                                <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                                    <button className="btn btn-primary" style={{ padding: '3px 8px', fontSize: '0.8em', marginRight: '3px' }} onClick={handleEditSave} disabled={updateMutation.isPending}>💾</button>
+                                                    <button className="btn btn-secondary" style={{ padding: '3px 8px', fontSize: '0.8em' }} onClick={() => setEditingRow(null)}>✖</button>
+                                                </td>
+                                            </>
+                                        ) : (
+                                            <>
+                                                {headers.map(h => (
+                                                    <td key={h}
+                                                        onDoubleClick={() => handleEditStart(item)}
+                                                        title="더블클릭으로 수정"
+                                                        style={{
+                                                            cursor: 'pointer',
+                                                            fontWeight: h === nameCol ? 'bold' : 'normal',
+                                                            color: h === stockCol ? ((item.current_stock ?? 0) <= 0 ? '#ef4444' : '#15803d') : undefined,
+                                                            whiteSpace: h === modelCol ? 'pre-wrap' : undefined,
+                                                            maxWidth: h === modelCol ? '220px' : undefined,
+                                                            fontSize: h === modelCol ? '0.85em' : undefined
+                                                        }}
+                                                    >
+                                                        {h === stockCol
+                                                            ? <strong>{item[h]}</strong>
+                                                            : item[h]
+                                                        }
+                                                    </td>
+                                                ))}
+                                                <td style={{ textAlign: 'center' }}><StockBadge item={item} /></td>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <button
+                                                        title="수정"
+                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem' }}
+                                                        onClick={() => handleEditStart(item)}
+                                                    >✏️</button>
+                                                </td>
+                                            </>
+                                        )}
+                                    </tr>
+                                )
+                            }) : (
+                                <tr><td colSpan={headers.length + 2} style={{ textAlign: 'center', color: '#94a3b8', padding: '1.5rem' }}>검색 결과가 없습니다.</td></tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {!isLoading && items.length > 0 && (
+                <div style={{ marginTop: '0.75rem', fontSize: '0.8em', color: '#94a3b8', textAlign: 'right' }}>
+                    💡 더블클릭하거나 ✏️ 버튼으로 수정 · 일반 출고 시 재고 자동 차감
+                </div>
             )}
         </div>
     )

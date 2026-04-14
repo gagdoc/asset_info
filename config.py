@@ -103,6 +103,10 @@ DEFAULT_SCHEMAS = {
 PAGE_TITLE = "사내 자산 & 소모품 관리 시스템"
 LAYOUT = "wide"
 
+# 토너 전용 재고 시트 (소모품 마스터와 별도 관리)
+TONER_SPREADSHEET_ID = "19AMXwNtrF8BcA_BqXpBcy-vWKX8Wu2IkbFTYNPZORc0"
+TONER_SHEET_GID = 394456635  # gid 파라미터 (구글 시트 특정 탭)
+
 # 소모품 필수 품목 재고 임계값 (fixed_qty)
 CONSUMABLES_DEFAULT_THRESHOLD = 5
 

@@ -11,12 +11,14 @@ except ImportError:
     pass
 
 try:
-    from config import CONSUMABLES_MASTER_SPREADSHEET_ID, CONSUMABLES_OUTBOUND_SPREADSHEET_ID, GOOGLE_CREDENTIALS_FILE, GOOGLE_CREDENTIALS_JSON
+    from config import CONSUMABLES_MASTER_SPREADSHEET_ID, CONSUMABLES_OUTBOUND_SPREADSHEET_ID, GOOGLE_CREDENTIALS_FILE, GOOGLE_CREDENTIALS_JSON, TONER_SPREADSHEET_ID, TONER_SHEET_GID
 except ImportError:
     CONSUMABLES_MASTER_SPREADSHEET_ID = os.environ.get("CONSUMABLES_MASTER_SPREADSHEET_ID")
     CONSUMABLES_OUTBOUND_SPREADSHEET_ID = os.environ.get("CONSUMABLES_OUTBOUND_SPREADSHEET_ID")
     GOOGLE_CREDENTIALS_FILE = os.environ.get("GOOGLE_CREDENTIALS_FILE", "data/st-asset-project-8000c6bb9905.json")
     GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    TONER_SPREADSHEET_ID = os.environ.get("TONER_SPREADSHEET_ID", "19AMXwNtrF8BcA_BqXpBcy-vWKX8Wu2IkbFTYNPZORc0")
+    TONER_SHEET_GID = int(os.environ.get("TONER_SHEET_GID", "394456635"))
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -350,6 +352,17 @@ def add_outbound(month: str, data: dict) -> bool:
         invalidate_cache()
         # 데이터 변경 시 재고리스트 요약 시트 동기화
         sync_inventory_summary_sheet()
+
+        # 일반 출고이고 토너 재고 시트에 있는 품목이면 재고 차감
+        if outbound_type == '일반':
+            try:
+                qty_int = int(str(data.get('quantity', '0')).replace(',', ''))
+                i_name = data.get('item_name', '').strip()
+                if i_name and _is_in_toner_sheet(i_name):
+                    deduct_toner_stock(i_name, qty_int)
+            except Exception as e:
+                logger.warning(f"토너 재고 차감 중 오류 (출고 기록은 완료): {e}")
+
         return True
     except Exception as e:
         print(f"Error adding outbound: {e}")
@@ -508,6 +521,186 @@ def get_tonner_consignment_history(month: str = None):
                 "outbound_type": "위탁"
             })
     return history
+
+## ── 토너 전용 재고 시트 ──────────────────────────────────────
+
+def _get_toner_worksheet():
+    """토너 전용 재고 스프레드시트의 특정 탭(GID) 반환"""
+    if not TONER_SPREADSHEET_ID:
+        logger.warning("TONER_SPREADSHEET_ID 미설정")
+        return None
+    _, ss = _get_consumables_client(TONER_SPREADSHEET_ID)
+    if not ss:
+        return None
+    try:
+        return ss.get_worksheet_by_id(TONER_SHEET_GID)
+    except Exception as e:
+        logger.error(f"토너 재고 워크시트(GID={TONER_SHEET_GID}) 접근 오류: {e}")
+        return None
+
+
+def _find_col_idx(headers: list, keywords: list) -> int | None:
+    """헤더 목록에서 키워드를 포함하는 첫 번째 컬럼 인덱스 반환 (대소문자 무시)"""
+    for i, h in enumerate(headers):
+        h_lower = h.lower()
+        if any(kw in h_lower for kw in keywords):
+            return i
+    return None
+
+
+def get_toner_inventory():
+    """토너 전용 재고 시트 전체 데이터 반환 (캐시 적용)"""
+    return _get_cached("toner_inventory", _get_toner_inventory_impl)
+
+
+def _get_toner_inventory_impl():
+    ws = _get_toner_worksheet()
+    if not ws:
+        return {"headers": [], "items": [], "name_col": None, "stock_col": None, "model_col": None}
+    try:
+        all_values = ws.get_all_values()
+        if not all_values:
+            return {"headers": [], "items": [], "name_col": None, "stock_col": None, "model_col": None}
+
+        raw_headers = all_values[0]
+        headers = [str(h).strip() for h in raw_headers]
+
+        # 주요 컬럼 인덱스 탐색
+        name_col_idx   = _find_col_idx(headers, ['명', 'name', '모델', 'model', '품목', 'toner', 'tonner', '토너'])
+        stock_col_idx  = _find_col_idx(headers, ['재고', 'stock', 'qty', '수량'])
+        model_col_idx  = _find_col_idx(headers, ['기종', 'compatible', '호환', 'printer'])
+
+        if name_col_idx is None:
+            name_col_idx = 0  # 기본값: 첫 번째 컬럼
+
+        items = []
+        for row_num, row in enumerate(all_values[1:], start=2):
+            # 이름 컬럼이 비어 있으면 건너뜀
+            name_val = str(row[name_col_idx]).strip() if name_col_idx < len(row) else ""
+            if not name_val:
+                continue
+
+            padded = row + [''] * (len(headers) - len(row))
+            item = {"row_index": row_num}
+
+            for j, header in enumerate(headers):
+                item[header] = str(padded[j]).strip() if j < len(padded) else ""
+
+            # 편의 필드
+            item["item_name"] = item.get(headers[name_col_idx], "")
+
+            if stock_col_idx is not None and stock_col_idx < len(headers):
+                stock_str = item.get(headers[stock_col_idx], "0").replace(',', '')
+                try:
+                    item["current_stock"] = int(float(stock_str)) if stock_str.strip() else 0
+                except (ValueError, TypeError):
+                    item["current_stock"] = 0
+            else:
+                item["current_stock"] = None
+
+            if model_col_idx is not None and model_col_idx < len(headers):
+                item["compatible_models"] = item.get(headers[model_col_idx], "")
+            else:
+                item["compatible_models"] = ""
+
+            items.append(item)
+
+        name_col  = headers[name_col_idx]  if name_col_idx  is not None else None
+        stock_col = headers[stock_col_idx] if stock_col_idx is not None else None
+        model_col = headers[model_col_idx] if model_col_idx is not None else None
+
+        return {
+            "headers": headers,
+            "items": items,
+            "name_col": name_col,
+            "stock_col": stock_col,
+            "model_col": model_col,
+        }
+    except Exception as e:
+        logger.error(f"토너 재고 데이터 로드 오류: {e}")
+        return {"headers": [], "items": [], "name_col": None, "stock_col": None, "model_col": None}
+
+
+def update_toner_item(row_index: int, data: dict) -> bool:
+    """토너 재고 시트의 특정 행(row_index) 전체를 업데이트"""
+    ws = _get_toner_worksheet()
+    if not ws:
+        return False
+    try:
+        headers = ws.row_values(1)
+        if not headers:
+            return False
+        new_row = [str(data.get(h, "")) for h in headers]
+        end_col = chr(64 + len(headers))  # A=65 → chr(64+n)
+        ws.update(f"A{row_index}:{end_col}{row_index}", [new_row])
+        invalidate_cache()
+        return True
+    except Exception as e:
+        logger.error(f"토너 항목 수정 오류 (row {row_index}): {e}")
+        return False
+
+
+def deduct_toner_stock(item_name: str, quantity: int) -> bool:
+    """
+    토너 출고 시 재고 차감.
+    item_name 으로 행을 찾아 재고 컬럼을 (current - quantity)로 갱신.
+    음수 방지: 0 미만이면 0으로 설정.
+    """
+    ws = _get_toner_worksheet()
+    if not ws:
+        return False
+    try:
+        all_values = ws.get_all_values()
+        if not all_values:
+            return False
+
+        headers = [str(h).strip() for h in all_values[0]]
+        name_col_idx  = _find_col_idx(headers, ['명', 'name', '모델', 'model', '품목', 'toner', 'tonner', '토너'])
+        stock_col_idx = _find_col_idx(headers, ['재고', 'stock', 'qty', '수량'])
+
+        if name_col_idx is None:
+            name_col_idx = 0
+        if stock_col_idx is None:
+            logger.warning(f"토너 재고 컬럼 없음. 헤더: {headers}")
+            return False
+
+        for row_num, row in enumerate(all_values[1:], start=2):
+            if name_col_idx >= len(row):
+                continue
+            if str(row[name_col_idx]).strip() != item_name:
+                continue
+
+            current_str = row[stock_col_idx].replace(',', '') if stock_col_idx < len(row) else "0"
+            try:
+                current = int(float(current_str)) if current_str.strip() else 0
+            except (ValueError, TypeError):
+                current = 0
+
+            new_stock = max(0, current - quantity)
+            stock_cell = f"{chr(65 + stock_col_idx)}{row_num}"
+            ws.update(stock_cell, [[str(new_stock)]])
+            invalidate_cache()
+            logger.info(f"토너 재고 차감: '{item_name}' {current} → {new_stock} (-{quantity})")
+            return True
+
+        logger.warning(f"토너 재고 시트에서 품목 미발견: '{item_name}'")
+        return False
+    except Exception as e:
+        logger.error(f"토너 재고 차감 오류: {e}")
+        return False
+
+
+def _is_in_toner_sheet(item_name: str) -> bool:
+    """캐시된 토너 재고 데이터를 이용해 해당 품목이 토너 시트에 있는지 빠르게 확인"""
+    try:
+        inv = _get_cached("toner_inventory", _get_toner_inventory_impl)
+        names = {it.get("item_name", "").strip() for it in inv.get("items", [])}
+        return item_name.strip() in names
+    except Exception:
+        # 캐시 실패 시 이름 기반 휴리스틱 판단
+        n = item_name.lower()
+        return any(kw in n for kw in ['tonner', 'toner', '토너'])
+
 
 def sync_inventory_summary_sheet():
     """
