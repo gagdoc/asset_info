@@ -48,11 +48,10 @@ def get_connection(db_file=ASSET_DB_FILE):
 def normalize_email(df):
     if "email" in df.columns:
         df["email"] = df["email"].astype(str).str.strip()
-        # regex=True일 경우 "finance" 와 같은 문자열 내의 "nan"이 삭제되는 버그 발생 ("fice")
-        # 특정 문자열과 완벽히 일치할 때만 빈 문자열로 치환하도록 변경
-        df["email"] = df["email"].replace(
-            ["nan", "none", "null"], "", regex=False
-        )
+        # 대소문자 무관하게 nan/none/null/빈값 모두 빈 문자열로 정규화
+        # regex=False + str.lower() 비교로 "finance" 같은 정상 문자열 보호
+        invalid_mask = df["email"].str.lower().isin(["nan", "none", "null", ""])
+        df.loc[invalid_mask, "email"] = ""
     return df
 
 
