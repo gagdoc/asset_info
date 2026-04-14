@@ -3,6 +3,7 @@ import axios from 'axios'
 import { FaSearch, FaExclamationTriangle, FaCheckCircle, FaTrashAlt, FaSort, FaSortUp, FaSortDown } from 'react-icons/fa'
 import { useToast } from '../components/Toast'
 import LoadingModal from '../components/LoadingModal'
+import { exportToCSV, todayStr, ExportButton } from '../utils/exportUtils'
 
 const API_BASE = '/api'
 const STORAGE_KEY = 'bulkSearch_state'
@@ -314,6 +315,17 @@ export default function BulkSearch() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--success-color)' }}>
                   <FaCheckCircle /> <h3 style={{ margin: 0 }}>검색 결과 ({filteredFound.length} / {results.found.length}행)</h3>
                 </div>
+                <ExportButton
+                  onClick={() => {
+                    const rows = filteredFound.map(item => ({
+                      '검색어': item.match_term || '',
+                      '자산유형': item.type || '',
+                      ...item.data
+                    }))
+                    exportToCSV(rows, `대량검색결과_${todayStr()}`)
+                  }}
+                  disabled={filteredFound.length === 0}
+                />
                 {/* 결과 내 검색 */}
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                   <FaSearch style={{ position: 'absolute', left: '0.6rem', color: 'var(--text-secondary)', fontSize: '0.75rem' }} />
