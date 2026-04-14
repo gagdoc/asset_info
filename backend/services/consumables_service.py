@@ -394,13 +394,59 @@ def add_outbound(month: str, data: dict) -> bool:
         print(f"Error adding outbound: {e}")
         return False
 
+def _resolve_row_index(ws, row_index: int, verify_date: str, verify_item: str) -> int:
+    """
+    row_index가 유효한지 검증하고, 내용 불일치 시 시트 전체에서 실제 행을 탐색합니다.
+    반환값: 실제 삭제/수정할 행 번호 (1-indexed), 찾지 못하면 -1
+    """
+    try:
+        row_values = ws.row_values(row_index)
+        actual_date = str(row_values[0]).strip() if len(row_values) > 0 else ""
+        actual_item = str(row_values[1]).strip() if len(row_values) > 1 else ""
+
+        # 내용이 일치하면 그대로 사용
+        if actual_date == verify_date and actual_item == verify_item:
+            return row_index
+
+        # 불일치: 시트 전체에서 날짜+품목명으로 재탐색
+        logger.warning(
+            f"row_index={row_index} 내용 불일치 "
+            f"(기대: {verify_date}/{verify_item}, 실제: {actual_date}/{actual_item}). "
+            f"전체 탐색 중..."
+        )
+        all_rows = ws.get_values("A2:E")
+        for i, row in enumerate(all_rows):
+            r_date = str(row[0]).strip() if len(row) > 0 else ""
+            r_item = str(row[1]).strip() if len(row) > 1 else ""
+            if r_date == verify_date and r_item == verify_item:
+                found = i + 2  # A2 시작 → 실제 시트 행 번호
+                logger.info(f"실제 행 발견: {found}")
+                return found
+
+        logger.error(f"행을 찾을 수 없음: {verify_date} / {verify_item}")
+        return -1
+    except Exception as e:
+        logger.error(f"행 검증 중 오류: {e}")
+        return row_index  # 검증 실패 시 원래 인덱스로 fallback
+
+
 def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
-    """월별 출고 시트의 특정 행(row_index) 데이터를 수정합니다."""
+    """월별 출고 시트의 특정 행(row_index) 데이터를 수정합니다.
+    verify_date, verify_item이 제공되면 삭제 전 행 내용을 검증합니다."""
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
         ws = _get_worksheet_safe(ss, month)
         if not ws: return False
+
+        # 행 내용 검증 (인덱스 이동 방지)
+        verify_date = str(data.get('verify_date', data.get('date', ''))).strip()
+        verify_item = str(data.get('verify_item', data.get('item_name', ''))).strip()
+        if verify_date and verify_item:
+            row_index = _resolve_row_index(ws, row_index, verify_date, verify_item)
+            if row_index == -1:
+                return False
+
         outbound_type = data.get('outbound_type', '일반')
         if not outbound_type or outbound_type.strip() == '':
             outbound_type = '일반'
@@ -412,27 +458,36 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
             outbound_type
         ]])
         invalidate_cache()
-        # 데이터 변경 시 재고리스트 요약 시트 동기화
         sync_inventory_summary_sheet()
         return True
     except Exception as e:
-        print(f"Error updating outbound: {e}")
+        logger.error(f"Error updating outbound: {e}")
         return False
 
-def delete_outbound_history(month: str, row_index: int) -> bool:
-    """월별 출고 시트의 특정 행(row_index)을 완전히 삭제합니다."""
+
+def delete_outbound_history(month: str, row_index: int,
+                            verify_date: str = "", verify_item: str = "") -> bool:
+    """월별 출고 시트의 특정 행(row_index)을 완전히 삭제합니다.
+    verify_date + verify_item이 제공되면 삭제 전 행 내용을 검증합니다.
+    인덱스 이동으로 인한 잘못된 행 삭제를 방지합니다."""
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
         ws = _get_worksheet_safe(ss, month)
         if not ws: return False
+
+        # 행 내용 검증 (인덱스 이동 방지)
+        if verify_date and verify_item:
+            row_index = _resolve_row_index(ws, row_index, verify_date, verify_item)
+            if row_index == -1:
+                return False
+
         ws.delete_rows(row_index)
         invalidate_cache()
-        # 데이터 변경 시 재고리스트 요약 시트 동기화
         sync_inventory_summary_sheet()
         return True
     except Exception as e:
-        print(f"Error deleting outbound: {e}")
+        logger.error(f"Error deleting outbound: {e}")
         return False
 
 def save_item(data: dict) -> bool:

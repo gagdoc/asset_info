@@ -331,7 +331,10 @@ const OutboundTab = ({ month }) => {
     })
 
     const deleteMutation = useMutation({
-        mutationFn: async (rowIndex) => await axios.delete(`/api/consumables/outbound?month=${month}&row_index=${rowIndex}`),
+        mutationFn: async ({ rowIndex, date, item_name }) => await axios.delete(
+            `/api/consumables/outbound?month=${month}&row_index=${rowIndex}` +
+            `&verify_date=${encodeURIComponent(date)}&verify_item=${encodeURIComponent(item_name)}`
+        ),
         onSuccess: () => {
             queryClient.invalidateQueries(['consumables-outbound', month])
             queryClient.invalidateQueries(['consumables-items'])
@@ -350,18 +353,26 @@ const OutboundTab = ({ month }) => {
             alert("모든 필드를 입력해야 합니다.")
             return
         }
-        updateMutation.mutate({ month, row_index: editForm.row_index, ...editForm })
+        // verify_date/verify_item으로 수정 전 행 내용 검증 (인덱스 이동 방지)
+        updateMutation.mutate({
+            month,
+            row_index: editForm.row_index,
+            verify_date: editForm.date,
+            verify_item: editForm.item_name,
+            ...editForm
+        })
     }
 
-    const [confirmModal, setConfirmModal] = useState({ isOpen: false, rowIndex: null })
+    const [confirmModal, setConfirmModal] = useState({ isOpen: false, row: null })
 
-    const handleDelete = (rowIndex) => {
-        setConfirmModal({ isOpen: true, rowIndex })
+    const handleDelete = (row) => {
+        setConfirmModal({ isOpen: true, row })
     }
 
     const executeDelete = () => {
-        deleteMutation.mutate(confirmModal.rowIndex)
-        setConfirmModal({ isOpen: false, rowIndex: null })
+        const { row } = confirmModal
+        deleteMutation.mutate({ rowIndex: row.row_index, date: row.date, item_name: row.item_name })
+        setConfirmModal({ isOpen: false, row: null })
     }
 
     const { data: itemsList } = useQuery({
@@ -653,7 +664,7 @@ const OutboundTab = ({ month }) => {
                                         </td>
                                         <td style={{ textAlign: 'center' }}>
                                             <button className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8em', marginRight: '4px' }} onClick={() => handleEditStart(row)}>✏️</button>
-                                            <button className="btn btn-danger" style={{ padding: '2px 6px', fontSize: '0.8em' }} onClick={() => handleDelete(row.row_index)} disabled={deleteMutation.isPending}>🗑️</button>
+                                            <button className="btn btn-danger" style={{ padding: '2px 6px', fontSize: '0.8em' }} onClick={() => handleDelete(row)} disabled={deleteMutation.isPending}>🗑️</button>
                                         </td>
                                     </>
                                 )}
@@ -1168,8 +1179,11 @@ const TonnerConsignmentTab = ({ month, months }) => {
     })
 
     const deleteMutation = useMutation({
-        mutationFn: async ({ month: m, row_index }) =>
-            axios.delete(`/api/consumables/outbound?month=${encodeURIComponent(m)}&row_index=${row_index}`),
+        mutationFn: async ({ month: m, row_index, date, item_name }) =>
+            axios.delete(
+                `/api/consumables/outbound?month=${encodeURIComponent(m)}&row_index=${row_index}` +
+                `&verify_date=${encodeURIComponent(date || '')}&verify_item=${encodeURIComponent(item_name || '')}`
+            ),
         onSuccess: () => {
             queryClient.invalidateQueries(['tonner-consignment'])
             setConfirmModal({ isOpen: false, row: null })
@@ -1346,7 +1360,7 @@ const TonnerConsignmentTab = ({ month, months }) => {
             <ConfirmModal
                 isOpen={confirmModal.isOpen}
                 message={`"${confirmModal.row?.item_name}" 위탁 출고 내역을 삭제하시겠습니까?`}
-                onConfirm={() => deleteMutation.mutate({ month: confirmModal.row.month, row_index: confirmModal.row.row_index })}
+                onConfirm={() => deleteMutation.mutate({ month: confirmModal.row.month, row_index: confirmModal.row.row_index, date: confirmModal.row.date, item_name: confirmModal.row.item_name })}
                 onCancel={() => setConfirmModal({ isOpen: false, row: null })}
             />
         </div>
