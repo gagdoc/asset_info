@@ -3,6 +3,9 @@ import pandas as pd
 import os
 import sys
 import io
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Add parent directory to sys.path to allow imports from root
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -115,20 +118,28 @@ def load_from_db() -> dict:
             print(f"Google Sheets 로드 오류, SQLite로 전환: {e}")
 
     # 2. 로컬 SQLite 폴백
-    print("📂 로컬 SQLite 사용 중...")
+    logger.info("📂 로컬 SQLite 사용 중...")
+    # 허용된 테이블명 화이트리스트 (SQL 인젝션 방지)
+    _ALLOWED_TABLES: frozenset = frozenset(SHEET_MAPPING.keys())
     try:
         conn = get_connection(ASSET_DB_FILE)
         data = {}
         for key in SHEET_MAPPING.keys():
             try:
-                df = pd.read_sql(f"SELECT * FROM '{key}'", conn)
+                if key not in _ALLOWED_TABLES:
+                    logger.warning(f"허용되지 않은 테이블명 차단: {key}")
+                    data[key] = pd.DataFrame()
+                    continue
+                # 이중 인용부호(")로 식별자 안전 처리 — 단일 인용부호(')는 SQLite 호환 quirk에 의존
+                safe_key = key.replace('"', '')   # 혹시 남은 " 제거
+                df = pd.read_sql(f'SELECT * FROM "{safe_key}"', conn)
                 data[key] = df
             except Exception:
                 data[key] = pd.DataFrame()
         conn.close()
         return _post_process(data)
     except Exception as e:
-        print(f"SQLite 연결 오류: {e}")
+        logger.error(f"SQLite 연결 오류: {e}")
         return {key: pd.DataFrame() for key in SHEET_MAPPING.keys()}
 
 

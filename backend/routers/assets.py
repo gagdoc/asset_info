@@ -9,6 +9,19 @@ from pydantic import BaseModel
 from datetime import datetime
 import pandas as pd
 import io
+import time
+import logging
+
+logger = logging.getLogger(__name__)
+
+# ── 대시보드 통합뷰 캐시 ──────────────────────────────────
+_DASHBOARD_CACHE: Dict[str, Any] = {"data": None, "ts": 0.0}
+_DASHBOARD_CACHE_TTL = 60  # seconds
+
+def _invalidate_dashboard_cache():
+    """데이터 변경 시 대시보드 캐시를 무효화합니다."""
+    _DASHBOARD_CACHE["data"] = None
+    _DASHBOARD_CACHE["ts"] = 0.0
 
 router = APIRouter(
     prefix="/api/assets",
@@ -90,7 +103,14 @@ def get_dashboard_integrated():
     Returns the merged 'All Employee Info' view:
     All_User + Lease + iPad + Monitor + Teams + Printer + Resign info
     Now supports multiple assets per user (grouped by email).
+    캐시 TTL: 60초 (write 발생 시 자동 무효화)
     """
+    global _DASHBOARD_CACHE
+    now = time.time()
+    if _DASHBOARD_CACHE["data"] is not None and now - _DASHBOARD_CACHE["ts"] < _DASHBOARD_CACHE_TTL:
+        logger.debug("대시보드 캐시 히트")
+        return _DASHBOARD_CACHE["data"]
+
     dfs = load_from_db()
     if "All_User" not in dfs or dfs["All_User"].empty:
         return []
@@ -209,7 +229,12 @@ def get_dashboard_integrated():
             
     # Final sort/filter
     result_df = view_df[desired_cols].where(pd.notnull(view_df[desired_cols]), "-")
-    return result_df.to_dict(orient="records")
+    result = result_df.to_dict(orient="records")
+    # 결과를 캐시에 저장
+    _DASHBOARD_CACHE["data"] = result
+    _DASHBOARD_CACHE["ts"] = time.time()
+    logger.debug(f"대시보드 캐시 갱신 ({len(result)}명)")
+    return result
 
 @router.post("/bulk-search")
 def bulk_search_assets(req: BulkSearchRequest):
@@ -434,6 +459,7 @@ def delete_rows(req: RowDeleteRequest):
     valid_indices = [i for i in req.row_indices if 0 <= i < len(df)]
     df = df.drop(index=valid_indices).reset_index(drop=True)
     update_db(req.asset_type, df)
+    _invalidate_dashboard_cache()
     return {"message": f"{len(valid_indices)} rows deleted"}
 
 # ── Add Row ──────────────────────────────────────────

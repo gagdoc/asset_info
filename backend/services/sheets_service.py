@@ -1,8 +1,12 @@
 import os
 import sys
+import json
+import logging
 import pandas as pd
 import concurrent.futures
 import threading
+
+logger = logging.getLogger(__name__)
 
 # 프로젝트 루트를 sys.path에 추가
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -13,7 +17,7 @@ try:
     GSPREAD_AVAILABLE = True
 except ImportError:
     GSPREAD_AVAILABLE = False
-    print("⚠️  gspread 미설치: pip install gspread google-auth")
+    logger.warning("gspread 미설치: pip install gspread google-auth")
 
 try:
     from config import SHEET_MAPPING, SPREADSHEET_ID, GOOGLE_CREDENTIALS_FILE, GOOGLE_CREDENTIALS_JSON
@@ -60,10 +64,10 @@ def _run_with_timeout(fn, timeout=SHEETS_TIMEOUT):
         try:
             return future.result(timeout=timeout)
         except concurrent.futures.TimeoutError:
-            print(f"⏰ Google Sheets API {timeout}초 타임아웃 — SQLite로 전환합니다")
+            logger.warning(f"Google Sheets API {timeout}초 타임아웃 — SQLite로 전환합니다")
             return "TIMEOUT"
         except Exception as e:
-            print(f"⚠️  Google Sheets API 오류: {e}")
+            logger.error("Google Sheets API 오류 발생 (상세 내용 로그 생략)")
             return "ERROR"
 
 
@@ -75,28 +79,39 @@ def _get_client():
         return None, None
 
     if not SPREADSHEET_ID:
-        print("⚠️  SPREADSHEET_ID가 설정되지 않았습니다.")
+        logger.warning("SPREADSHEET_ID가 설정되지 않았습니다.")
         return None, None
 
     try:
         creds = None
         # 클라우드 배포 시 환경 변수 사용을 최우선으로 함
         if GOOGLE_CREDENTIALS_JSON:
-            import json
-            creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
-            creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+            try:
+                creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+                creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+            except json.JSONDecodeError:
+                logger.error("GOOGLE_CREDENTIALS_JSON 파싱 실패 (JSON 형식 오류) — 인증정보 내용은 로그에 기록하지 않음")
+                return None, None
+            except Exception:
+                logger.error("서비스 계정 인증 초기화 실패 — 인증정보 내용은 로그에 기록하지 않음")
+                return None, None
         # 환경 변수가 없으면 로컬 JSON 파일 사용
         elif os.path.exists(GOOGLE_CREDENTIALS_FILE):
-            creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS_FILE, scopes=SCOPES)
+            try:
+                creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS_FILE, scopes=SCOPES)
+            except Exception:
+                logger.error(f"서비스 계정 파일 로드 실패: {GOOGLE_CREDENTIALS_FILE}")
+                return None, None
         else:
-            print(f"⚠️  Google Sheets 인증 정보 없음 (파일 및 환경 변수 모두 누락)")
+            logger.warning("Google Sheets 인증 정보 없음 (파일 및 환경 변수 모두 누락)")
             return None, None
 
         client = gspread.authorize(creds)
         spreadsheet = client.open_by_key(SPREADSHEET_ID)
         return client, spreadsheet
-    except Exception as e:
-        print(f"⚠️  Google Sheets 연결 오류: {e}")
+    except Exception:
+        # 예외 메시지에 인증정보가 포함될 수 있으므로 상세 내용 미기록
+        logger.error("Google Sheets 연결 오류 — 환경변수/파일 설정 확인 필요")
         return None, None
 
 
@@ -130,7 +145,7 @@ def _sheet_to_df(worksheet) -> pd.DataFrame:
         )
         return pd.DataFrame(records)
     except Exception as e:
-        print(f"⚠️  시트 → DataFrame 변환 오류: {e}")
+        logger.warning(f"시트 → DataFrame 변환 오류: {e}")
         return pd.DataFrame()
 
 
@@ -189,10 +204,10 @@ def _load_sheets_internal() -> dict | None:
             else:
                 data[key] = pd.DataFrame()
 
-        print("✅ Google Sheets 데이터 로드 완료 (Batch Get 최적화)")
+        logger.info("Google Sheets 데이터 로드 완료 (Batch Get 최적화)")
         return data
     except Exception as e:
-        print(f"⚠️  시트 'Batch Get' 로드 오류: {e}")
+        logger.error(f"시트 Batch Get 로드 오류: {e}")
         return None
 
 
@@ -214,17 +229,17 @@ def _update_sheet_internal(key: str, df: pd.DataFrame) -> bool:
                 rows=max(len(df) + 2, 100),
                 cols=max(len(df.columns) + 2, 20),
             )
-            print(f"✅ 시트 탭 '{sheet_name}' 자동 생성")
+            logger.info(f"시트 탭 '{sheet_name}' 자동 생성")
 
         ws.clear()
         rows = _df_to_rows(df)
         if len(rows) > 1:
             ws.update(rows, value_input_option="USER_ENTERED")
 
-        print(f"✅ '{sheet_name}' 업데이트 완료 ({len(df)}행)")
+        logger.info(f"'{sheet_name}' 업데이트 완료 ({len(df)}행)")
         return True
     except Exception as e:
-        print(f"⚠️  시트 '{sheet_name}' 업데이트 오류: {e}")
+        logger.error(f"시트 '{sheet_name}' 업데이트 오류: {e}")
         return False
 
 
