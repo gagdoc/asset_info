@@ -3,7 +3,8 @@ from backend.services.consumables_service import (
     get_available_months, get_items_list, get_outbound_history,
     get_estimate, add_outbound, save_item, update_outbound_history,
     delete_outbound_history, get_item_outbound_history,
-    create_month_sheet, invalidate_cache, get_tonner_consignment_history
+    create_month_sheet, invalidate_cache, get_tonner_consignment_history,
+    get_toner_inventory, update_toner_item,
 )
 from typing import List, Dict, Any
 
@@ -116,3 +117,19 @@ def list_tonner_consignment(month: str = Query(None, description="조회할 월 
     """위탁 출고된 Tonner 내역 조회"""
     history = get_tonner_consignment_history(month=month)
     return history
+
+@router.get("/toner-inventory")
+def list_toner_inventory():
+    """토너 전용 재고 시트 전체 조회 (헤더 + 품목 목록)"""
+    return get_toner_inventory()
+
+@router.put("/toner-inventory")
+def update_toner_inventory_item(data: Dict[str, Any] = Body(...)):
+    """토너 재고 시트의 특정 행 수정"""
+    row_index = data.get("row_index")
+    if not row_index:
+        raise HTTPException(status_code=400, detail="row_index is required")
+    success = update_toner_item(int(row_index), data)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update toner inventory item")
+    return {"status": "success"}
