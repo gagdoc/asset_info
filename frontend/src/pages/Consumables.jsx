@@ -4,6 +4,7 @@ import axios from 'axios'
 import ConfirmModal from '../components/ConfirmModal'
 import SearchableSelect from '../components/SearchableSelect'
 import LoadingModal from '../components/LoadingModal'
+import { exportToCSV, todayStr, ExportButton } from '../utils/exportUtils'
 
 const Consumables = () => {
     const [activeTab, setActiveTab] = useState('estimate')
@@ -247,11 +248,17 @@ const EstimateTab = ({ month }) => {
 
     return (
         <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
                 <h3>{month} 견적서 산출 내역</h3>
-                <button className="btn btn-secondary" onClick={() => refetch()} disabled={isFetching}>
-                    {isFetching ? '새로고침 중...' : '시트 데이터 다시 불러오기'}
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <ExportButton
+                        onClick={() => exportToCSV(estimateData || [], `견적서_${month}_${todayStr()}`)}
+                        disabled={!estimateData || estimateData.length === 0}
+                    />
+                    <button className="btn btn-secondary" onClick={() => refetch()} disabled={isFetching}>
+                        {isFetching ? '새로고침 중...' : '시트 데이터 다시 불러오기'}
+                    </button>
+                </div>
             </div>
             
             {isLoading && <LoadingModal isOpen={isLoading} message="견적 데이터를 불러오는 중입니다..." />}
@@ -456,11 +463,17 @@ const OutboundTab = ({ month }) => {
 
     return (
         <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3>{month} 출고 상세 기록</h3>
-                <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
-                    {showForm ? '닫기' : '+ 출고 추가'}
-                </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
+                <h3 style={{ margin: 0 }}>{month} 출고 상세 기록</h3>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <ExportButton
+                        onClick={() => exportToCSV(history || [], `출고내역_${month}_${todayStr()}`)}
+                        disabled={!history || history.length === 0}
+                    />
+                    <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
+                        {showForm ? '닫기' : '+ 출고 추가'}
+                    </button>
+                </div>
             </div>
 
             {showForm && (
@@ -753,14 +766,20 @@ const ItemsTab = ({ month }) => {
     return (
         <div className="card">
             {/* 헤더 */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
                 <h3 style={{ margin: 0 }}>
                     소모품 마스터 리스트 (단가표)
                     {month && <span style={{ fontSize: '0.85em', color: '#0ea5e9', marginLeft: '10px' }}>- {month} 기준 재고</span>}
                 </h3>
-                <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' }); }}>
-                    {showForm ? '닫기' : '+ 품목 추가'}
-                </button>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <ExportButton
+                        onClick={() => exportToCSV(filteredItems || [], `소모품리스트_${viewMode}_${todayStr()}`)}
+                        disabled={!filteredItems || filteredItems.length === 0}
+                    />
+                    <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' }); }}>
+                        {showForm ? '닫기' : '+ 품목 추가'}
+                    </button>
+                </div>
             </div>
 
             {/* 일반 / Tonner 서브 탭 */}
@@ -1313,6 +1332,16 @@ const TonnerInventoryTab = () => {
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
+                    <ExportButton
+                        onClick={() => {
+                            const rows = filtered.map(it => {
+                                const { row_index, headers: _h, name_col_idx: _n, stock_col_idx: _s, current_stock: _c, compatible_models: _m, item_name: _i, ...rest } = it
+                                return rest
+                            })
+                            exportToCSV(rows, `토너재고_${todayStr()}`)
+                        }}
+                        disabled={filtered.length === 0}
+                    />
                     <button className="btn btn-secondary" onClick={handleSync} disabled={isFetching} style={{ fontSize: '0.9em' }}>
                         {isFetching ? '동기화 중...' : '🔄 시트 동기화'}
                     </button>

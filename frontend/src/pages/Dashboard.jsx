@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
+import { exportToCSV, todayStr, ExportButton } from '../utils/exportUtils'
 
 const Dashboard = () => {
     const queryClient = useQueryClient()
@@ -106,9 +107,13 @@ const Dashboard = () => {
         <div>
             <div className="dashboard-header-action flex justify-between items-center" style={{ marginBottom: '1.5rem' }}>
                 <h1>📊 통합 자산 현황 (대시보드)</h1>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                    <button 
-                        className="btn btn-secondary" 
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <ExportButton
+                        onClick={() => exportToCSV(filteredData || [], `대시보드_통합현황_${todayStr()}`)}
+                        disabled={!filteredData || filteredData.length === 0}
+                    />
+                    <button
+                        className="btn btn-secondary"
                         onClick={() => {
                             queryClient.invalidateQueries(['dashboardSummary'])
                             queryClient.invalidateQueries(['dashboardIntegrated'])

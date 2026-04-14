@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { useToast } from '../components/Toast'
 import SearchableSelect from '../components/SearchableSelect'
+import { exportToCSV, todayStr } from '../utils/exportUtils'
 
 const AssetList = () => {
     const { type } = useParams()
@@ -219,6 +220,15 @@ const AssetList = () => {
     }
 
     const handleDownload = () => {
+        // 현재 필터가 적용된 결과 내보내기
+        const rows = (displayedAssets || []).map(row => {
+            const { _originalIdx, ...rest } = row
+            return rest
+        })
+        exportToCSV(rows, `${type}_${todayStr()}`)
+    }
+
+    const handleDownloadAll = () => {
         window.open(`/api/assets/${type}/download`, '_blank')
     }
 
@@ -330,7 +340,8 @@ const AssetList = () => {
                             🗑 {selectedRows.size}개 삭제
                         </button>
                     )}
-                    <button className="btn btn-sm" onClick={handleDownload}>📥 CSV 다운로드</button>
+                    <button className="btn btn-sm" onClick={handleDownload} style={{ backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #86efac', fontWeight: '600' }}>📥 필터 결과 내보내기</button>
+                    <button className="btn btn-sm" onClick={handleDownloadAll}>📋 전체 다운로드</button>
                     <button className="btn btn-sm" onClick={() => queryClient.invalidateQueries(['assets', type])}>🔄 새로고침</button>
                 </div>
             </div>
