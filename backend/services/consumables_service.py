@@ -403,13 +403,17 @@ def add_outbound(month: str, data: dict) -> bool:
         # 데이터 변경 시 재고리스트 요약 시트 동기화
         sync_inventory_summary_sheet()
 
-        # 일반·위탁 모두 토너 재고 시트에 있는 품목이면 재고 차감
+        # 일반·위탁 모두 토너 재고 시트에서 품목 검색 후 차감
+        # (사전 체크 없이 직접 deduct 시도 — _is_in_toner_sheet API 실패 우회)
         try:
             qty_int = int(str(data.get('quantity', '0')).replace(',', ''))
             i_name = data.get('item_name', '').strip()
-            if i_name and _is_in_toner_sheet(i_name):
-                deduct_toner_stock(i_name, qty_int)
-                logger.info(f"토너 재고 차감 완료: '{i_name}' -{qty_int} (유형: {outbound_type})")
+            if i_name:
+                result = deduct_toner_stock(i_name, qty_int)
+                if result:
+                    logger.info(f"토너 재고 차감 완료: '{i_name}' -{qty_int} (유형: {outbound_type})")
+                else:
+                    logger.debug(f"토너 재고 시트에 없는 품목 (차감 없음): '{i_name}'")
         except Exception as e:
             logger.warning(f"토너 재고 차감 중 오류 (출고 기록은 완료): {e}")
 
@@ -784,10 +788,15 @@ def deduct_toner_stock(item_name: str, quantity: int) -> bool:
             logger.warning(f"토너 재고 컬럼 없음. 헤더: {headers}")
             return False
 
+        logger.info(f"[deduct] 검색 품목: '{item_name}' | name_col={headers[name_col_idx]}(idx={name_col_idx}) | stock_col={headers[stock_col_idx]}(idx={stock_col_idx})")
+
+        # 정확히 일치하는 행 검색 (대소문자 무시)
+        item_name_lower = item_name.lower()
         for row_num, row in enumerate(all_values[1:], start=2):
             if name_col_idx >= len(row):
                 continue
-            if str(row[name_col_idx]).strip() != item_name:
+            row_name = str(row[name_col_idx]).strip()
+            if row_name.lower() != item_name_lower:
                 continue
 
             current_str = row[stock_col_idx].replace(',', '') if stock_col_idx < len(row) else "0"
