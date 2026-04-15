@@ -291,16 +291,16 @@ const AssetList = () => {
                     )}
                 </div>
                 <div className="flex gap-1" style={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', flex: 1 }}>
-                    {(type === 'NewHire' || type === 'Resign' || type === 'Lease' || type === 'iPad' || type === 'Monitor') && (
+                    {(type === 'NewHire' || type === 'Resign' || type === 'Lease' || type === 'iPad') && (
                         <div style={{ display: 'flex', gap: '5px', marginRight: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                                 <span style={{ position: 'absolute', left: '10px', color: '#9ca3af' }}>🔍</span>
-                                <input 
-                                    className="form-input" 
-                                    style={{ padding: '4px 10px 4px 30px', width: '130px' }} 
-                                    placeholder="전체 검색..." 
-                                    value={searchQuery} 
-                                    onChange={e => setSearchQuery(e.target.value)} 
+                                <input
+                                    className="form-input"
+                                    style={{ padding: '4px 10px 4px 30px', width: '130px' }}
+                                    placeholder="전체 검색..."
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
                                 />
                             </div>
                             <select className="form-input" style={{ width: 'auto', padding: '4px 8px' }} value={filterYear} onChange={e => setFilterYear(e.target.value)}>
@@ -312,7 +312,7 @@ const AssetList = () => {
                                 {uniqueMonths.map(m => <option key={m} value={m}>{m}월</option>)}
                             </select>
                             <div style={{ width: '160px' }}>
-                                <SearchableSelect 
+                                <SearchableSelect
                                     options={buOptions}
                                     value={filterBU}
                                     onChange={setFilterBU}
@@ -321,7 +321,7 @@ const AssetList = () => {
                                 />
                             </div>
                             <div style={{ width: '160px' }}>
-                                <SearchableSelect 
+                                <SearchableSelect
                                     options={userOptions}
                                     value={filterUser}
                                     onChange={setFilterUser}
@@ -333,6 +333,55 @@ const AssetList = () => {
                                 <option value="">전체 Model</option>
                                 {uniqueModels.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
+                        </div>
+                    )}
+                    {/* Monitor: 전체 검색만 */}
+                    {type === 'Monitor' && (
+                        <div style={{ display: 'flex', gap: '5px', marginRight: '10px', alignItems: 'center' }}>
+                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                <span style={{ position: 'absolute', left: '10px', color: '#9ca3af' }}>🔍</span>
+                                <input
+                                    className="form-input"
+                                    style={{ padding: '4px 10px 4px 30px', width: '200px' }}
+                                    placeholder="전체 검색..."
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                    )}
+                    {/* Printer: 전체 검색 + Model 필터 */}
+                    {type === 'Printer' && (
+                        <div style={{ display: 'flex', gap: '5px', marginRight: '10px', alignItems: 'center' }}>
+                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                <span style={{ position: 'absolute', left: '10px', color: '#9ca3af' }}>🔍</span>
+                                <input
+                                    className="form-input"
+                                    style={{ padding: '4px 10px 4px 30px', width: '160px' }}
+                                    placeholder="전체 검색..."
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                />
+                            </div>
+                            <select className="form-input" style={{ width: 'auto', maxWidth: '160px', padding: '4px 8px' }} value={filterModel} onChange={e => setFilterModel(e.target.value)}>
+                                <option value="">전체 Model</option>
+                                {uniqueModels.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                        </div>
+                    )}
+                    {/* Teams: 전체 검색만 */}
+                    {type === 'Teams' && (
+                        <div style={{ display: 'flex', gap: '5px', marginRight: '10px', alignItems: 'center' }}>
+                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                <span style={{ position: 'absolute', left: '10px', color: '#9ca3af' }}>🔍</span>
+                                <input
+                                    className="form-input"
+                                    style={{ padding: '4px 10px 4px 30px', width: '200px' }}
+                                    placeholder="전체 검색..."
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                />
+                            </div>
                         </div>
                     )}
                     {selectedRows.size > 0 && (

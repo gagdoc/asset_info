@@ -11,7 +11,11 @@ const SelfOutbound = () => {
         item_name: '',
         quantity: '1',
         user_name: '',
-        outbound_type: '일반'
+        outbound_type: '일반',
+        staff: '',
+        staff_custom: '',
+        delivery: '',
+        delivery_custom: '',
     })
     const [filterCategory, setFilterCategory] = useState('')
     const [isSuccess, setIsSuccess] = useState(false)
@@ -83,11 +87,16 @@ const SelfOutbound = () => {
         }).sort((a, b) => (a.name || '').localeCompare(b.name || '')), 
     [usersList])
 
+    const STAFF_OPTIONS = ['Kale', 'Daniel', '기타']
+    const DELIVERY_OPTIONS = ['직접', '택배', '기타']
+
     const mutation = useMutation({
         mutationFn: async (newData) => {
             const latestMonth = monthsData?.[0]
             if (!latestMonth) throw new Error("등록 가능한 월 데이터가 없습니다.")
-            return axios.post('/api/consumables/outbound', { ...newData, month: latestMonth })
+            const effectiveStaff = newData.staff === '기타' ? newData.staff_custom : newData.staff
+            const effectiveDelivery = newData.delivery === '기타' ? newData.delivery_custom : newData.delivery
+            return axios.post('/api/consumables/outbound', { ...newData, staff: effectiveStaff, delivery: effectiveDelivery, month: latestMonth })
         },
         onSuccess: () => {
             setIsSuccess(true)
@@ -96,7 +105,11 @@ const SelfOutbound = () => {
                 item_name: '',
                 quantity: '1',
                 user_name: '',
-                outbound_type: '일반'
+                outbound_type: '일반',
+                staff: '',
+                staff_custom: '',
+                delivery: '',
+                delivery_custom: '',
             })
             setFilterCategory('')
             setTimeout(() => setIsSuccess(false), 3000)
@@ -107,8 +120,10 @@ const SelfOutbound = () => {
 
     const handleSubmit = (e) => {
         e.preventDefault()
-        if (!formData.item_name || !formData.user_name || !formData.quantity) {
-            alert("모든 필드를 입력해주세요.")
+        const effectiveStaff = formData.staff === '기타' ? formData.staff_custom : formData.staff
+        const effectiveDelivery = formData.delivery === '기타' ? formData.delivery_custom : formData.delivery
+        if (!formData.item_name || !formData.user_name || !formData.quantity || !effectiveStaff || !effectiveDelivery) {
+            alert("모든 필드를 입력해주세요. (지급 담당, 수령 방법 포함)")
             return
         }
         mutation.mutate(formData)
@@ -272,8 +287,62 @@ const SelfOutbound = () => {
                     />
                 </div>
 
-                <button 
-                    type="submit" 
+                {/* 지급 담당 */}
+                <div>
+                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#4a5568' }}>지급 담당 <span style={{ color: '#e53e3e' }}>*</span></label>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                        {STAFF_OPTIONS.map(opt => (
+                            <label key={opt} style={{
+                                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                padding: '10px', borderRadius: '10px', cursor: 'pointer',
+                                border: `2px solid ${formData.staff === opt ? '#4f46e5' : '#e2e8f0'}`,
+                                backgroundColor: formData.staff === opt ? '#e0e7ff' : '#fff',
+                                fontWeight: formData.staff === opt ? 'bold' : 'normal',
+                                color: formData.staff === opt ? '#4338ca' : '#718096',
+                                transition: 'all 0.15s', fontSize: '0.95em'
+                            }}>
+                                <input type="radio" name="staff" value={opt} checked={formData.staff === opt}
+                                    onChange={() => setFormData({...formData, staff: opt, staff_custom: ''})} style={{ display: 'none' }} />
+                                {opt}
+                            </label>
+                        ))}
+                    </div>
+                    {formData.staff === '기타' && (
+                        <input type="text" placeholder="담당자 이름 직접 입력" value={formData.staff_custom}
+                            onChange={e => setFormData({...formData, staff_custom: e.target.value})}
+                            style={{ marginTop: '8px', width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #a5b4fc', fontSize: '1rem' }} />
+                    )}
+                </div>
+
+                {/* 수령 방법 */}
+                <div>
+                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#4a5568' }}>수령 방법 <span style={{ color: '#e53e3e' }}>*</span></label>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                        {DELIVERY_OPTIONS.map(opt => (
+                            <label key={opt} style={{
+                                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                padding: '10px', borderRadius: '10px', cursor: 'pointer',
+                                border: `2px solid ${formData.delivery === opt ? '#0891b2' : '#e2e8f0'}`,
+                                backgroundColor: formData.delivery === opt ? '#cffafe' : '#fff',
+                                fontWeight: formData.delivery === opt ? 'bold' : 'normal',
+                                color: formData.delivery === opt ? '#0e7490' : '#718096',
+                                transition: 'all 0.15s', fontSize: '0.95em'
+                            }}>
+                                <input type="radio" name="delivery" value={opt} checked={formData.delivery === opt}
+                                    onChange={() => setFormData({...formData, delivery: opt, delivery_custom: ''})} style={{ display: 'none' }} />
+                                {opt === '직접' ? '🤝 직접' : opt === '택배' ? '📦 택배' : '✏️ 기타'}
+                            </label>
+                        ))}
+                    </div>
+                    {formData.delivery === '기타' && (
+                        <input type="text" placeholder="수령 방법 직접 입력" value={formData.delivery_custom}
+                            onChange={e => setFormData({...formData, delivery_custom: e.target.value})}
+                            style={{ marginTop: '8px', width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #67e8f9', fontSize: '1rem' }} />
+                    )}
+                </div>
+
+                <button
+                    type="submit"
                     disabled={mutation.isPending}
                     style={{ 
                         width: '100%', 

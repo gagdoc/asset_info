@@ -259,8 +259,8 @@ def _get_outbound_history_impl(month: str):
         if not ws:
             logger.warning(f"출고 내역 시트 없음: {month}")
             return []
-        # A부터 E열까지 (날짜, 품목, 수량, 이름, 출고유형)
-        records = _retry_sheets_op(lambda: ws.get_values("A2:E"))
+        # A부터 G열까지 (날짜, 품목, 수량, 이름, 출고유형, 지급담당, 수령방법)
+        records = _retry_sheets_op(lambda: ws.get_values("A2:G"))
         history = []
         for i, r in enumerate(records):
             if not r or not str(r[0]).strip() or str(r[0]).strip() == "날짜": continue
@@ -274,7 +274,9 @@ def _get_outbound_history_impl(month: str):
                 "item_name": str(r[1]).strip() if len(r) > 1 else "",
                 "quantity": str(r[2]).strip() if len(r) > 2 else "",
                 "user_name": str(r[3]).strip() if len(r) > 3 else "",
-                "outbound_type": outbound_type
+                "outbound_type": outbound_type,
+                "staff": str(r[5]).strip() if len(r) > 5 else "",
+                "delivery": str(r[6]).strip() if len(r) > 6 else "",
             })
         return history
     except Exception as e:
@@ -380,13 +382,15 @@ def add_outbound(month: str, data: dict) -> bool:
         if not outbound_type or outbound_type.strip() == '':
             outbound_type = '일반'
 
-        # update() 메서드를 활용하여 A~E 열에 값 대입
-        ws.update(f"A{next_row}:E{next_row}", [[
+        # update() 메서드를 활용하여 A~G 열에 값 대입
+        ws.update(f"A{next_row}:G{next_row}", [[
             data.get('date', ''),
             data.get('item_name', ''),
             data.get('quantity', ''),
             data.get('user_name', ''),
-            outbound_type
+            outbound_type,
+            data.get('staff', ''),
+            data.get('delivery', ''),
         ]])
         invalidate_cache()
         # 데이터 변경 시 재고리스트 요약 시트 동기화
@@ -463,12 +467,14 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
         outbound_type = data.get('outbound_type', '일반')
         if not outbound_type or outbound_type.strip() == '':
             outbound_type = '일반'
-        ws.update(f"A{row_index}:E{row_index}", [[
+        ws.update(f"A{row_index}:G{row_index}", [[
             data.get('date', ''),
             data.get('item_name', ''),
             data.get('quantity', ''),
             data.get('user_name', ''),
-            outbound_type
+            outbound_type,
+            data.get('staff', ''),
+            data.get('delivery', ''),
         ]])
         invalidate_cache()
         sync_inventory_summary_sheet()

@@ -123,13 +123,6 @@ const Consumables = () => {
                 >
                     🖨️ 위탁 토너 내역
                 </button>
-                <button
-                    className={`btn ${activeTab === 'toner-inventory' ? 'btn-primary' : ''}`}
-                    onClick={() => setActiveTab('toner-inventory')}
-                    style={{ backgroundColor: activeTab === 'toner-inventory' ? '' : '#f0fdf4', border: '1px solid #22c55e', color: activeTab === 'toner-inventory' ? '' : '#15803d' }}
-                >
-                    📊 토너 재고 관리
-                </button>
             </div>
 
             {activeTab === 'estimate' && selectedMonth && <EstimateTab month={selectedMonth} />}
@@ -138,7 +131,6 @@ const Consumables = () => {
             {activeTab === 'items' && <ItemsTab month={selectedMonth} />}
             {activeTab === 'tracked' && <TrackedItemsTab month={selectedMonth} />}
             {activeTab === 'tonner-consignment' && <TonnerConsignmentTab month={selectedMonth} months={monthsData} />}
-            {activeTab === 'toner-inventory' && <TonnerInventoryTab />}
             
             {(activeTab === 'estimate' || activeTab === 'outbound') && !selectedMonth && (
                 <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>조회할 월(Month) 데이터를 불러오는 중입니다...</div>
@@ -343,10 +335,13 @@ const EstimateTab = ({ month }) => {
 
 // SearchableSelect deleted (moved to components)
 
+const STAFF_OPTIONS = ['Kale', 'Daniel', '기타']
+const DELIVERY_OPTIONS = ['직접', '택배', '기타']
+
 const OutboundTab = ({ month }) => {
     const queryClient = useQueryClient()
     const [showForm, setShowForm] = useState(false)
-    const [formData, setFormData] = useState({ date: '', item_name: '', quantity: '1', user_name: '', outbound_type: '일반' })
+    const [formData, setFormData] = useState({ date: '', item_name: '', quantity: '1', user_name: '', outbound_type: '일반', staff: '', staff_custom: '', delivery: '', delivery_custom: '' })
 
     const [filterCategory, setFilterCategory] = useState('')
 
@@ -473,6 +468,14 @@ const OutboundTab = ({ month }) => {
         Array.from(new Set((history || []).map(row => itemCategoryMap[row.item_name]).filter(Boolean))).sort(),
     [history, itemCategoryMap])
 
+    // 필터링된 결과의 총 지급수량 합계
+    const totalFilteredQty = useMemo(() =>
+        filteredHistory.reduce((sum, row) => {
+            const q = parseInt(String(row.quantity || '0').replace(/,/g, ''), 10)
+            return sum + (isNaN(q) ? 0 : q)
+        }, 0),
+    [filteredHistory])
+
     // 분류 목록
     const categories = useMemo(() =>
         Array.from(new Set((itemsList || []).map(it => it.category).filter(Boolean))).sort(),
@@ -521,7 +524,7 @@ const OutboundTab = ({ month }) => {
             queryClient.invalidateQueries(['tonner-consignment'])
             queryClient.invalidateQueries(['toner-inventory'])
             setShowForm(false)
-            setFormData({ date: '', item_name: '', quantity: '1', user_name: '', outbound_type: '일반' })
+            setFormData({ date: '', item_name: '', quantity: '1', user_name: '', outbound_type: '일반', staff: '', staff_custom: '', delivery: '', delivery_custom: '' })
             alert("출고 내역이 추가되었습니다.")
         },
         onError: () => alert("오류가 발생했습니다. 구글 시트를 확인하세요.")
@@ -529,11 +532,13 @@ const OutboundTab = ({ month }) => {
 
     const handleSubmit = (e) => {
         e.preventDefault()
-        if (!formData.date || !formData.item_name || !formData.quantity || !formData.user_name) {
-            alert("모든 필드를 입력해주세요.")
+        const effectiveStaff = formData.staff === '기타' ? formData.staff_custom : formData.staff
+        const effectiveDelivery = formData.delivery === '기타' ? formData.delivery_custom : formData.delivery
+        if (!formData.date || !formData.item_name || !formData.quantity || !formData.user_name || !effectiveStaff || !effectiveDelivery) {
+            alert("모든 필드를 입력해주세요. (지급 담당, 수령 방법 포함)")
             return
         }
-        mutation.mutate({ ...formData, month })
+        mutation.mutate({ ...formData, staff: effectiveStaff, delivery: effectiveDelivery, month })
     }
 
     if (isLoading) return <LoadingModal isOpen={isLoading} message="출고 상세 내역을 불러오는 중입니다..." />
@@ -624,6 +629,52 @@ const OutboundTab = ({ month }) => {
                         </button>
                     </div>
 
+                    {/* 지급 담당 + 수령 방법 */}
+                    <div style={{ marginTop: '12px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.88em', fontWeight: 'bold', marginBottom: '6px', color: '#374151' }}>지급 담당 <span style={{ color: '#ef4444' }}>*</span></label>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                {STAFF_OPTIONS.map(opt => (
+                                    <label key={opt} style={{
+                                        padding: '5px 14px', borderRadius: '16px', cursor: 'pointer', fontSize: '0.9em',
+                                        border: `1.5px solid ${formData.staff === opt ? '#4f46e5' : '#d1d5db'}`,
+                                        backgroundColor: formData.staff === opt ? '#e0e7ff' : '#fff',
+                                        fontWeight: formData.staff === opt ? 'bold' : 'normal',
+                                        color: formData.staff === opt ? '#4338ca' : '#6b7280',
+                                    }}>
+                                        <input type="radio" name="staff" value={opt} checked={formData.staff === opt} onChange={() => setFormData({...formData, staff: opt, staff_custom: ''})} style={{ display: 'none' }} />
+                                        {opt}
+                                    </label>
+                                ))}
+                            </div>
+                            {formData.staff === '기타' && (
+                                <input type="text" placeholder="직접 입력" value={formData.staff_custom} onChange={e => setFormData({...formData, staff_custom: e.target.value})}
+                                    style={{ marginTop: '6px', padding: '5px 10px', borderRadius: '6px', border: '1px solid #a5b4fc', width: '160px' }} />
+                            )}
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.88em', fontWeight: 'bold', marginBottom: '6px', color: '#374151' }}>수령 방법 <span style={{ color: '#ef4444' }}>*</span></label>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                {DELIVERY_OPTIONS.map(opt => (
+                                    <label key={opt} style={{
+                                        padding: '5px 14px', borderRadius: '16px', cursor: 'pointer', fontSize: '0.9em',
+                                        border: `1.5px solid ${formData.delivery === opt ? '#0891b2' : '#d1d5db'}`,
+                                        backgroundColor: formData.delivery === opt ? '#cffafe' : '#fff',
+                                        fontWeight: formData.delivery === opt ? 'bold' : 'normal',
+                                        color: formData.delivery === opt ? '#0e7490' : '#6b7280',
+                                    }}>
+                                        <input type="radio" name="delivery" value={opt} checked={formData.delivery === opt} onChange={() => setFormData({...formData, delivery: opt, delivery_custom: ''})} style={{ display: 'none' }} />
+                                        {opt}
+                                    </label>
+                                ))}
+                            </div>
+                            {formData.delivery === '기타' && (
+                                <input type="text" placeholder="직접 입력" value={formData.delivery_custom} onChange={e => setFormData({...formData, delivery_custom: e.target.value})}
+                                    style={{ marginTop: '6px', padding: '5px 10px', borderRadius: '6px', border: '1px solid #67e8f9', width: '160px' }} />
+                            )}
+                        </div>
+                    </div>
+
                     {/* Tonner 선택 시 일반/위탁 구분 — 별도 행으로 눈에 띄게 표시 */}
                     {isTonner(formData.item_name, selectedItemCategory) && (
                         <div style={{
@@ -696,8 +747,9 @@ const OutboundTab = ({ month }) => {
                         ✕ 초기화
                     </button>
                 )}
-                <span style={{ fontSize: '0.85em', color: '#64748b' }}>
-                    {filteredHistory.length}건
+                <span style={{ fontSize: '0.85em', color: '#64748b' }}>{filteredHistory.length}건</span>
+                <span style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#1e40af', background: '#eff6ff', padding: '3px 10px', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
+                    총 지급수량: {totalFilteredQty.toLocaleString()}개
                 </span>
             </div>
 
@@ -819,7 +871,7 @@ const isTonnerItem = (name, category) => {
 
 const ItemsTab = ({ month }) => {
     const queryClient = useQueryClient()
-    const [viewMode, setViewMode] = useState('general') // 'general' | 'tonner'
+    const [viewMode, setViewMode] = useState('general') // 'general' | 'toner-inventory'
     const [showForm, setShowForm] = useState(false)
     const [formData, setFormData] = useState({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
     const [searchTerm, setSearchTerm] = useState('')
@@ -862,10 +914,9 @@ const ItemsTab = ({ month }) => {
 
     if (isLoading) return <LoadingModal isOpen={isLoading} message="소모품 마스터 리스트를 불러오는 중입니다..." />
 
-    // viewMode에 따라 일반 / 토너 분리
+    // 일반 소모품만 (토너 제외)
     const allGeneral = items?.filter(it => !isTonnerItem(it.item_name, it.category)) || []
-    const allTonner  = items?.filter(it =>  isTonnerItem(it.item_name, it.category)) || []
-    const sourceItems = viewMode === 'tonner' ? allTonner : allGeneral
+    const sourceItems = allGeneral
 
     const categories = Array.from(new Set(sourceItems.map(it => it.category).filter(Boolean)))
 
@@ -894,7 +945,7 @@ const ItemsTab = ({ month }) => {
                 </div>
             </div>
 
-            {/* 일반 / Tonner 서브 탭 */}
+            {/* 일반 소모품 / 토너 재고 관리 서브 탭 */}
             <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0' }}>
                 <button
                     onClick={() => { setViewMode('general'); setFilterCategory(''); setSearchTerm('') }}
@@ -911,21 +962,22 @@ const ItemsTab = ({ month }) => {
                     </span>
                 </button>
                 <button
-                    onClick={() => { setViewMode('tonner'); setFilterCategory(''); setSearchTerm('') }}
+                    onClick={() => { setViewMode('toner-inventory'); setFilterCategory(''); setSearchTerm('') }}
                     style={{
                         padding: '8px 20px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.95em',
-                        borderBottom: viewMode === 'tonner' ? '3px solid #f97316' : '3px solid transparent',
-                        color: viewMode === 'tonner' ? '#c2410c' : '#64748b',
+                        borderBottom: viewMode === 'toner-inventory' ? '3px solid #22c55e' : '3px solid transparent',
+                        color: viewMode === 'toner-inventory' ? '#15803d' : '#64748b',
                         background: 'none', marginBottom: '-2px'
                     }}
                 >
-                    🖨️ Tonner
-                    <span style={{ marginLeft: '6px', padding: '1px 7px', borderRadius: '10px', fontSize: '0.8em', backgroundColor: viewMode === 'tonner' ? '#fff7ed' : '#f1f5f9', color: viewMode === 'tonner' ? '#c2410c' : '#64748b' }}>
-                        {allTonner.length}
-                    </span>
+                    📊 토너 재고 관리
                 </button>
             </div>
 
+            {/* 토너 재고 관리 뷰 */}
+            {viewMode === 'toner-inventory' && <TonnerInventoryTab compact />}
+
+            {viewMode === 'general' && <>
             {/* 품목 추가 폼 */}
             {showForm && (
                 <form onSubmit={handleSubmit} style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -970,7 +1022,7 @@ const ItemsTab = ({ month }) => {
             <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem', background: '#f8f9fa', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <input
                     type="text"
-                    placeholder={viewMode === 'tonner' ? '🔍 토너 품목명 또는 분류 검색...' : '🔍 소모품명 또는 대분류 검색...'}
+                    placeholder={'🔍 소모품명 또는 대분류 검색...'}
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
                     style={{ padding: '8px', flex: 1, borderRadius: '4px', border: '1px solid #ccc' }}
@@ -990,7 +1042,7 @@ const ItemsTab = ({ month }) => {
                 <thead>
                     <tr>
                         <th>대분류 (Category)</th>
-                        <th>{viewMode === 'tonner' ? '토너 품목명' : '소모품명 (Item Name)'}</th>
+                        <th>{'소모품명 (Item Name)'}</th>
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
                         <th style={{ textAlign: 'center' }}>고정 재고(기준)</th>
                         <th style={{ textAlign: 'center' }}>현재 재고(입고량)</th>
@@ -1021,7 +1073,7 @@ const ItemsTab = ({ month }) => {
                             )
                         }
                         return (
-                            <tr key={idx} style={viewMode === 'tonner' ? { backgroundColor: '#fffbf7' } : {}}>
+                            <tr key={idx} style={{}}>
                                 <EditableCell value={item.category} onSave={(val) => handleInlineUpdate('category', val)} />
                                 <EditableCell value={item.item_name} onSave={(val) => handleInlineUpdate('item_name', val)} bold={true} />
                                 <EditableCell value={item.price} onSave={(val) => handleInlineUpdate('price', val)} align="right" />
@@ -1035,11 +1087,12 @@ const ItemsTab = ({ month }) => {
                         )
                     }) : (
                         <tr><td colSpan="7" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
-                            {viewMode === 'tonner' ? '등록된 Tonner 품목이 없습니다.' : '조건에 맞는 품목이 없습니다.'}
+                            조건에 맞는 품목이 없습니다.
                         </td></tr>
                     )}
                 </tbody>
             </table>
+            </>}
         </div>
     )
 }
