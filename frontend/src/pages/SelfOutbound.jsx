@@ -74,7 +74,7 @@ const SelfOutbound = () => {
 
     const userOptions = useMemo(() => 
         (usersList || []).map(u => {
-            const nameOnly = (u.이름 || u.NAME || '').replace(/\./g, ' ');
+            const nameOnly = (u.NAME || u.이름 || '').replace(/\./g, ' ');
             const fullNameWithBU = `${nameOnly}${u.BU ? ` (${u.BU})` : ''}`;
             return { 
                 label: nameOnly, 
