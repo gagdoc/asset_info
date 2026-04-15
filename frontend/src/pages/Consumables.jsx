@@ -257,7 +257,18 @@ const EstimateTab = ({ month }) => {
             window.URL.revokeObjectURL(url)
         } catch (error) {
             console.error('견적서 다운로드 오류:', error)
-            alert('견적서 다운로드 중 오류가 발생했습니다.')
+            // 서버에서 blob으로 온 오류 메시지 파싱
+            let msg = '견적서 다운로드 중 오류가 발생했습니다.'
+            try {
+                if (error.response?.data instanceof Blob) {
+                    const text = await error.response.data.text()
+                    const json = JSON.parse(text)
+                    msg += `\n\n서버 오류: ${json.detail || text}`
+                } else if (error.response?.data?.detail) {
+                    msg += `\n\n서버 오류: ${error.response.data.detail}`
+                }
+            } catch (_) {}
+            alert(msg)
         } finally {
             setIsDownloading(false)
         }

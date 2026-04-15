@@ -70,24 +70,42 @@ def get_month_estimate(month: str = Query(..., description="조회할 월 (예: 
 @router.get("/estimate/download")
 def download_estimate_excel(month: str = Query(..., description="다운로드할 월 (예: '3월')")):
     """선택한 월의 견적서를 Excel 파일로 다운로드"""
+    import logging
+    logger_dl = logging.getLogger("estimate_download")
+
     try:
         import openpyxl
         from openpyxl.styles import Font, Alignment, Border, Side
     except ImportError:
         raise HTTPException(status_code=500, detail="openpyxl 패키지가 필요합니다.")
 
-    estimate = get_estimate(month)
+    try:
+        estimate = get_estimate(month)
+    except Exception as e:
+        logger_dl.error(f"get_estimate 오류: {e}")
+        raise HTTPException(status_code=500, detail=f"견적 데이터 조회 오류: {str(e)}")
+
     if not estimate:
-        raise HTTPException(status_code=404, detail=f"{month} 견적 데이터가 없습니다.")
+        raise HTTPException(status_code=404, detail=f"{month} 견적 데이터가 없습니다. (Google Sheets 동기화 후 재시도)")
 
-    # template.xlsx 경로 (프로젝트 루트 기준)
+    # template.xlsx 경로 — 여러 경로 후보를 순서대로 탐색
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    template_path = os.path.join(base_dir, "template.xlsx")
-    if not os.path.exists(template_path):
-        raise HTTPException(status_code=500, detail="template.xlsx 파일을 찾을 수 없습니다.")
+    candidate_paths = [
+        os.path.join(base_dir, "template.xlsx"),          # /app/template.xlsx
+        os.path.join(os.getcwd(), "template.xlsx"),        # cwd/template.xlsx
+        "/app/template.xlsx",                              # Cloud Run 절대경로
+    ]
+    template_path = next((p for p in candidate_paths if os.path.exists(p)), None)
+    if not template_path:
+        logger_dl.error(f"template.xlsx 없음. 탐색 경로: {candidate_paths}")
+        raise HTTPException(status_code=500, detail=f"template.xlsx 파일을 찾을 수 없습니다. (경로: {candidate_paths})")
 
-    wb = openpyxl.load_workbook(template_path)
-    ws = wb.active
+    try:
+        wb = openpyxl.load_workbook(template_path)
+        ws = wb.active
+    except Exception as e:
+        logger_dl.error(f"template.xlsx 로드 오류: {e}")
+        raise HTTPException(status_code=500, detail=f"template.xlsx 로드 실패: {str(e)}")
 
     # ── 견적 번호: No : YYYYMMDD-월 ──────────────────────────────────
     today_str = datetime.now().strftime("%Y%m%d")
