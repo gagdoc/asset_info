@@ -1849,7 +1849,7 @@ const TonnerInventoryTab = () => {
                                         color: h === stockCol ? '#15803d' : h === nameCol ? '#1d4ed8' : h === modelCol ? '#854d0e' : undefined,
                                         whiteSpace: 'nowrap'
                                     }}>
-                                        {h === stockCol ? '📦 재고' : h === nameCol ? `🖨️ ${h}` : h === modelCol ? `🔧 ${h}` : h}
+                                        {h === stockCol ? '📦 재고' : h === nameCol ? '🖨️ 품목명' : h === modelCol ? `🔧 ${h}` : h}
                                     </th>
                                 ))}
                                 <th style={{ textAlign: 'center', width: '60px' }}>수정</th>

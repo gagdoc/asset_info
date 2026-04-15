@@ -403,15 +403,15 @@ def add_outbound(month: str, data: dict) -> bool:
         # 데이터 변경 시 재고리스트 요약 시트 동기화
         sync_inventory_summary_sheet()
 
-        # 일반 출고이고 토너 재고 시트에 있는 품목이면 재고 차감
-        if outbound_type == '일반':
-            try:
-                qty_int = int(str(data.get('quantity', '0')).replace(',', ''))
-                i_name = data.get('item_name', '').strip()
-                if i_name and _is_in_toner_sheet(i_name):
-                    deduct_toner_stock(i_name, qty_int)
-            except Exception as e:
-                logger.warning(f"토너 재고 차감 중 오류 (출고 기록은 완료): {e}")
+        # 일반·위탁 모두 토너 재고 시트에 있는 품목이면 재고 차감
+        try:
+            qty_int = int(str(data.get('quantity', '0')).replace(',', ''))
+            i_name = data.get('item_name', '').strip()
+            if i_name and _is_in_toner_sheet(i_name):
+                deduct_toner_stock(i_name, qty_int)
+                logger.info(f"토너 재고 차감 완료: '{i_name}' -{qty_int} (유형: {outbound_type})")
+        except Exception as e:
+            logger.warning(f"토너 재고 차감 중 오류 (출고 기록은 완료): {e}")
 
         return True
     except Exception as e:
