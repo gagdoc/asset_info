@@ -350,6 +350,10 @@ const OutboundTab = ({ month }) => {
 
     const [filterCategory, setFilterCategory] = useState('')
 
+    // 출고 내역 검색 상태
+    const [searchOutbound, setSearchOutbound] = useState('')
+    const [searchCategoryOutbound, setSearchCategoryOutbound] = useState('')
+
     const isTonner = (name, category) => {
         const n = (name || '').toLowerCase()
         const c = (category || '').toLowerCase()
@@ -439,6 +443,35 @@ const OutboundTab = ({ month }) => {
             return data
         }
     })
+
+    // 품목명 → 구분(category) 빠른 조회 맵
+    const itemCategoryMap = useMemo(() => {
+        const map = {}
+        ;(itemsList || []).forEach(it => { map[it.item_name] = it.category || '' })
+        return map
+    }, [itemsList])
+
+    // 출고 내역에 구분 추가 + 검색 필터 적용
+    const filteredHistory = useMemo(() => {
+        const list = (history || []).map(row => ({
+            ...row,
+            category: itemCategoryMap[row.item_name] || ''
+        }))
+        return list.filter(row => {
+            const matchItem = searchOutbound
+                ? row.item_name.toLowerCase().includes(searchOutbound.toLowerCase())
+                : true
+            const matchCategory = searchCategoryOutbound
+                ? row.category.toLowerCase().includes(searchCategoryOutbound.toLowerCase())
+                : true
+            return matchItem && matchCategory
+        })
+    }, [history, itemCategoryMap, searchOutbound, searchCategoryOutbound])
+
+    // 구분 목록 (검색 드롭다운용)
+    const outboundCategories = useMemo(() =>
+        Array.from(new Set((history || []).map(row => itemCategoryMap[row.item_name]).filter(Boolean))).sort(),
+    [history, itemCategoryMap])
 
     // 분류 목록
     const categories = useMemo(() =>
@@ -638,10 +671,41 @@ const OutboundTab = ({ month }) => {
             <LoadingModal isOpen={updateMutation.isPending} message="출고 내역을 수정하고 있습니다..." />
             <LoadingModal isOpen={deleteMutation.isPending} message="출고 내역을 삭제하고 있습니다..." />
 
+            {/* 출고 내역 검색 바 */}
+            <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '0.8rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <select
+                    value={searchCategoryOutbound}
+                    onChange={e => setSearchCategoryOutbound(e.target.value)}
+                    style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '0.9em', minWidth: '130px' }}
+                >
+                    <option value="">전체 구분</option>
+                    {outboundCategories.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                </select>
+                <input
+                    type="text"
+                    placeholder="출고 품목명 검색..."
+                    value={searchOutbound}
+                    onChange={e => setSearchOutbound(e.target.value)}
+                    style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '0.9em', minWidth: '200px', flex: 1 }}
+                />
+                {(searchOutbound || searchCategoryOutbound) && (
+                    <button className="btn btn-secondary" style={{ padding: '5px 10px', fontSize: '0.85em' }}
+                        onClick={() => { setSearchOutbound(''); setSearchCategoryOutbound('') }}>
+                        ✕ 초기화
+                    </button>
+                )}
+                <span style={{ fontSize: '0.85em', color: '#64748b' }}>
+                    {filteredHistory.length}건
+                </span>
+            </div>
+
             <table className="data-table">
                 <thead>
                     <tr>
                         <th>출고 날짜</th>
+                        <th>구분</th>
                         <th>출고 품목명</th>
                         <th>지급 수량</th>
                         <th>지급 대상자</th>
@@ -650,7 +714,7 @@ const OutboundTab = ({ month }) => {
                     </tr>
                 </thead>
                 <tbody>
-                    {history?.length > 0 ? history.map((row, idx) => {
+                    {filteredHistory?.length > 0 ? filteredHistory.map((row, idx) => {
                         const isEditing = editingRow === row.row_index;
                         const rowType = row.outbound_type || '일반';
                         const isConsignment = rowType === '위탁';
@@ -660,6 +724,9 @@ const OutboundTab = ({ month }) => {
                                     <>
                                         <td>
                                             <input type="date" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})} style={{ width: '130px', padding: '4px', borderRadius: '4px', border: '1px solid #ddd' }} />
+                                        </td>
+                                        <td style={{ fontSize: '0.85em', color: '#64748b' }}>
+                                            {itemCategoryMap[editForm.item_name] || '-'}
                                         </td>
                                         <td>
                                             <SearchableSelect
@@ -706,6 +773,7 @@ const OutboundTab = ({ month }) => {
                                 ) : (
                                     <>
                                         <td>{row.date}</td>
+                                        <td style={{ fontSize: '0.85em', color: '#64748b' }}>{row.category || '-'}</td>
                                         <td>{row.item_name}</td>
                                         <td style={{ textAlign: 'center' }}>{row.quantity}</td>
                                         <td>{row.user_name?.replace(/\s*\(.*\)$/, '').replace(/\./g, ' ')}</td>
@@ -727,7 +795,7 @@ const OutboundTab = ({ month }) => {
                             </tr>
                         )
                     }) : (
-                        <tr><td colSpan="6" style={{ textAlign: 'center' }}>출고 내역이 비어 있습니다.</td></tr>
+                        <tr><td colSpan="7" style={{ textAlign: 'center' }}>출고 내역이 비어 있습니다.</td></tr>
                     )}
                 </tbody>
             </table>

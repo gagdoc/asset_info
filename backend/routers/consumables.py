@@ -72,7 +72,7 @@ def download_estimate_excel(month: str = Query(..., description="다운로드할
     """선택한 월의 견적서를 Excel 파일로 다운로드"""
     try:
         import openpyxl
-        from openpyxl.styles import Font, Alignment, Border, Side, numbers
+        from openpyxl.styles import Font, Alignment, Border, Side
     except ImportError:
         raise HTTPException(status_code=500, detail="openpyxl 패키지가 필요합니다.")
 
