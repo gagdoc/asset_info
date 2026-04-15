@@ -1731,7 +1731,7 @@ const TonnerInventoryTab = () => {
     const modelCol   = invData?.model_col
 
     // "실재고" 컬럼 숨김 처리
-    const HIDDEN_COLS = ['실재고']
+    const HIDDEN_COLS = ['실재고', '중고재고']
     const displayHeaders = headers.filter(h => !HIDDEN_COLS.includes(h))
 
     const filtered = searchTerm
