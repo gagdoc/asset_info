@@ -398,6 +398,7 @@ const OutboundTab = ({ month }) => {
 
     const [editingRow, setEditingRow] = useState(null)
     const [editForm, setEditForm] = useState({})
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false)
 
     const updateMutation = useMutation({
         mutationFn: async (newData) => await axios.put('/api/consumables/outbound', newData),
@@ -405,6 +406,7 @@ const OutboundTab = ({ month }) => {
             queryClient.invalidateQueries(['consumables-outbound', month])
             queryClient.invalidateQueries(['consumables-items'])
             setEditingRow(null)
+            setIsEditModalOpen(false)
             alert("출고 내역이 수정되었습니다.")
         },
         onError: () => alert("수정 중 오류가 발생했습니다.")
@@ -430,6 +432,7 @@ const OutboundTab = ({ month }) => {
     const handleEditStart = (row) => {
         setEditingRow(row.row_index)
         setEditForm({ ...row })
+        setIsEditModalOpen(true)
     }
 
     const handleEditSave = () => {
@@ -863,93 +866,30 @@ const OutboundTab = ({ month }) => {
                 </thead>
                 <tbody>
                     {filteredHistory?.length > 0 ? filteredHistory.map((row, idx) => {
-                        const isEditing = editingRow === row.row_index;
                         const rowType = row.outbound_type || '일반';
                         const isConsignment = rowType === '위탁';
                         return (
-                            <tr key={idx} style={{ backgroundColor: isEditing ? '#f8f9fa' : isConsignment ? '#fff7ed' : 'transparent' }}>
-                                {isEditing ? (
-                                    <>
-                                        <td>
-                                            <input type="date" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})} style={{ width: '130px', padding: '4px', borderRadius: '4px', border: '1px solid #ddd' }} />
-                                        </td>
-                                        <td style={{ fontSize: '0.85em', color: '#64748b' }}>
-                                            {itemCategoryMap[editForm.item_name] || '-'}
-                                        </td>
-                                        <td>
-                                            <SearchableSelect
-                                                options={itemOptions}
-                                                value={editForm.item_name}
-                                                onChange={val => setEditForm({...editForm, item_name: val})}
-                                                placeholder="품목 선택"
-                                                width="180px"
-                                            />
-                                        </td>
-                                        <td style={{ textAlign: 'center' }}>
-                                            <input type="number" min="1" value={editForm.quantity} onChange={e => setEditForm({...editForm, quantity: e.target.value})} style={{ width: '60px', padding: '4px', textAlign: 'center', borderRadius: '4px', border: '1px solid #ddd' }} />
-                                        </td>
-                                        <td>
-                                            <SearchableSelect
-                                                options={userOptions}
-                                                value={editForm.user_name}
-                                                onChange={val => setEditForm({...editForm, user_name: val})}
-                                                placeholder="사용자 검색 (이름/이메일)"
-                                                searchFields={["name", "email", "bu"]}
-                                                width="200px"
-                                                allowCustom={true}
-                                            />
-                                        </td>
-                                        <td style={{ textAlign: 'center' }}>
-                                            <input value={editForm.staff || ''} onChange={e => setEditForm({...editForm, staff: e.target.value})}
-                                                style={{ width: '70px', padding: '4px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '0.85em' }} />
-                                        </td>
-                                        <td style={{ textAlign: 'center' }}>
-                                            <input value={editForm.delivery || ''} onChange={e => setEditForm({...editForm, delivery: e.target.value})}
-                                                style={{ width: '70px', padding: '4px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '0.85em' }} />
-                                        </td>
-                                        <td style={{ textAlign: 'center' }}>
-                                            {isTonner(editForm.item_name) ? (
-                                                <select
-                                                    value={editForm.outbound_type || '일반'}
-                                                    onChange={e => setEditForm({...editForm, outbound_type: e.target.value})}
-                                                    style={{ padding: '4px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '0.85em' }}
-                                                >
-                                                    <option value="일반">일반</option>
-                                                    <option value="위탁">위탁</option>
-                                                </select>
-                                            ) : (
-                                                <span style={{ color: '#aaa', fontSize: '0.85em' }}>일반</span>
-                                            )}
-                                        </td>
-                                        <td style={{ textAlign: 'center' }}>
-                                            <button className="btn btn-primary" style={{ padding: '2px 6px', fontSize: '0.8rem', marginRight: '4px' }} onClick={handleEditSave} disabled={updateMutation.isPending}>💾</button>
-                                            <button className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8rem' }} onClick={() => setEditingRow(null)}>✖</button>
-                                        </td>
-                                    </>
-                                ) : (
-                                    <>
-                                        <td>{row.date}</td>
-                                        <td style={{ fontSize: '0.85em', color: '#64748b' }}>{row.category || '-'}</td>
-                                        <td>{row.item_name}</td>
-                                        <td style={{ textAlign: 'center' }}>{row.quantity}</td>
-                                        <td>{formatUserNames(row.user_name)}</td>
-                                        <td style={{ textAlign: 'center', fontSize: '0.85em' }}>{row.staff || '-'}</td>
-                                        <td style={{ textAlign: 'center', fontSize: '0.85em' }}>{row.delivery || '-'}</td>
-                                        <td style={{ textAlign: 'center' }}>
-                                            <span style={{
-                                                display: 'inline-block', padding: '2px 8px', borderRadius: '10px', fontSize: '0.8em', fontWeight: 'bold',
-                                                backgroundColor: isConsignment ? '#fed7aa' : '#dbeafe',
-                                                color: isConsignment ? '#c2410c' : '#1e40af'
-                                            }}>
-                                                {isConsignment ? '위탁' : '일반'}
-                                            </span>
-                                        </td>
-                                        <td style={{ textAlign: 'center' }}>
-                                            <button className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8em', marginRight: '4px' }} onClick={() => handleEditStart(row)}>✏️</button>
-                                            <button className="btn btn-danger" style={{ padding: '2px 6px', fontSize: '0.8em' }} onClick={() => handleDelete(row)} disabled={deleteMutation.isPending}>🗑️</button>
-                                        </td>
-                                    </>
-                                )}
+                            <tr key={idx} style={{ backgroundColor: isConsignment ? '#fff7ed' : 'transparent' }}>
+                                <td>{row.date}</td>
+                                <td style={{ fontSize: '0.85em', color: '#64748b' }}>{row.category || '-'}</td>
+                                <td>{row.item_name}</td>
+                                <td style={{ textAlign: 'center' }}>{row.quantity}</td>
+                                <td>{formatUserNames(row.user_name)}</td>
+                                <td style={{ textAlign: 'center', fontSize: '0.85em' }}>{row.staff || '-'}</td>
+                                <td style={{ textAlign: 'center', fontSize: '0.85em' }}>{row.delivery || '-'}</td>
+                                <td style={{ textAlign: 'center' }}>
+                                    <span style={{
+                                        display: 'inline-block', padding: '2px 8px', borderRadius: '10px', fontSize: '0.8em', fontWeight: 'bold',
+                                        backgroundColor: isConsignment ? '#fed7aa' : '#dbeafe',
+                                        color: isConsignment ? '#c2410c' : '#1e40af'
+                                    }}>
+                                        {isConsignment ? '위탁' : '일반'}
+                                    </span>
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                    <button className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8em', marginRight: '4px' }} onClick={() => handleEditStart(row)}>✏️</button>
+                                    <button className="btn btn-danger" style={{ padding: '2px 6px', fontSize: '0.8em' }} onClick={() => handleDelete(row)} disabled={deleteMutation.isPending}>🗑️</button>
+                                </td>
                             </tr>
                         )
                     }) : (
@@ -958,12 +898,113 @@ const OutboundTab = ({ month }) => {
                 </tbody>
             </table>
 
-            <ConfirmModal 
+            <ConfirmModal
                 isOpen={confirmModal.isOpen}
                 message={`해당 출고 기록을 완전히 삭제하시겠습니까?\n(재고 관리를 사용하는 품목인 경우, 삭제된 수량만큼 재고가 다시 증가합니다)`}
                 onConfirm={executeDelete}
                 onCancel={() => setConfirmModal({ isOpen: false, rowIndex: null })}
             />
+
+            {/* ── 출고 수정 모달 ── */}
+            {isEditModalOpen && (
+                <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+                    <div className="card modal" style={{ width: '90%', maxWidth: '620px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: '#fff' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderBottom: '1px solid #e2e8f0' }}>
+                            <h3 style={{ margin: 0 }}>✏️ 출고 내역 수정</h3>
+                            <button className="btn btn-secondary" onClick={() => setIsEditModalOpen(false)}>✖</button>
+                        </div>
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            {/* 날짜 */}
+                            <div className="form-group">
+                                <label className="form-label">출고 날짜</label>
+                                <input type="date" className="form-input" value={editForm.date || ''} onChange={e => setEditForm({...editForm, date: e.target.value})} />
+                            </div>
+                            {/* 품목 */}
+                            <div className="form-group">
+                                <label className="form-label">출고 품목명</label>
+                                <SearchableSelect options={itemOptions} value={editForm.item_name || ''}
+                                    onChange={val => setEditForm({...editForm, item_name: val})}
+                                    placeholder="품목 검색/선택" width="100%" />
+                            </div>
+                            {/* 수량 */}
+                            <div className="form-group">
+                                <label className="form-label">지급 수량</label>
+                                <input type="number" min="1" className="form-input" value={editForm.quantity || ''} onChange={e => setEditForm({...editForm, quantity: e.target.value})} style={{ maxWidth: '120px' }} />
+                            </div>
+                            {/* 지급 대상자 */}
+                            <div className="form-group">
+                                <label className="form-label">지급 대상자</label>
+                                <SearchableSelect options={userOptions} value={editForm.user_name || ''}
+                                    onChange={val => setEditForm({...editForm, user_name: val})}
+                                    placeholder="사용자 검색 (이름/이메일)"
+                                    searchFields={["name", "email", "bu"]} width="100%" allowCustom={true} />
+                            </div>
+                            {/* 지급 담당 */}
+                            <div className="form-group">
+                                <label className="form-label">지급 담당</label>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    {STAFF_OPTIONS.map(opt => (
+                                        <label key={opt} style={{
+                                            padding: '5px 14px', borderRadius: '16px', cursor: 'pointer', fontSize: '0.9em',
+                                            border: `1.5px solid ${editForm.staff === opt ? '#4f46e5' : '#d1d5db'}`,
+                                            backgroundColor: editForm.staff === opt ? '#e0e7ff' : '#fff',
+                                            fontWeight: editForm.staff === opt ? 'bold' : 'normal',
+                                            color: editForm.staff === opt ? '#4338ca' : '#6b7280',
+                                        }}>
+                                            <input type="radio" name="edit_staff" value={opt} checked={editForm.staff === opt}
+                                                onChange={() => setEditForm({...editForm, staff: opt})} style={{ display: 'none' }} />
+                                            {opt}
+                                        </label>
+                                    ))}
+                                    <input type="text" placeholder="직접 입력" value={STAFF_OPTIONS.includes(editForm.staff) ? '' : (editForm.staff || '')}
+                                        onChange={e => setEditForm({...editForm, staff: e.target.value})}
+                                        style={{ padding: '4px 10px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '0.9em', width: '100px' }} />
+                                </div>
+                            </div>
+                            {/* 수령 방법 */}
+                            <div className="form-group">
+                                <label className="form-label">수령 방법</label>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    {DELIVERY_OPTIONS.map(opt => (
+                                        <label key={opt} style={{
+                                            padding: '5px 14px', borderRadius: '16px', cursor: 'pointer', fontSize: '0.9em',
+                                            border: `1.5px solid ${editForm.delivery === opt ? '#0891b2' : '#d1d5db'}`,
+                                            backgroundColor: editForm.delivery === opt ? '#cffafe' : '#fff',
+                                            fontWeight: editForm.delivery === opt ? 'bold' : 'normal',
+                                            color: editForm.delivery === opt ? '#0e7490' : '#6b7280',
+                                        }}>
+                                            <input type="radio" name="edit_delivery" value={opt} checked={editForm.delivery === opt}
+                                                onChange={() => setEditForm({...editForm, delivery: opt})} style={{ display: 'none' }} />
+                                            {opt}
+                                        </label>
+                                    ))}
+                                    <input type="text" placeholder="직접 입력" value={DELIVERY_OPTIONS.includes(editForm.delivery) ? '' : (editForm.delivery || '')}
+                                        onChange={e => setEditForm({...editForm, delivery: e.target.value})}
+                                        style={{ padding: '4px 10px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '0.9em', width: '100px' }} />
+                                </div>
+                            </div>
+                            {/* 유형 (토너만) */}
+                            {isTonner(editForm.item_name) && (
+                                <div className="form-group">
+                                    <label className="form-label">출고 유형</label>
+                                    <select className="form-input" value={editForm.outbound_type || '일반'}
+                                        onChange={e => setEditForm({...editForm, outbound_type: e.target.value})}
+                                        style={{ maxWidth: '120px' }}>
+                                        <option value="일반">일반</option>
+                                        <option value="위탁">위탁</option>
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+                        <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                            <button className="btn btn-secondary" onClick={() => setIsEditModalOpen(false)}>취소</button>
+                            <button className="btn btn-primary" onClick={() => { handleEditSave(); setIsEditModalOpen(false) }} disabled={updateMutation.isPending}>
+                                💾 변경사항 저장
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
@@ -1804,10 +1845,9 @@ const TonnerInventoryTab = () => {
                                         color: h === stockCol ? '#15803d' : h === nameCol ? '#1d4ed8' : h === modelCol ? '#854d0e' : undefined,
                                         whiteSpace: 'nowrap'
                                     }}>
-                                        {h === stockCol ? `📦 ${h}` : h === nameCol ? `🖨️ ${h}` : h === modelCol ? `🔧 ${h}` : h}
+                                        {h === stockCol ? '📦 재고' : h === nameCol ? `🖨️ ${h}` : h === modelCol ? `🔧 ${h}` : h}
                                     </th>
                                 ))}
-                                <th style={{ textAlign: 'center', width: '80px' }}>상태</th>
                                 <th style={{ textAlign: 'center', width: '60px' }}>수정</th>
                             </tr>
                         </thead>
@@ -1829,7 +1869,6 @@ const TonnerInventoryTab = () => {
                                                         />
                                                     </td>
                                                 ))}
-                                                <td></td>
                                                 <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                                                     <button className="btn btn-primary" style={{ padding: '3px 8px', fontSize: '0.8em', marginRight: '3px' }} onClick={handleEditSave} disabled={updateMutation.isPending}>💾</button>
                                                     <button className="btn btn-secondary" style={{ padding: '3px 8px', fontSize: '0.8em' }} onClick={() => setEditingRow(null)}>✖</button>
@@ -1844,19 +1883,28 @@ const TonnerInventoryTab = () => {
                                                         style={{
                                                             cursor: 'pointer',
                                                             fontWeight: h === nameCol ? 'bold' : 'normal',
-                                                            color: h === stockCol ? ((item.current_stock ?? 0) <= 0 ? '#ef4444' : '#15803d') : undefined,
+                                                            textAlign: h === stockCol ? 'center' : undefined,
                                                             whiteSpace: h === modelCol ? 'pre-wrap' : undefined,
                                                             maxWidth: h === modelCol ? '220px' : undefined,
                                                             fontSize: h === modelCol ? '0.85em' : undefined
                                                         }}
                                                     >
-                                                        {h === stockCol
-                                                            ? <strong>{item[h]}</strong>
-                                                            : item[h]
-                                                        }
+                                                        {h === stockCol ? (
+                                                            <span style={{
+                                                                display: 'inline-block',
+                                                                padding: '2px 12px',
+                                                                borderRadius: '12px',
+                                                                fontWeight: 'bold',
+                                                                fontSize: '0.95em',
+                                                                backgroundColor: (item.current_stock ?? 0) <= 0 ? '#fee2e2' : '#dcfce7',
+                                                                color: (item.current_stock ?? 0) <= 0 ? '#ef4444' : '#15803d',
+                                                                border: `1px solid ${(item.current_stock ?? 0) <= 0 ? '#fca5a5' : '#86efac'}`
+                                                            }}>
+                                                                {(item.current_stock ?? 0) <= 0 ? `🚨 ${item.current_stock ?? 0}개` : `${item.current_stock ?? 0}개`}
+                                                            </span>
+                                                        ) : item[h]}
                                                     </td>
                                                 ))}
-                                                <td style={{ textAlign: 'center' }}><StockBadge item={item} /></td>
                                                 <td style={{ textAlign: 'center' }}>
                                                     <button
                                                         title="수정"
