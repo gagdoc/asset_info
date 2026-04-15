@@ -69,152 +69,183 @@ def get_month_estimate(month: str = Query(..., description="조회할 월 (예: 
 
 @router.get("/estimate/download")
 def download_estimate_excel(month: str = Query(..., description="다운로드할 월 (예: '3월')")):
-    """선택한 월의 견적서를 Excel 파일로 다운로드"""
-    import logging
-    logger_dl = logging.getLogger("estimate_download")
-
+    """선택한 월의 견적서를 Excel 파일로 다운로드 (template 없이 직접 생성)"""
     try:
         import openpyxl
-        from openpyxl.styles import Font, Alignment, Border, Side
+        from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+        from openpyxl.utils import get_column_letter
     except ImportError:
         raise HTTPException(status_code=500, detail="openpyxl 패키지가 필요합니다.")
 
     try:
         estimate = get_estimate(month)
     except Exception as e:
-        logger_dl.error(f"get_estimate 오류: {e}")
         raise HTTPException(status_code=500, detail=f"견적 데이터 조회 오류: {str(e)}")
 
     if not estimate:
-        raise HTTPException(status_code=404, detail=f"{month} 견적 데이터가 없습니다. (Google Sheets 동기화 후 재시도)")
+        raise HTTPException(status_code=404, detail=f"{month} 견적 데이터가 없습니다.")
 
-    # template.xlsx 경로 — 여러 경로 후보를 순서대로 탐색
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    candidate_paths = [
-        os.path.join(base_dir, "template.xlsx"),          # /app/template.xlsx
-        os.path.join(os.getcwd(), "template.xlsx"),        # cwd/template.xlsx
-        "/app/template.xlsx",                              # Cloud Run 절대경로
-    ]
-    template_path = next((p for p in candidate_paths if os.path.exists(p)), None)
-    if not template_path:
-        logger_dl.error(f"template.xlsx 없음. 탐색 경로: {candidate_paths}")
-        raise HTTPException(status_code=500, detail=f"template.xlsx 파일을 찾을 수 없습니다. (경로: {candidate_paths})")
-
-    try:
-        wb = openpyxl.load_workbook(template_path)
-        ws = wb.active
-    except Exception as e:
-        logger_dl.error(f"template.xlsx 로드 오류: {e}")
-        raise HTTPException(status_code=500, detail=f"template.xlsx 로드 실패: {str(e)}")
-
-    # ── 견적 번호: No : YYYYMMDD-월 ──────────────────────────────────
     today_str = datetime.now().strftime("%Y%m%d")
-    month_num = ''.join(filter(str.isdigit, month))
-    ws["G6"] = f"No : {today_str}-{month_num}"
+    today_fmt = datetime.now().strftime("%Y-%m-%d")
 
-    # ── 데이터 영역: 18행부터 삽입 ──────────────────────────────────
-    DATA_START_ROW = 18
-    n = len(estimate)
-
-    # 템플릿 기본 데이터 행(18~34)과 TOTAL 행(35) 위치
-    TEMPLATE_TOTAL_ROW = 35
-    TEMPLATE_DATA_ROWS = 17  # 18~34
-
-    # 실제 데이터 행 수가 17을 초과하면 행 삽입
-    if n > TEMPLATE_DATA_ROWS:
-        extra = n - TEMPLATE_DATA_ROWS
-        ws.insert_rows(TEMPLATE_TOTAL_ROW, amount=extra)
-
-    actual_total_row = DATA_START_ROW + n  # 데이터 직후 TOTAL 행
-
-    # 경계선 스타일 헬퍼
-    thin = Side(border_style="thin", color="000000")
-    def make_border(top=False, bottom=False, left=False, right=False):
+    # ── 스타일 헬퍼 ────────────────────────────────────────────────
+    def thin_border(top=False, bottom=False, left=False, right=False):
+        s = Side(border_style="thin", color="000000")
         return Border(
-            top=Side(border_style="thin", color="000000") if top else Side(),
-            bottom=Side(border_style="thin", color="000000") if bottom else Side(),
-            left=Side(border_style="thin", color="000000") if left else Side(),
-            right=Side(border_style="thin", color="000000") if right else Side(),
+            top=s if top else Side(),
+            bottom=s if bottom else Side(),
+            left=s if left else Side(),
+            right=s if right else Side(),
         )
 
-    # 데이터 행 채우기
+    def set_cell(ws, coord, value, bold=False, size=10, align="left",
+                 valign="center", num_fmt=None, fill=None, border=None):
+        c = ws[coord]
+        c.value = value
+        c.font = Font(bold=bold, size=size, name="맑은 고딕")
+        c.alignment = Alignment(horizontal=align, vertical=valign, wrap_text=True)
+        if num_fmt:
+            c.number_format = num_fmt
+        if fill:
+            c.fill = fill
+        if border:
+            c.border = border
+
+    # ── 워크북 생성 ────────────────────────────────────────────────
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"견적서_{month}"
+
+    # 열 너비 설정 (A:숨김, B:NO, C:ITEM, D:품목명, E:수량, F:단가, G:금액)
+    ws.column_dimensions["A"].width = 2
+    ws.column_dimensions["B"].width = 6
+    ws.column_dimensions["C"].width = 18
+    ws.column_dimensions["D"].width = 40
+    ws.column_dimensions["E"].width = 8
+    ws.column_dimensions["F"].width = 14
+    ws.column_dimensions["G"].width = 16
+
+    # ── 헤더 영역 ──────────────────────────────────────────────────
+    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    title_font = Font(bold=True, size=16, color="FFFFFF", name="맑은 고딕")
+
+    # 제목
+    ws.merge_cells("B2:G2")
+    c = ws["B2"]
+    c.value = "소 모 품 견 적 서"
+    c.font = title_font
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    c.fill = header_fill
+    ws.row_dimensions[2].height = 36
+
+    # 날짜 / 견적번호
+    ws.row_dimensions[3].height = 18
+    set_cell(ws, "B3", "발행일자", bold=True, size=9, align="center")
+    ws.merge_cells("C3:D3")
+    set_cell(ws, "C3", today_fmt, size=9)
+    set_cell(ws, "F3", "No.", bold=True, size=9, align="center")
+    month_num = ''.join(filter(str.isdigit, month))
+    set_cell(ws, "G3", f"{today_str}-{month_num}", size=9, align="center")
+
+    # 월 정보
+    ws.row_dimensions[4].height = 18
+    ws.merge_cells("B4:G4")
+    set_cell(ws, "B4", f"조회 기준: {month}", size=9, align="right")
+
+    ws.row_dimensions[5].height = 6  # 여백
+
+    # ── 테이블 헤더 ────────────────────────────────────────────────
+    col_header_fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
+    col_header_font = Font(bold=True, size=10, color="FFFFFF", name="맑은 고딕")
+
+    HEADER_ROW = 6
+    ws.row_dimensions[HEADER_ROW].height = 22
+    headers = [("B", "No.", "center"), ("C", "ITEM (분류)", "center"),
+               ("D", "품목명 (Model Name)", "center"), ("E", "수량", "center"),
+               ("F", "단가 (₩)", "center"), ("G", "견적금액 (₩)", "center")]
+    for col, label, align in headers:
+        c = ws[f"{col}{HEADER_ROW}"]
+        c.value = label
+        c.font = col_header_font
+        c.alignment = Alignment(horizontal=align, vertical="center")
+        c.fill = col_header_fill
+        c.border = thin_border(top=True, bottom=True,
+                               left=(col == "B"), right=(col == "G"))
+
+    # ── 데이터 행 ──────────────────────────────────────────────────
+    DATA_START = HEADER_ROW + 1
+    n = len(estimate)
+    row_fills = [
+        PatternFill(start_color="EBF3FB", end_color="EBF3FB", fill_type="solid"),
+        PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid"),
+    ]
+
     for idx, row in enumerate(estimate):
-        r = DATA_START_ROW + idx
-        is_last = (idx == n - 1)
-
-        cells = {
-            "B": (row.get("no", idx + 1),          False, "center"),
-            "C": (row.get("category", ""),          False, "left"),
-            "D": (row.get("item_name", ""),         True,  "left"),
-            "E": (row.get("total_qty", 0),          True,  "center"),
-            "F": (row.get("unit_price", 0),         False, "right"),
-            "G": (row.get("total_price", 0),        True,  "right"),
-        }
-
-        for col, (val, bold, align) in cells.items():
-            cell = ws[f"{col}{r}"]
-            cell.value = val
-            cell.font = Font(bold=bold, size=10)
-            cell.alignment = Alignment(horizontal=align, vertical="center")
-            cell.border = make_border(
-                top=(idx == 0),
-                bottom=is_last,
-                left=(col == "B"),
-                right=(col == "G"),
-            )
-            # 금액 컬럼 숫자 포맷
-            if col in ("F", "G") and isinstance(val, (int, float)):
-                cell.number_format = '#,##0'
-
+        r = DATA_START + idx
         ws.row_dimensions[r].height = 18
+        fill = row_fills[idx % 2]
+        bdr_top = (idx == 0)
+        bdr_bot = (idx == n - 1)
 
-    # ── TOTAL 행 위치 갱신 ────────────────────────────────────────
-    total_row = actual_total_row
-    ws[f"B{total_row}"] = "TOTAL AMOUNT (VAT 별도가)"
-    ws[f"B{total_row}"].font = Font(bold=True, size=10)
-    ws[f"B{total_row}"].alignment = Alignment(horizontal="center", vertical="center")
-    ws[f"G{total_row}"] = f"=SUM(G{DATA_START_ROW}:G{total_row - 1})"
-    ws[f"G{total_row}"].font = Font(bold=True, size=10)
-    ws[f"G{total_row}"].alignment = Alignment(horizontal="right", vertical="center")
-    ws[f"G{total_row}"].number_format = '#,##0'
+        data_cols = [
+            ("B", row.get("no", idx+1), False, "center", None),
+            ("C", row.get("category", ""), False, "center", None),
+            ("D", row.get("item_name", ""), True, "left", None),
+            ("E", row.get("total_qty", 0), True, "center", None),
+            ("F", row.get("unit_price", 0), False, "right", '#,##0'),
+            ("G", row.get("total_price", 0), True, "right", '#,##0'),
+        ]
+        for col, val, bold, align, nfmt in data_cols:
+            c = ws[f"{col}{r}"]
+            c.value = val
+            c.font = Font(bold=bold, size=10, name="맑은 고딕")
+            c.alignment = Alignment(horizontal=align, vertical="center")
+            c.fill = fill
+            c.border = thin_border(top=bdr_top, bottom=bdr_bot,
+                                   left=(col == "B"), right=(col == "G"))
+            if nfmt:
+                c.number_format = nfmt
 
-    for col in ["B", "C", "D", "E", "F", "G"]:
-        ws[f"{col}{total_row}"].border = make_border(top=True, bottom=True,
-                                                      left=(col == "B"), right=(col == "G"))
-    # B~F 병합 (기존 병합 먼저 해제 후 재병합 — 중복 병합 오류 방지)
-    try:
-        ws.unmerge_cells(f"B{total_row}:F{total_row}")
-    except Exception:
-        pass
-    ws.merge_cells(f"B{total_row}:F{total_row}")
-    ws.row_dimensions[total_row].height = 18
+    # ── TOTAL 행 ───────────────────────────────────────────────────
+    TOTAL_ROW = DATA_START + n
+    ws.row_dimensions[TOTAL_ROW].height = 22
+    total_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
 
-    # Total 요약(행14) 수식도 업데이트
-    ws["C14"] = f"=G{total_row}"
+    ws.merge_cells(f"B{TOTAL_ROW}:F{TOTAL_ROW}")
+    c = ws[f"B{TOTAL_ROW}"]
+    c.value = "TOTAL AMOUNT (VAT 별도)"
+    c.font = Font(bold=True, size=10, color="FFFFFF", name="맑은 고딕")
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    c.fill = total_fill
+    c.border = thin_border(top=True, bottom=True, left=True)
 
-    # ── 이전 TOTAL 행(35) 내용 정리 (병합 셀 직접 접근 금지) ──────
-    if n <= TEMPLATE_DATA_ROWS and total_row != TEMPLATE_TOTAL_ROW:
-        try:
-            ws.unmerge_cells(f"B{TEMPLATE_TOTAL_ROW}:F{TEMPLATE_TOTAL_ROW}")
-        except Exception:
-            pass
-        ws[f"B{TEMPLATE_TOTAL_ROW}"].value = None
-        ws[f"G{TEMPLATE_TOTAL_ROW}"].value = None
+    total_val = sum(r.get("total_price", 0) for r in estimate)
+    c = ws[f"G{TOTAL_ROW}"]
+    c.value = total_val
+    c.font = Font(bold=True, size=11, color="FFFFFF", name="맑은 고딕")
+    c.alignment = Alignment(horizontal="right", vertical="center")
+    c.fill = total_fill
+    c.border = thin_border(top=True, bottom=True, right=True)
+    c.number_format = '#,##0'
 
-    # ── 메모리 스트림으로 저장 후 반환 ──────────────────────────
+    # ── VAT 포함 합계 안내 ─────────────────────────────────────────
+    NOTE_ROW = TOTAL_ROW + 1
+    ws.row_dimensions[NOTE_ROW].height = 16
+    ws.merge_cells(f"B{NOTE_ROW}:G{NOTE_ROW}")
+    set_cell(ws, f"B{NOTE_ROW}",
+             f"  ※ 상기 금액은 부가세(VAT 10%) 별도 금액입니다.  |  VAT 포함: {int(total_val * 1.1):,} ₩",
+             size=9, align="right")
+
+    # ── 메모리 스트림으로 반환 ─────────────────────────────────────
     stream = io.BytesIO()
     wb.save(stream)
     stream.seek(0)
 
     filename = f"견적서_{month}_{today_str}.xlsx"
-    encoded_name = filename.encode("utf-8").decode("latin-1", errors="replace")
-
     return StreamingResponse(
         stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={
-            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
-        }
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
     )
 
 @router.post("/outbound")
