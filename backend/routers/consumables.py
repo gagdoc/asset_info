@@ -163,17 +163,25 @@ def download_estimate_excel(month: str = Query(..., description="다운로드할
     for col in ["B", "C", "D", "E", "F", "G"]:
         ws[f"{col}{total_row}"].border = make_border(top=True, bottom=True,
                                                       left=(col == "B"), right=(col == "G"))
-    # B~F 병합
+    # B~F 병합 (기존 병합 먼저 해제 후 재병합 — 중복 병합 오류 방지)
+    try:
+        ws.unmerge_cells(f"B{total_row}:F{total_row}")
+    except Exception:
+        pass
     ws.merge_cells(f"B{total_row}:F{total_row}")
     ws.row_dimensions[total_row].height = 18
 
     # Total 요약(행14) 수식도 업데이트
     ws["C14"] = f"=G{total_row}"
 
-    # ── 이전 TOTAL 행(35) 내용이 이동되지 않았다면 정리 ──────────
+    # ── 이전 TOTAL 행(35) 내용 정리 (병합 셀 직접 접근 금지) ──────
     if n <= TEMPLATE_DATA_ROWS and total_row != TEMPLATE_TOTAL_ROW:
-        for col in ["B", "C", "D", "E", "F", "G"]:
-            ws[f"{col}{TEMPLATE_TOTAL_ROW}"].value = None
+        try:
+            ws.unmerge_cells(f"B{TEMPLATE_TOTAL_ROW}:F{TEMPLATE_TOTAL_ROW}")
+        except Exception:
+            pass
+        ws[f"B{TEMPLATE_TOTAL_ROW}"].value = None
+        ws[f"G{TEMPLATE_TOTAL_ROW}"].value = None
 
     # ── 메모리 스트림으로 저장 후 반환 ──────────────────────────
     stream = io.BytesIO()
