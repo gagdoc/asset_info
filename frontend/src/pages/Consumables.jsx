@@ -381,9 +381,10 @@ const OutboundTab = ({ month }) => {
     })
 
     const deleteMutation = useMutation({
-        mutationFn: async ({ rowIndex, date, item_name }) => await axios.delete(
+        mutationFn: async ({ rowIndex, date, item_name, user_name }) => await axios.delete(
             `/api/consumables/outbound?month=${month}&row_index=${rowIndex}` +
-            `&verify_date=${encodeURIComponent(date)}&verify_item=${encodeURIComponent(item_name)}`
+            `&verify_date=${encodeURIComponent(date)}&verify_item=${encodeURIComponent(item_name)}` +
+            `&verify_user=${encodeURIComponent(user_name || '')}`
         ),
         onSuccess: () => {
             queryClient.invalidateQueries(['consumables-outbound', month])
@@ -421,7 +422,7 @@ const OutboundTab = ({ month }) => {
 
     const executeDelete = () => {
         const { row } = confirmModal
-        deleteMutation.mutate({ rowIndex: row.row_index, date: row.date, item_name: row.item_name })
+        deleteMutation.mutate({ rowIndex: row.row_index, date: row.date, item_name: row.item_name, user_name: row.user_name })
         setConfirmModal({ isOpen: false, row: null })
     }
 

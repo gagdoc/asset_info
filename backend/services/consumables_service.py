@@ -411,36 +411,46 @@ def add_outbound(month: str, data: dict) -> bool:
         print(f"Error adding outbound: {e}")
         return False
 
-def _resolve_row_index(ws, row_index: int, verify_date: str, verify_item: str) -> int:
+def _resolve_row_index(ws, row_index: int, verify_date: str, verify_item: str, verify_user: str = "") -> int:
     """
     row_index가 유효한지 검증하고, 내용 불일치 시 시트 전체에서 실제 행을 탐색합니다.
+    verify_user까지 제공되면 날짜+품목+사용자 3중 검증으로 중복 행 오탐 방지.
     반환값: 실제 삭제/수정할 행 번호 (1-indexed), 찾지 못하면 -1
     """
+    def _match(r_date, r_item, r_user):
+        if r_date != verify_date or r_item != verify_item:
+            return False
+        if verify_user:
+            return r_user == verify_user
+        return True
+
     try:
         row_values = ws.row_values(row_index)
         actual_date = str(row_values[0]).strip() if len(row_values) > 0 else ""
         actual_item = str(row_values[1]).strip() if len(row_values) > 1 else ""
+        actual_user = str(row_values[3]).strip() if len(row_values) > 3 else ""
 
         # 내용이 일치하면 그대로 사용
-        if actual_date == verify_date and actual_item == verify_item:
+        if _match(actual_date, actual_item, actual_user):
             return row_index
 
-        # 불일치: 시트 전체에서 날짜+품목명으로 재탐색
+        # 불일치: 시트 전체에서 재탐색 (날짜+품목+사용자)
         logger.warning(
             f"row_index={row_index} 내용 불일치 "
-            f"(기대: {verify_date}/{verify_item}, 실제: {actual_date}/{actual_item}). "
-            f"전체 탐색 중..."
+            f"(기대: {verify_date}/{verify_item}/{verify_user}, "
+            f"실제: {actual_date}/{actual_item}/{actual_user}). 전체 탐색 중..."
         )
-        all_rows = ws.get_values("A2:E")
+        all_rows = ws.get_values("A2:G")
         for i, row in enumerate(all_rows):
             r_date = str(row[0]).strip() if len(row) > 0 else ""
             r_item = str(row[1]).strip() if len(row) > 1 else ""
-            if r_date == verify_date and r_item == verify_item:
-                found = i + 2  # A2 시작 → 실제 시트 행 번호
+            r_user = str(row[3]).strip() if len(row) > 3 else ""
+            if _match(r_date, r_item, r_user):
+                found = i + 2
                 logger.info(f"실제 행 발견: {found}")
                 return found
 
-        logger.error(f"행을 찾을 수 없음: {verify_date} / {verify_item}")
+        logger.error(f"행을 찾을 수 없음: {verify_date}/{verify_item}/{verify_user}")
         return -1
     except Exception as e:
         logger.error(f"행 검증 중 오류: {e}")
@@ -459,8 +469,9 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
         # 행 내용 검증 (인덱스 이동 방지)
         verify_date = str(data.get('verify_date', data.get('date', ''))).strip()
         verify_item = str(data.get('verify_item', data.get('item_name', ''))).strip()
+        verify_user = str(data.get('verify_user', data.get('user_name', ''))).strip()
         if verify_date and verify_item:
-            row_index = _resolve_row_index(ws, row_index, verify_date, verify_item)
+            row_index = _resolve_row_index(ws, row_index, verify_date, verify_item, verify_user)
             if row_index == -1:
                 return False
 
@@ -485,10 +496,9 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
 
 
 def delete_outbound_history(month: str, row_index: int,
-                            verify_date: str = "", verify_item: str = "") -> bool:
+                            verify_date: str = "", verify_item: str = "", verify_user: str = "") -> bool:
     """월별 출고 시트의 특정 행(row_index)을 완전히 삭제합니다.
-    verify_date + verify_item이 제공되면 삭제 전 행 내용을 검증합니다.
-    인덱스 이동으로 인한 잘못된 행 삭제를 방지합니다."""
+    verify_date + verify_item + verify_user 3중 검증으로 중복 행 오탐 방지."""
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
@@ -497,7 +507,7 @@ def delete_outbound_history(month: str, row_index: int,
 
         # 행 내용 검증 (인덱스 이동 방지)
         if verify_date and verify_item:
-            row_index = _resolve_row_index(ws, row_index, verify_date, verify_item)
+            row_index = _resolve_row_index(ws, row_index, verify_date, verify_item, verify_user)
             if row_index == -1:
                 return False
 

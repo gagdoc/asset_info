@@ -239,11 +239,12 @@ def update_outbound(data: Dict[str, Any] = Body(...)):
 def delete_outbound(
     month: str = Query(...),
     row_index: int = Query(...),
-    verify_date: str = Query("", description="삭제 전 날짜 검증값 (인덱스 이동 방지)"),
-    verify_item: str = Query("", description="삭제 전 품목명 검증값 (인덱스 이동 방지)"),
+    verify_date: str = Query("", description="삭제 전 날짜 검증값"),
+    verify_item: str = Query("", description="삭제 전 품목명 검증값"),
+    verify_user: str = Query("", description="삭제 전 사용자명 검증값 (중복 행 오탐 방지)"),
 ):
-    """월별 출고 개별 데이터 삭제 (verify_date + verify_item으로 행 내용 검증)"""
-    success = delete_outbound_history(month, row_index, verify_date, verify_item)
+    """월별 출고 개별 데이터 삭제 (날짜+품목+사용자 3중 검증)"""
+    success = delete_outbound_history(month, row_index, verify_date, verify_item, verify_user)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete outbound record")
     return {"status": "success"}
