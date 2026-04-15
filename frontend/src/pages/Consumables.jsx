@@ -548,24 +548,24 @@ const OutboundTab = ({ month }) => {
             alert("모든 필드를 입력해주세요. (지급 대상자, 지급 담당, 수령 방법 포함)")
             return
         }
+        // 여러 명을 쉼표로 합쳐서 1행으로 등록
+        const combinedUserName = filledUsers.join(', ')
         setIsSubmittingMulti(true)
         try {
-            for (const uName of filledUsers) {
-                await axios.post('/api/consumables/outbound', {
-                    ...formData,
-                    user_name: uName,
-                    staff: effectiveStaff,
-                    delivery: effectiveDelivery,
-                    month
-                })
-            }
+            await axios.post('/api/consumables/outbound', {
+                ...formData,
+                user_name: combinedUserName,
+                staff: effectiveStaff,
+                delivery: effectiveDelivery,
+                month
+            })
             queryClient.invalidateQueries(['consumables-outbound', month])
             queryClient.invalidateQueries(['tonner-consignment'])
             queryClient.invalidateQueries(['toner-inventory'])
             setShowForm(false)
             setFormData({ date: '', item_name: '', quantity: '1', outbound_type: '일반', staff: '', staff_custom: '', delivery: '', delivery_custom: '' })
             setUserNames([''])
-            alert(`출고 내역이 추가되었습니다. (${filledUsers.length}명)`)
+            alert(`출고 내역이 추가되었습니다. (${filledUsers.length}명 → 1행)`)
         } catch {
             alert("오류가 발생했습니다. 구글 시트를 확인하세요.")
         } finally {

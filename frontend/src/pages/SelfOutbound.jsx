@@ -117,17 +117,17 @@ const SelfOutbound = () => {
         const latestMonth = monthsData?.[0]
         if (!latestMonth) { alert("등록 가능한 월 데이터가 없습니다."); return }
 
+        // 여러 명을 쉼표로 합쳐서 1행으로 등록
+        const combinedUserName = filledUsers.join(', ')
         setIsSubmitting(true)
         try {
-            for (const uName of filledUsers) {
-                await axios.post('/api/consumables/outbound', {
-                    ...formData,
-                    user_name: uName,
-                    staff: effectiveStaff,
-                    delivery: effectiveDelivery,
-                    month: latestMonth
-                })
-            }
+            await axios.post('/api/consumables/outbound', {
+                ...formData,
+                user_name: combinedUserName,
+                staff: effectiveStaff,
+                delivery: effectiveDelivery,
+                month: latestMonth
+            })
             setIsSuccess(true)
             resetForm()
             setTimeout(() => setIsSuccess(false), 3000)
@@ -141,35 +141,42 @@ const SelfOutbound = () => {
 
     return (
         <div style={{
-            maxWidth: '520px',
-            margin: '40px auto',
-            padding: '2rem',
-            background: '#fff',
-            borderRadius: '16px',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.05)',
-            fontFamily: "'Inter', sans-serif"
+            minHeight: '100vh',
+            overflowY: 'auto',
+            padding: '16px',
+            boxSizing: 'border-box',
+            fontFamily: "'Inter', sans-serif",
+            backgroundColor: '#f8fafc'
         }}>
-            <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                <h1 style={{ fontSize: '1.5rem', color: '#1a202c', marginBottom: '0.5rem' }}>자율 소모품 출고 등록</h1>
-                <p style={{ color: '#718096', fontSize: '0.9rem' }}>가져가시는 물품을 아래에 기록해주세요.</p>
+        <div style={{
+            maxWidth: '480px',
+            margin: '0 auto',
+            padding: '1.4rem',
+            background: '#fff',
+            borderRadius: '14px',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.07)',
+        }}>
+            <div style={{ textAlign: 'center', marginBottom: '1.2rem' }}>
+                <h1 style={{ fontSize: '1.2rem', color: '#1a202c', marginBottom: '0.3rem' }}>자율 소모품 출고 등록</h1>
+                <p style={{ color: '#718096', fontSize: '0.8rem', margin: 0 }}>가져가시는 물품을 아래에 기록해주세요.</p>
             </div>
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 {/* 출고 날짜 */}
                 <div>
-                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#4a5568' }}>출고 날짜</label>
+                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.3rem', color: '#4a5568', fontSize: '0.88rem' }}>출고 날짜</label>
                     <input type="date" value={formData.date}
                         onChange={e => setFormData({...formData, date: e.target.value})}
-                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '1rem' }}
+                        style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem' }}
                         required />
                 </div>
 
                 {/* 대분류 */}
                 <div>
-                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#4a5568' }}>대분류 (CATEGORY)</label>
+                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.3rem', color: '#4a5568', fontSize: '0.88rem' }}>대분류 (CATEGORY)</label>
                     <select value={filterCategory}
                         onChange={e => { setFilterCategory(e.target.value); setFormData(f => ({ ...f, item_name: '', outbound_type: '일반' })) }}
-                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '1rem', backgroundColor: '#fff' }}>
+                        style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem', backgroundColor: '#fff' }}>
                         <option value="">전체 분류</option>
                         {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
@@ -177,7 +184,7 @@ const SelfOutbound = () => {
 
                 {/* 품목 */}
                 <div>
-                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#4a5568' }}>
+                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.3rem', color: '#4a5568', fontSize: '0.88rem' }}>
                         어떤 물건인가요?
                         {filterCategory && <span style={{ marginLeft: '6px', fontSize: '0.85em', color: '#6366f1' }}>[{filterCategory}]</span>}
                     </label>
@@ -222,10 +229,10 @@ const SelfOutbound = () => {
 
                 {/* 수량 */}
                 <div>
-                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#4a5568' }}>몇 개인가요?</label>
+                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.3rem', color: '#4a5568', fontSize: '0.88rem' }}>몇 개인가요?</label>
                     <input type="number" min="1" value={formData.quantity}
                         onChange={e => setFormData({...formData, quantity: e.target.value})}
-                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '1rem' }}
+                        style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem' }}
                         required />
                 </div>
 
@@ -272,7 +279,7 @@ const SelfOutbound = () => {
 
                 {/* 지급 담당 */}
                 <div>
-                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#4a5568' }}>지급 담당 <span style={{ color: '#e53e3e' }}>*</span></label>
+                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.3rem', color: '#4a5568', fontSize: '0.88rem' }}>지급 담당 <span style={{ color: '#e53e3e' }}>*</span></label>
                     <div style={{ display: 'flex', gap: '10px' }}>
                         {STAFF_OPTIONS.map(opt => (
                             <label key={opt} style={{
@@ -299,7 +306,7 @@ const SelfOutbound = () => {
 
                 {/* 수령 방법 */}
                 <div>
-                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', color: '#4a5568' }}>수령 방법 <span style={{ color: '#e53e3e' }}>*</span></label>
+                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.3rem', color: '#4a5568', fontSize: '0.88rem' }}>수령 방법 <span style={{ color: '#e53e3e' }}>*</span></label>
                     <div style={{ display: 'flex', gap: '10px' }}>
                         {DELIVERY_OPTIONS.map(opt => (
                             <label key={opt} style={{
@@ -351,9 +358,10 @@ const SelfOutbound = () => {
                 </div>
             )}
 
-            <div style={{ marginTop: '2rem', textAlign: 'center', borderTop: '1px solid #edf2f7', paddingTop: '1.5rem' }}>
-                <a href="/dashboard" style={{ color: '#a0aec0', fontSize: '0.85rem', textDecoration: 'none' }}>관리자 대시보드로 이동</a>
+            <div style={{ marginTop: '1.5rem', textAlign: 'center', borderTop: '1px solid #edf2f7', paddingTop: '1rem' }}>
+                <a href="/dashboard" style={{ color: '#a0aec0', fontSize: '0.82rem', textDecoration: 'none' }}>관리자 대시보드로 이동</a>
             </div>
+        </div>
         </div>
     )
 }
