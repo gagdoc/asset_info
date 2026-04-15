@@ -761,6 +761,8 @@ const OutboundTab = ({ month }) => {
                         <th>출고 품목명</th>
                         <th>지급 수량</th>
                         <th>지급 대상자</th>
+                        <th style={{ textAlign: 'center' }}>지급 담당</th>
+                        <th style={{ textAlign: 'center' }}>수령 방법</th>
                         <th style={{ textAlign: 'center' }}>유형</th>
                         <th style={{ textAlign: 'center', width: '120px' }}>관리</th>
                     </tr>
@@ -804,6 +806,14 @@ const OutboundTab = ({ month }) => {
                                             />
                                         </td>
                                         <td style={{ textAlign: 'center' }}>
+                                            <input value={editForm.staff || ''} onChange={e => setEditForm({...editForm, staff: e.target.value})}
+                                                style={{ width: '70px', padding: '4px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '0.85em' }} />
+                                        </td>
+                                        <td style={{ textAlign: 'center' }}>
+                                            <input value={editForm.delivery || ''} onChange={e => setEditForm({...editForm, delivery: e.target.value})}
+                                                style={{ width: '70px', padding: '4px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '0.85em' }} />
+                                        </td>
+                                        <td style={{ textAlign: 'center' }}>
                                             {isTonner(editForm.item_name) ? (
                                                 <select
                                                     value={editForm.outbound_type || '일반'}
@@ -829,6 +839,8 @@ const OutboundTab = ({ month }) => {
                                         <td>{row.item_name}</td>
                                         <td style={{ textAlign: 'center' }}>{row.quantity}</td>
                                         <td>{row.user_name?.replace(/\s*\(.*\)$/, '').replace(/\./g, ' ')}</td>
+                                        <td style={{ textAlign: 'center', fontSize: '0.85em' }}>{row.staff || '-'}</td>
+                                        <td style={{ textAlign: 'center', fontSize: '0.85em' }}>{row.delivery || '-'}</td>
                                         <td style={{ textAlign: 'center' }}>
                                             <span style={{
                                                 display: 'inline-block', padding: '2px 8px', borderRadius: '10px', fontSize: '0.8em', fontWeight: 'bold',
@@ -847,7 +859,7 @@ const OutboundTab = ({ month }) => {
                             </tr>
                         )
                     }) : (
-                        <tr><td colSpan="7" style={{ textAlign: 'center' }}>출고 내역이 비어 있습니다.</td></tr>
+                        <tr><td colSpan="9" style={{ textAlign: 'center' }}>출고 내역이 비어 있습니다.</td></tr>
                     )}
                 </tbody>
             </table>
