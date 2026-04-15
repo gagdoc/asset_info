@@ -43,8 +43,14 @@ def _get_cached(key, func, *args):
     _CACHE[key] = (val, now + _CACHE_TTL)
     return val
 
-def invalidate_cache():
-    _CACHE.clear()
+def invalidate_cache(key_prefix: str = None):
+    """캐시 무효화. key_prefix 지정 시 해당 키만, 없으면 전체 삭제."""
+    if key_prefix is None:
+        _CACHE.clear()
+    else:
+        for k in list(_CACHE.keys()):
+            if k.startswith(key_prefix):
+                del _CACHE[k]
 
 def _retry_sheets_op(func, max_retries=3, initial_delay=1.0):
     """Google Sheets API 호출을 재시도합니다 (지수 백오프).
@@ -392,7 +398,8 @@ def add_outbound(month: str, data: dict) -> bool:
             data.get('staff', ''),
             data.get('delivery', ''),
         ]])
-        invalidate_cache()
+        invalidate_cache(f"outbound_{month}")
+        invalidate_cache(f"items_{month}")
         # 데이터 변경 시 재고리스트 요약 시트 동기화
         sync_inventory_summary_sheet()
 
@@ -487,7 +494,8 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
             data.get('staff', ''),
             data.get('delivery', ''),
         ]])
-        invalidate_cache()
+        invalidate_cache(f"outbound_{month}")
+        invalidate_cache(f"items_{month}")
         sync_inventory_summary_sheet()
         return True
     except Exception as e:
@@ -512,7 +520,8 @@ def delete_outbound_history(month: str, row_index: int,
                 return False
 
         ws.delete_rows(row_index)
-        invalidate_cache()
+        invalidate_cache(f"outbound_{month}")
+        invalidate_cache(f"items_{month}")
         sync_inventory_summary_sheet()
         return True
     except Exception as e:

@@ -406,9 +406,12 @@ const OutboundTab = ({ month }) => {
             `&verify_user=${encodeURIComponent(user_name || '')}`
         ),
         onSuccess: () => {
-            queryClient.invalidateQueries(['consumables-outbound', month])
-            queryClient.invalidateQueries(['consumables-items'])
             alert("출고 내역이 삭제되었습니다.")
+            // Google Sheets API 안정화 대기 후 refetch (연속 삭제 시 과호출 방지)
+            setTimeout(() => {
+                queryClient.invalidateQueries(['consumables-outbound', month])
+                queryClient.invalidateQueries(['consumables-estimate', month])
+            }, 1200)
         },
         onError: () => alert("삭제 중 오류가 발생했습니다.")
     })
