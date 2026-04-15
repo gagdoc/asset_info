@@ -341,7 +341,9 @@ const DELIVERY_OPTIONS = ['직접', '택배', '기타']
 const OutboundTab = ({ month }) => {
     const queryClient = useQueryClient()
     const [showForm, setShowForm] = useState(false)
-    const [formData, setFormData] = useState({ date: '', item_name: '', quantity: '1', user_name: '', outbound_type: '일반', staff: '', staff_custom: '', delivery: '', delivery_custom: '' })
+    const [formData, setFormData] = useState({ date: '', item_name: '', quantity: '1', outbound_type: '일반', staff: '', staff_custom: '', delivery: '', delivery_custom: '' })
+    // 다중 지급 대상자
+    const [userNames, setUserNames] = useState([''])
 
     const [filterCategory, setFilterCategory] = useState('')
 
@@ -500,19 +502,23 @@ const OutboundTab = ({ month }) => {
         return (itemsList.find(it => it.item_name === formData.item_name) || {}).category || ''
     }, [formData.item_name, itemsList])
 
-    const userOptions = useMemo(() => 
+    const userOptions = useMemo(() =>
         (usersList || []).map(u => {
-            const nameOnly = (u.NAME || u.이름 || '').replace(/\./g, ' ');
+            // 영문 NAME 우선 → 없으면 이메일 앞부분에서 파생 (점→공백)
+            const englishName = (u.NAME || '').trim().replace(/\./g, ' ')
+            const nameOnly = englishName
+                || (u.email || '').split('@')[0].replace(/\./g, ' ')
+                || (u.이름 || '').replace(/\./g, ' ')
             const fullNameWithBU = `${nameOnly}${u.BU ? ` (${u.BU})` : ''}`;
-            return { 
-                label: nameOnly, 
-                value: fullNameWithBU, // 상세기록처럼 이름(팀) 형식으로 저장
+            return {
+                label: nameOnly,
+                value: fullNameWithBU,
                 subLabel: `${u.email}${u.BU ? ` (${u.BU})` : ''}`,
                 name: nameOnly,
                 email: u.email,
                 bu: u.BU
             };
-        }).sort((a, b) => (a.name || '').localeCompare(b.name || '')), 
+        }).sort((a, b) => (a.name || '').localeCompare(b.name || '')),
     [usersList])
 
     const mutation = useMutation({
@@ -524,21 +530,47 @@ const OutboundTab = ({ month }) => {
             queryClient.invalidateQueries(['tonner-consignment'])
             queryClient.invalidateQueries(['toner-inventory'])
             setShowForm(false)
-            setFormData({ date: '', item_name: '', quantity: '1', user_name: '', outbound_type: '일반', staff: '', staff_custom: '', delivery: '', delivery_custom: '' })
+            setFormData({ date: '', item_name: '', quantity: '1', outbound_type: '일반', staff: '', staff_custom: '', delivery: '', delivery_custom: '' })
+            setUserNames([''])
             alert("출고 내역이 추가되었습니다.")
         },
         onError: () => alert("오류가 발생했습니다. 구글 시트를 확인하세요.")
     })
 
-    const handleSubmit = (e) => {
+    const [isSubmittingMulti, setIsSubmittingMulti] = useState(false)
+
+    const handleSubmit = async (e) => {
         e.preventDefault()
         const effectiveStaff = formData.staff === '기타' ? formData.staff_custom : formData.staff
         const effectiveDelivery = formData.delivery === '기타' ? formData.delivery_custom : formData.delivery
-        if (!formData.date || !formData.item_name || !formData.quantity || !formData.user_name || !effectiveStaff || !effectiveDelivery) {
-            alert("모든 필드를 입력해주세요. (지급 담당, 수령 방법 포함)")
+        const filledUsers = userNames.filter(n => n.trim())
+        if (!formData.date || !formData.item_name || !formData.quantity || filledUsers.length === 0 || !effectiveStaff || !effectiveDelivery) {
+            alert("모든 필드를 입력해주세요. (지급 대상자, 지급 담당, 수령 방법 포함)")
             return
         }
-        mutation.mutate({ ...formData, staff: effectiveStaff, delivery: effectiveDelivery, month })
+        setIsSubmittingMulti(true)
+        try {
+            for (const uName of filledUsers) {
+                await axios.post('/api/consumables/outbound', {
+                    ...formData,
+                    user_name: uName,
+                    staff: effectiveStaff,
+                    delivery: effectiveDelivery,
+                    month
+                })
+            }
+            queryClient.invalidateQueries(['consumables-outbound', month])
+            queryClient.invalidateQueries(['tonner-consignment'])
+            queryClient.invalidateQueries(['toner-inventory'])
+            setShowForm(false)
+            setFormData({ date: '', item_name: '', quantity: '1', outbound_type: '일반', staff: '', staff_custom: '', delivery: '', delivery_custom: '' })
+            setUserNames([''])
+            alert(`출고 내역이 추가되었습니다. (${filledUsers.length}명)`)
+        } catch {
+            alert("오류가 발생했습니다. 구글 시트를 확인하세요.")
+        } finally {
+            setIsSubmittingMulti(false)
+        }
     }
 
     if (isLoading) return <LoadingModal isOpen={isLoading} message="출고 상세 내역을 불러오는 중입니다..." />
@@ -610,22 +642,50 @@ const OutboundTab = ({ month }) => {
                             <input type="number" min="1" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} style={{ padding: '8px', width: '80px', borderRadius: '4px', border: '1px solid #ddd' }} required />
                         </div>
 
-                        {/* 사용자 이름 */}
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>사용자 이름</label>
-                            <SearchableSelect
-                                options={userOptions}
-                                value={formData.user_name}
-                                onChange={val => setFormData({...formData, user_name: val})}
-                                placeholder="사용자 검색 (이름/이메일)"
-                                searchFields={["name", "email", "bu"]}
-                                width="300px"
-                                allowCustom={true}
-                            />
+                        {/* 다중 지급 대상자 */}
+                        <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                <label style={{ fontSize: '0.9em', fontWeight: 'bold' }}>
+                                    지급 대상자
+                                    <span style={{ marginLeft: '6px', padding: '1px 8px', borderRadius: '10px', fontSize: '0.8em', backgroundColor: '#e0e7ff', color: '#4338ca', fontWeight: 'bold' }}>
+                                        {userNames.filter(n => n).length}명
+                                    </span>
+                                </label>
+                                <button type="button" onClick={() => setUserNames(prev => [...prev, ''])}
+                                    style={{ padding: '2px 10px', fontSize: '0.82em', borderRadius: '12px', border: '1px dashed #6366f1', background: '#f5f3ff', color: '#4f46e5', cursor: 'pointer', fontWeight: 'bold' }}>
+                                    + 인원 추가
+                                </button>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {userNames.map((uName, idx) => (
+                                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span style={{ fontSize: '0.82em', color: '#6b7280', minWidth: '18px' }}>{idx + 1}.</span>
+                                        <SearchableSelect
+                                            options={userOptions}
+                                            value={uName}
+                                            onChange={val => {
+                                                const next = [...userNames]
+                                                next[idx] = val
+                                                setUserNames(next)
+                                            }}
+                                            placeholder="이름/이메일 검색"
+                                            searchFields={["name", "email", "bu"]}
+                                            width="260px"
+                                            allowCustom={true}
+                                        />
+                                        {userNames.length > 1 && (
+                                            <button type="button" onClick={() => setUserNames(prev => prev.filter((_, i) => i !== idx))}
+                                                style={{ padding: '2px 7px', fontSize: '0.8em', borderRadius: '50%', border: '1px solid #fca5a5', background: '#fff', color: '#ef4444', cursor: 'pointer', lineHeight: 1 }}>
+                                                ✕
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
 
-                        <button type="submit" className="btn btn-primary" disabled={mutation.isPending}>
-                            확인
+                        <button type="submit" className="btn btn-primary" disabled={isSubmittingMulti} style={{ alignSelf: 'flex-end' }}>
+                            {isSubmittingMulti ? `등록 중...` : '확인'}
                         </button>
                     </div>
 
@@ -718,7 +778,7 @@ const OutboundTab = ({ month }) => {
                 </form>
             )}
 
-            <LoadingModal isOpen={mutation.isPending} message="출고 내역을 구글 시트에 기록 중입니다..." />
+            <LoadingModal isOpen={isSubmittingMulti} message="출고 내역을 구글 시트에 기록 중입니다..." />
             <LoadingModal isOpen={updateMutation.isPending} message="출고 내역을 수정하고 있습니다..." />
             <LoadingModal isOpen={deleteMutation.isPending} message="출고 내역을 삭제하고 있습니다..." />
 
@@ -885,7 +945,7 @@ const ItemsTab = ({ month }) => {
     const queryClient = useQueryClient()
     const [viewMode, setViewMode] = useState('general') // 'general' | 'toner-inventory'
     const [showForm, setShowForm] = useState(false)
-    const [formData, setFormData] = useState({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
+    const [formData, setFormData] = useState({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
     const [searchTerm, setSearchTerm] = useState('')
     const [filterCategory, setFilterCategory] = useState('')
 
@@ -904,7 +964,7 @@ const ItemsTab = ({ month }) => {
         onSuccess: () => {
             queryClient.invalidateQueries(['consumables-items', month])
             setShowForm(false)
-            setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
+            setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
             alert("품목이 저장되었습니다.")
         },
         onError: () => alert("오류가 발생했습니다. 구글 시트를 확인하세요.")
@@ -920,7 +980,7 @@ const ItemsTab = ({ month }) => {
     }
 
     const startEdit = (item) => {
-        setFormData({ category: item.category, item_name: item.item_name, price: item.price, is_tracked: item.is_tracked || false, base_qty: item.base_qty || '', order_qty: item.order_qty || '' })
+        setFormData({ row_index: item.row_index, category: item.category, item_name: item.item_name, price: item.price, is_tracked: item.is_tracked || false, base_qty: item.base_qty || '', order_qty: item.order_qty || '' })
         setShowForm(true)
     }
 
@@ -951,7 +1011,7 @@ const ItemsTab = ({ month }) => {
                         onClick={() => exportToCSV(filteredItems || [], `소모품리스트_${viewMode}_${todayStr()}`)}
                         disabled={!filteredItems || filteredItems.length === 0}
                     />
-                    <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' }); }}>
+                    <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' }); }}>
                         {showForm ? '닫기' : '+ 품목 추가'}
                     </button>
                 </div>
@@ -1356,7 +1416,10 @@ const TonnerConsignmentTab = ({ month, months }) => {
 
     const userOptions = useMemo(() =>
         (usersList || []).map(u => {
-            const nameOnly = (u.NAME || u.이름 || '').replace(/\./g, ' ')
+            const englishName = (u.NAME || '').trim().replace(/\./g, ' ')
+            const nameOnly = englishName
+                || (u.email || '').split('@')[0].replace(/\./g, ' ')
+                || (u.이름 || '').replace(/\./g, ' ')
             const fullNameWithBU = `${nameOnly}${u.BU ? ` (${u.BU})` : ''}`
             return { label: nameOnly, value: fullNameWithBU, name: nameOnly, email: u.email, bu: u.BU }
         }).sort((a, b) => (a.name || '').localeCompare(b.name || '')),
