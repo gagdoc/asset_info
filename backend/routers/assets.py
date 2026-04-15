@@ -4,6 +4,12 @@ from backend.services.database import (
     load_from_db, update_db, save_excel_to_db_service,
     normalize_email, get_connection, ASSET_DB_FILE
 )
+from backend.services.assets_service import (
+    get_dashboard_integrated_data,
+    perform_bulk_search,
+    enrich_data_with_assets,
+    return_asset
+)
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from datetime import datetime
@@ -384,7 +390,7 @@ def get_asset_list(asset_type: str):
     
     # 신규 입사자 및 퇴사자의 경우 실시간 자산 정보 매칭(Enrichment) 수행
     if asset_type in ["NewHire", "Resign"] and not df.empty:
-        df = _enrich_data_with_assets(df, dfs)
+        df = enrich_data_with_assets(df, dfs)
         
     df = df.where(pd.notnull(df), None)
     return df.to_dict(orient="records")
@@ -421,7 +427,7 @@ def download_asset_csv(asset_type: str):
     df = dfs[asset_type]
     
     if asset_type in ["NewHire", "Resign"] and not df.empty:
-        df = _enrich_data_with_assets(df, dfs)
+        df = enrich_data_with_assets(df, dfs)
         
     csv_bytes = df.to_csv(index=False).encode("utf-8-sig")
     return StreamingResponse(
@@ -684,7 +690,7 @@ def register_resign(entry: ResignEntry):
     
     # Enrich with asset info (자동 매핑)
     new_df = pd.DataFrame([new_row])
-    enriched = _enrich_data_with_assets(new_df, dfs)
+    enriched = enrich_data_with_assets(new_df, dfs)
     
     # Check duplicates
     if "email" in df.columns and email in df["email"].values:
@@ -704,104 +710,7 @@ def register_resign(entry: ResignEntry):
 # ── Asset Return ─────────────────────────────────────
 @router.post("/resign/return")
 def process_asset_return_endpoint(req: AssetReturnRequest):
-    email = req.email.strip().lower()
-    if not email:
-        raise HTTPException(status_code=400, detail="이메일이 없습니다.")
-    
-    today_str = datetime.now().strftime("%Y%m%d")
-    dfs = load_from_db()
-    updated_tables = []
-    
-    eng_name = req.name or "Unknown"
-    user_bu = req.bu or "Unknown"
-    
-    if (eng_name == "Unknown" or user_bu == "Unknown") and "All_User" in dfs and not dfs["All_User"].empty:
-        clean_email = email.split('@')[0] if '@' in email else email
-        mask = dfs["All_User"]["email"].str.strip().str.lower().str.contains(clean_email, na=False, regex=False)
-        user_row = dfs["All_User"][mask]
-        if not user_row.empty:
-            if eng_name == "Unknown":
-                eng_name = str(user_row.iloc[0].get("NAME", "Unknown")).strip()
-            if user_bu == "Unknown":
-                user_bu = str(user_row.iloc[0].get("BU", "Unknown")).strip()
-    
-    if eng_name == "Unknown":
-        eng_name = email.split('@')[0]
-    
-    teams_label = f"{user_bu}/{eng_name}" if user_bu != "Unknown" else eng_name
-    
-    def process_table(table_key, label, extra_updates=None):
-        if table_key in dfs and not dfs[table_key].empty and "email" in dfs[table_key].columns:
-            mask = dfs[table_key]["email"].str.strip().str.lower() == email
-            if mask.any():
-                dfs[table_key].loc[mask, "email"] = ""
-                if extra_updates:
-                    for col, val in extra_updates.items():
-                        if col in dfs[table_key].columns:
-                            dfs[table_key].loc[mask, col] = val
-                update_db(table_key, dfs[table_key])
-                return label
-        return None
-    
-    asset_type = req.asset_type
-    
-    if asset_type in (None, "Lease", ""):
-        res = process_table("Lease", "PC/노트북", {
-            "User": "STOCK", "BU": "IT",
-            "Additional Information": f"{today_str}/{email}/반납"
-        })
-        if res: updated_tables.append(res)
-    
-    if asset_type in (None, "iPad", ""):
-        res = process_table("iPad", "아이패드", {
-            "User": "STOCK", "BU": "IT", "Role": "IT",
-            "Additional Information": f"{today_str}/{email}/반납"
-        })
-        if res: updated_tables.append(res)
-    
-    if asset_type in (None, "Teams", ""):
-        res = process_table("Teams", "팀즈 번호", {
-            "History": f"{teams_label} 사용한 번호"
-        })
-        if res: updated_tables.append(res)
-    
-    if asset_type in (None, "Monitor", ""):
-        res = process_table("Monitor", "모니터", {
-            "Additional Information": f"{today_str}/{email}/반납"
-        })
-        if res: updated_tables.append(res)
-    
-    if asset_type in (None, "Printer", ""):
-        res = process_table("Printer", "프린터", {
-            "Additional Information": f"{today_str}/{email}/반납"
-        })
-        if res: updated_tables.append(res)
-    
-    # ALWAYS clear Resign table to fix any desync or stuck users
-    # ALWAYS clear Resign table to fix any desync or stuck users
-    if "Resign" in dfs and not dfs["Resign"].empty and "email" in dfs["Resign"].columns:
-        mask = dfs["Resign"]["email"].str.strip().str.lower() == email
-        if mask.any():
-            cols_to_clear = []
-            if req.asset_type == "Lease": cols_to_clear = ["노트북"]
-            elif req.asset_type == "iPad": cols_to_clear = ["아이패드"]
-            elif req.asset_type == "Monitor": cols_to_clear = ["모니터"]
-            elif req.asset_type == "Printer": cols_to_clear = ["복합기"]
-            elif req.asset_type == "Teams": cols_to_clear = ["Teams"]
-            else: cols_to_clear = ["노트북", "아이패드", "모니터", "복합기", "Teams"]
-
-            for col in cols_to_clear:
-                if col in dfs["Resign"].columns:
-                    dfs["Resign"].loc[mask, col] = "-"
-            update_db("Resign", dfs["Resign"])
-            # Return success even if we only caught up a desynced Resign table
-            if not updated_tables:
-                return {"success": True, "message": "동기화 완료: 기존 반납 상태가 대시보드에 반영되었습니다."}
-
-    if updated_tables:
-        return {"success": True, "message": f"반납 처리 완료: {', '.join(updated_tables)}"}
-        
-    return {"success": False, "message": "해당 이메일로 할당된 자산이 없습니다."}
+    return return_asset(req.email, req.asset_type, req.name, req.bu)
 
 # ── Delete from Master ───────────────────────────────
 @router.post("/resign/delete-master")
@@ -895,85 +804,4 @@ def check_integrity(asset_type: str):
         "mismatched_emails": list(missing),
     }
 
-# ── Helper: Enrich data with assets ──────────────────
-def _enrich_data_with_assets(target_df, dfs):
-    target_df = normalize_email(target_df)
-    
-    asset_map = {"NAME": {}, "BU": {}, "노트북": {}, "아이패드": {}, "모니터": {}, "Teams": {}, "복합기": {}}
-    
-    def robust_to_dict(df_src, email_col, val_col):
-        if df_src.empty or email_col not in df_src.columns or val_col not in df_src.columns:
-            return {}
-        df_clean = df_src[[email_col, val_col]].dropna().copy()
-        df_clean[email_col] = df_clean[email_col].astype(str).str.strip().str.lower()
-        df_clean[val_col] = df_clean[val_col].astype(str).str.strip().str.lstrip("=")
-        placeholders = ["", "-", "nan", "None", ".", "0", "없음"]
-        df_clean = df_clean[~df_clean[val_col].isin(placeholders)]
-        if df_clean.empty: return {}
-        return df_clean.groupby(email_col)[val_col].apply(lambda x: ", ".join(sorted(set(x)))).to_dict()
-    
-    if "All_User" in dfs and not dfs["All_User"].empty:
-        df_users = dfs["All_User"].dropna(subset=["email"])
-        if "NAME" in df_users.columns:
-            asset_map["NAME"] = {str(k).strip().lower(): v for k, v in df_users.set_index("email")["NAME"].to_dict().items()}
-        if "BU" in df_users.columns:
-            asset_map["BU"] = {str(k).strip().lower(): v for k, v in df_users.set_index("email")["BU"].to_dict().items()}
-    
-    if "Lease" in dfs and not dfs["Lease"].empty:
-        cols = dfs["Lease"].columns
-        target_col = "S/N" if "S/N" in cols else (cols[3] if len(cols) > 3 else cols[0])
-        asset_map["노트북"].update(robust_to_dict(dfs["Lease"], "email", target_col))
-    
-    if "iPad" in dfs and not dfs["iPad"].empty:
-        cols = dfs["iPad"].columns
-        target_col = "S/N" if "S/N" in cols else ("Model" if "Model" in cols else cols[0])
-        asset_map["아이패드"].update(robust_to_dict(dfs["iPad"], "email", target_col))
-    
-    if "Monitor" in dfs and not dfs["Monitor"].empty:
-        cols = dfs["Monitor"].columns
-        target_col = "Model" if "Model" in cols else cols[0]
-        asset_map["모니터"].update(robust_to_dict(dfs["Monitor"], "email", target_col))
-    
-    if "Teams" in dfs and not dfs["Teams"].empty:
-        cols = dfs["Teams"].columns
-        target_col = next((c for c in ["TeamsNumber", "Number", "전화번호"] if c in cols), None)
-        if not target_col:
-            target_col = next((c for c in cols if c != "email"), cols[0])
-        asset_map["Teams"].update(robust_to_dict(dfs["Teams"], "email", target_col))
-    
-    if "Printer" in dfs and not dfs["Printer"].empty and "email" in dfs["Printer"].columns:
-        cols = dfs["Printer"].columns
-        target_col = next((c for c in ["Model", "프린터정보"] if c in cols), None)
-        if not target_col:
-            target_col = next((c for c in cols if c != "email"), cols[0])
-        asset_map["복합기"].update(robust_to_dict(dfs["Printer"], "email", target_col))
-    
-    enrich_cols = {"NAME": "NAME", "BU": "BU", "노트북": "노트북", "아이패드": "아이패드", "모니터": "모니터", "Teams": "Teams", "복합기": "복합기"}
-    
-    for col in enrich_cols.keys():
-        if col not in target_df.columns:
-            target_df[col] = None
-    
-    for idx, row in target_df.iterrows():
-        email = str(row.get("email", "")).strip().lower()
-        if not email: continue
-        for df_col, map_key in enrich_cols.items():
-            val = target_df.at[idx, df_col]
-            new_val = asset_map[map_key].get(email)
-            
-            if map_key in ["노트북", "아이패드", "모니터", "Teams", "복합기"]:
-                # Assets MUST always reflect the LIVE master DB state
-                target_df.at[idx, df_col] = str(new_val) if new_val else "-"
-            else:
-                # NAME and BU inherit master data ONLY if missing
-                if pd.isna(val) or str(val).strip() in ["", "-", "nan", "None", ".", "0"]:
-                    target_df.at[idx, df_col] = str(new_val) if new_val else "-"
-                
-    # Add deletion flag based on master DB
-    target_df["_is_deleted"] = True
-    if "All_User" in dfs and not dfs["All_User"].empty and "email" in dfs["All_User"].columns:
-        master_emails = set(dfs["All_User"]["email"].dropna().astype(str).str.strip().str.lower())
-        if "email" in target_df.columns:
-            target_df["_is_deleted"] = ~target_df["email"].astype(str).str.strip().str.lower().isin(master_emails)
-    
-    return target_df
+# Functions moved to assets_service.py
