@@ -1730,6 +1730,10 @@ const TonnerInventoryTab = () => {
     const stockCol   = invData?.stock_col
     const modelCol   = invData?.model_col
 
+    // "실재고" 컬럼 숨김 처리
+    const HIDDEN_COLS = ['실재고']
+    const displayHeaders = headers.filter(h => !HIDDEN_COLS.includes(h))
+
     const filtered = searchTerm
         ? items.filter(it => headers.some(h => String(it[h] || '').toLowerCase().includes(searchTerm.toLowerCase())))
         : items
@@ -1839,7 +1843,7 @@ const TonnerInventoryTab = () => {
                     <table className="data-table">
                         <thead>
                             <tr>
-                                {headers.map(h => (
+                                {displayHeaders.map(h => (
                                     <th key={h} style={{
                                         backgroundColor: h === stockCol ? '#f0fdf4' : h === nameCol ? '#eff6ff' : h === modelCol ? '#fefce8' : undefined,
                                         color: h === stockCol ? '#15803d' : h === nameCol ? '#1d4ed8' : h === modelCol ? '#854d0e' : undefined,
@@ -1859,7 +1863,7 @@ const TonnerInventoryTab = () => {
                                     <tr key={item.row_index} style={{ backgroundColor: isEditing ? '#fefce8' : isLow ? '#fff5f5' : 'transparent' }}>
                                         {isEditing ? (
                                             <>
-                                                {headers.map(h => (
+                                                {displayHeaders.map(h => (
                                                     <td key={h} style={{ padding: '4px' }}>
                                                         <input
                                                             type={h === stockCol ? 'number' : 'text'}
@@ -1876,7 +1880,7 @@ const TonnerInventoryTab = () => {
                                             </>
                                         ) : (
                                             <>
-                                                {headers.map(h => (
+                                                {displayHeaders.map(h => (
                                                     <td key={h}
                                                         onDoubleClick={() => handleEditStart(item)}
                                                         title="더블클릭으로 수정"
