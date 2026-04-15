@@ -307,7 +307,7 @@ const EstimateTab = ({ month }) => {
                                 <td>{row.category}</td>
                                 <td><strong>{row.item_name}</strong></td>
                                 <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{row.total_qty}</td>
-                                <td style={{ fontSize: '0.9em', color: '#555' }}>{row.users?.replace(/\./g, ' ')}</td>
+                                <td style={{ fontSize: '0.9em', color: '#555' }}>{formatUserNames(row.users)}</td>
                                 <td style={{ textAlign: 'right' }}>{row.unit_price?.toLocaleString()}</td>
                                 <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#e53e3e' }}>{row.total_price?.toLocaleString()}</td>
                             </tr>
@@ -337,6 +337,25 @@ const EstimateTab = ({ month }) => {
 
 const STAFF_OPTIONS = ['Kale', 'Daniel', '기타']
 const DELIVERY_OPTIONS = ['직접', '택배', '기타']
+
+/**
+ * 사용자명 문자열을 깔끔하게 표시하는 헬퍼
+ * "Jiwon Yoo (RAQA), Alice Han (RAQA), Arin Ko (Implants)" → "Jiwon Yoo, Alice Han, Arin Ko"
+ * 백엔드 estimate의 '. ' 구분자도 처리
+ */
+const formatUserNames = (str) => {
+    if (!str) return ''
+    // 백엔드 estimate는 여러 user 그룹을 '. '로 연결함
+    return str.split('. ')
+        .map(group =>
+            group.split(',')
+                .map(n => n.trim().replace(/\s*\([^)]*\)$/, ''))
+                .filter(Boolean)
+                .join(', ')
+        )
+        .filter(Boolean)
+        .join(' / ')
+}
 
 const OutboundTab = ({ month }) => {
     const queryClient = useQueryClient()
@@ -899,7 +918,7 @@ const OutboundTab = ({ month }) => {
                                         <td style={{ fontSize: '0.85em', color: '#64748b' }}>{row.category || '-'}</td>
                                         <td>{row.item_name}</td>
                                         <td style={{ textAlign: 'center' }}>{row.quantity}</td>
-                                        <td>{row.user_name?.replace(/\s*\(.*\)$/, '').replace(/\./g, ' ')}</td>
+                                        <td>{formatUserNames(row.user_name)}</td>
                                         <td style={{ textAlign: 'center', fontSize: '0.85em' }}>{row.staff || '-'}</td>
                                         <td style={{ textAlign: 'center', fontSize: '0.85em' }}>{row.delivery || '-'}</td>
                                         <td style={{ textAlign: 'center' }}>
@@ -1589,7 +1608,7 @@ const TonnerConsignmentTab = ({ month, months }) => {
                                                     </span>
                                                 </td>
                                                 <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{Number(row.quantity).toLocaleString()}</td>
-                                                <td>{row.user_name?.replace(/\s*\(.*\)$/, '').replace(/\./g, ' ')}</td>
+                                                <td>{formatUserNames(row.user_name)}</td>
                                                 <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                                                     <button title="수정" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', marginRight: '4px' }}
                                                         onClick={() => handleEditStart(row)}>✏️</button>
