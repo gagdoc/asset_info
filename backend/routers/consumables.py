@@ -5,7 +5,7 @@ from backend.services.consumables_service import (
     get_estimate, add_outbound, save_item, update_outbound_history,
     delete_outbound_history, get_item_outbound_history,
     create_month_sheet, invalidate_cache, get_tonner_consignment_history,
-    get_toner_inventory, update_toner_item,
+    get_toner_inventory, update_toner_item, delete_item,
 )
 from typing import List, Dict, Any
 import io
@@ -269,6 +269,17 @@ def create_or_update_item(data: Dict[str, Any] = Body(...)):
     success = save_item(data)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to save item")
+    return {"status": "success"}
+
+@router.delete("/items")
+def delete_item_endpoint(
+    row_index: int = Query(..., description="삭제할 행 번호"),
+    item_name: str = Query(..., description="삭제할 품목명 (이중 검증용)")
+):
+    """품목 마스터 리스트에서 특정 품목 삭제 (row_index + item_name 이중 검증)"""
+    success = delete_item(row_index, item_name)
+    if not success:
+        raise HTTPException(status_code=500, detail="품목 삭제에 실패했습니다. 행 정보를 확인하세요.")
     return {"status": "success"}
 
 @router.put("/outbound")

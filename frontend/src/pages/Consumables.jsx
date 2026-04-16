@@ -1032,10 +1032,9 @@ const ItemsTab = ({ month }) => {
         }
     })
 
+    // 폼 제출용 mutation (알림 포함)
     const mutation = useMutation({
-        mutationFn: async (newData) => {
-            return axios.post('/api/consumables/items', newData)
-        },
+        mutationFn: async (newData) => axios.post('/api/consumables/items', newData),
         onSuccess: () => {
             queryClient.invalidateQueries(['consumables-items'])
             setShowForm(false)
@@ -1044,6 +1043,42 @@ const ItemsTab = ({ month }) => {
         },
         onError: () => alert("오류가 발생했습니다. 구글 시트를 확인하세요.")
     })
+
+    // 인라인 셀 수정용 mutation (Optimistic Update - 즉시 UI 반영)
+    const inlineMutation = useMutation({
+        mutationFn: async (newData) => axios.post('/api/consumables/items', newData),
+        onMutate: async (newData) => {
+            await queryClient.cancelQueries({ queryKey: ['consumables-items'] })
+            const prev = queryClient.getQueryData(['consumables-items'])
+            queryClient.setQueryData(['consumables-items'], (old) =>
+                old?.map(it => it.row_index === newData.row_index ? { ...it, ...newData } : it)
+            )
+            return { prev }
+        },
+        onError: (err, newData, context) => {
+            queryClient.setQueryData(['consumables-items'], context.prev)
+            alert("수정 중 오류가 발생했습니다.")
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+        }
+    })
+
+    // 품목 삭제 mutation
+    const deleteMutation = useMutation({
+        mutationFn: async ({ row_index, item_name }) =>
+            axios.delete(`/api/consumables/items?row_index=${row_index}&item_name=${encodeURIComponent(item_name)}`),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['consumables-items'])
+            alert("품목이 삭제되었습니다.")
+        },
+        onError: () => alert("삭제 중 오류가 발생했습니다.")
+    })
+
+    const handleDelete = (item) => {
+        if (!window.confirm(`"${item.item_name}" 품목을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return
+        deleteMutation.mutate({ row_index: item.row_index, item_name: item.item_name })
+    }
 
     const handleSubmit = (e) => {
         e.preventDefault()
@@ -1200,7 +1235,7 @@ const ItemsTab = ({ month }) => {
                 <tbody>
                     {filteredItems.length > 0 ? filteredItems.map((item, idx) => {
                         const handleInlineUpdate = (field, newVal) => {
-                            mutation.mutate({ ...item, [field]: newVal })
+                            inlineMutation.mutate({ ...item, [field]: newVal })
                         }
                         let statusBadge = <span style={{ color: '#aaa', fontSize: '0.85em' }}>추적안함 (-)</span>
                         if (item.is_tracked) {
@@ -1227,8 +1262,14 @@ const ItemsTab = ({ month }) => {
                                 <EditableCell value={item.base_qty} onSave={(val) => handleInlineUpdate('base_qty', val)} align="center" type="number" />
                                 <EditableCell value={item.order_qty} onSave={(val) => handleInlineUpdate('order_qty', val)} align="center" type="number" />
                                 <td style={{ textAlign: 'center' }}>{statusBadge}</td>
-                                <td style={{ textAlign: 'center' }}>
+                                <td style={{ textAlign: 'center', display: 'flex', gap: '4px', justifyContent: 'center' }}>
                                     <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => startEdit(item)}>상세 수정</button>
+                                    <button
+                                        className="btn btn-danger"
+                                        style={{ padding: '2px 8px', fontSize: '0.8em' }}
+                                        onClick={() => handleDelete(item)}
+                                        disabled={deleteMutation.isPending}
+                                    >🗑️ 삭제</button>
                                 </td>
                             </tr>
                         )
@@ -1239,6 +1280,7 @@ const ItemsTab = ({ month }) => {
                     )}
                 </tbody>
             </table>
+            <LoadingModal isOpen={deleteMutation.isPending} message="품목을 삭제하고 있습니다..." />
             </>}
         </div>
     )
@@ -1302,15 +1344,24 @@ const TrackedItemsTab = ({ month }) => {
         }
     })
 
+    // TrackedItemsTab 인라인 수정용 mutation (Optimistic Update)
     const mutation = useMutation({
-        mutationFn: async (newData) => {
-            return axios.post('/api/consumables/items', newData)
+        mutationFn: async (newData) => axios.post('/api/consumables/items', newData),
+        onMutate: async (newData) => {
+            await queryClient.cancelQueries({ queryKey: ['consumables-items'] })
+            const prev = queryClient.getQueryData(['consumables-items'])
+            queryClient.setQueryData(['consumables-items'], (old) =>
+                old?.map(it => it.row_index === newData.row_index ? { ...it, ...newData } : it)
+            )
+            return { prev }
         },
-        onSuccess: () => {
-            queryClient.invalidateQueries(['consumables-items'])
-            // alert("수정되었습니다.") // 조용한 반영을 위해 주석 처리하거나 토스트 사용 권장
+        onError: (err, newData, context) => {
+            queryClient.setQueryData(['consumables-items'], context.prev)
+            alert("수정 중 오류가 발생했습니다.")
         },
-        onError: () => alert("수정 중 오류가 발생했습니다.")
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+        }
     })
 
     if (isLoading) return <LoadingModal isOpen={isLoading} message="재고 추적 데이터를 불러오는 중입니다..." />

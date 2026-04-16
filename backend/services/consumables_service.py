@@ -581,6 +581,30 @@ def save_item(data: dict) -> bool:
         print(f"Error saving item: {e}")
         return False
 
+def delete_item(row_index: int, item_name: str) -> bool:
+    """품목리스트 시트에서 특정 행을 삭제합니다. row_index와 item_name 이중 검증."""
+    _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss: return False
+    try:
+        ws = _get_worksheet_safe(ss, "품목리스트")
+        if not ws: return False
+
+        # 이중 검증: 해당 행의 B열(품목명)이 일치하는지 확인
+        cell_val = ws.cell(row_index, 2).value  # B열
+        if str(cell_val).strip() != item_name.strip():
+            logger.warning(f"품목 삭제 검증 실패: row={row_index}, 기대={item_name}, 실제={cell_val}")
+            return False
+
+        ws.delete_rows(row_index)
+        invalidate_cache()
+        invalidate_cache("items_all")
+        sync_inventory_summary_sheet()
+        logger.info(f"품목 삭제 완료: row={row_index}, item={item_name}")
+        return True
+    except Exception as e:
+        logger.error(f"품목 삭제 오류: {e}")
+        return False
+
 def get_item_outbound_history(item_name: str):
     """특정 품목의 과거 출고 이력을 모든 월별 시트에서 검색하여 년-월별 집계 가능하게 반환"""
     _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
