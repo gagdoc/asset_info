@@ -3,9 +3,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { exportToCSV, todayStr, ExportButton } from '../utils/exportUtils'
 
+// 시리얼 번호 존재 여부 판단 헬퍼
+const hasSerial = (val) => {
+    const s = String(val || '').trim()
+    return s !== '' && s !== '-' && s !== 'null' && s !== 'undefined'
+}
+
 const Dashboard = () => {
     const queryClient = useQueryClient()
     const [searchTerm, setSearchTerm] = useState('')
+    const [serialFilter, setSerialFilter] = useState({ laptop: '', ipad: '' })
     
     // 모달 제어 상태
     // 모달 제어 상태
@@ -80,10 +87,20 @@ const Dashboard = () => {
     ]
 
     const filteredData = integratedData?.filter(row => {
-        if (!searchTerm) return true
-        return Object.values(row).some(val =>
-            String(val).toLowerCase().includes(searchTerm.toLowerCase())
-        )
+        // 텍스트 검색
+        if (searchTerm) {
+            const matched = Object.values(row).some(val =>
+                String(val).toLowerCase().includes(searchTerm.toLowerCase())
+            )
+            if (!matched) return false
+        }
+        // 노트북 시리얼 필터
+        if (serialFilter.laptop === 'yes' && !hasSerial(row.Lease_List)) return false
+        if (serialFilter.laptop === 'no'  &&  hasSerial(row.Lease_List)) return false
+        // 아이패드 시리얼 필터
+        if (serialFilter.ipad === 'yes' && !hasSerial(row.Ipad_List)) return false
+        if (serialFilter.ipad === 'no'  &&  hasSerial(row.Ipad_List)) return false
+        return true
     }) || []
 
     const columns = [
@@ -189,7 +206,7 @@ const Dashboard = () => {
             <div className="card">
                 <div className="flex items-center justify-between mb-2 table-header-action">
                     <h3>📋 자산 통합 상세 조회</h3>
-                    <div style={{ position: 'relative', width: '100%', maxWidth: '300px' }}>
+                    <div style={{ position: 'relative', width: '100%', maxWidth: '340px' }}>
                         <input
                             className="form-input"
                             placeholder="🔍 통합 검색 (이름, 이메일, 자산번호 등)"
@@ -197,6 +214,61 @@ const Dashboard = () => {
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
+                </div>
+
+                {/* 시리얼 번호 필터 */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', marginBottom: '12px', padding: '10px 12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <span style={{ fontSize: '0.82em', fontWeight: 'bold', color: '#475569', marginRight: '4px' }}>시리얼 필터:</span>
+
+                    {/* 노트북 */}
+                    <span style={{ fontSize: '0.82em', color: '#0369a1', fontWeight: 'bold' }}>💻 노트북</span>
+                    {[['전체', ''], ['있음 ✅', 'yes'], ['없음 ❌', 'no']].map(([label, val]) => (
+                        <button
+                            key={`laptop-${val}`}
+                            onClick={() => setSerialFilter(prev => ({ ...prev, laptop: val }))}
+                            style={{
+                                padding: '3px 10px', borderRadius: '12px', border: '1px solid',
+                                cursor: 'pointer', fontSize: '0.8em', transition: 'all 0.15s',
+                                background: serialFilter.laptop === val ? '#0ea5e9' : '#fff',
+                                color: serialFilter.laptop === val ? '#fff' : '#374151',
+                                borderColor: serialFilter.laptop === val ? '#0ea5e9' : '#cbd5e1',
+                                fontWeight: serialFilter.laptop === val ? 'bold' : 'normal'
+                            }}
+                        >{label}</button>
+                    ))}
+
+                    <span style={{ borderLeft: '1px solid #cbd5e1', height: '18px', margin: '0 4px' }} />
+
+                    {/* 아이패드 */}
+                    <span style={{ fontSize: '0.82em', color: '#7c3aed', fontWeight: 'bold' }}>📱 아이패드</span>
+                    {[['전체', ''], ['있음 ✅', 'yes'], ['없음 ❌', 'no']].map(([label, val]) => (
+                        <button
+                            key={`ipad-${val}`}
+                            onClick={() => setSerialFilter(prev => ({ ...prev, ipad: val }))}
+                            style={{
+                                padding: '3px 10px', borderRadius: '12px', border: '1px solid',
+                                cursor: 'pointer', fontSize: '0.8em', transition: 'all 0.15s',
+                                background: serialFilter.ipad === val ? '#8b5cf6' : '#fff',
+                                color: serialFilter.ipad === val ? '#fff' : '#374151',
+                                borderColor: serialFilter.ipad === val ? '#8b5cf6' : '#cbd5e1',
+                                fontWeight: serialFilter.ipad === val ? 'bold' : 'normal'
+                            }}
+                        >{label}</button>
+                    ))}
+
+                    {/* 필터 초기화 + 결과 수 */}
+                    {(serialFilter.laptop || serialFilter.ipad || searchTerm) && (
+                        <>
+                            <span style={{ borderLeft: '1px solid #cbd5e1', height: '18px', margin: '0 4px' }} />
+                            <button
+                                onClick={() => { setSerialFilter({ laptop: '', ipad: '' }); setSearchTerm('') }}
+                                style={{ padding: '3px 10px', borderRadius: '12px', border: '1px solid #fca5a5', cursor: 'pointer', fontSize: '0.8em', background: '#fef2f2', color: '#dc2626' }}
+                            >✕ 초기화</button>
+                            <span style={{ fontSize: '0.8em', color: '#64748b', marginLeft: '4px' }}>
+                                {filteredData.length}명 / 전체 {integratedData?.length || 0}명
+                            </span>
+                        </>
+                    )}
                 </div>
 
                 {isIntegratedLoading ? (
@@ -215,17 +287,21 @@ const Dashboard = () => {
                                         <tr key={idx}>
                                             <td>{idx + 1}</td>
                                             {columns.slice(1).map(col => {
-                                                const value = String(row[col.key] || '-')
+                                                const rawVal = row[col.key]
+                                                const value = String(rawVal || '-')
                                                 const isDuplicate = value.startsWith('[중복!]')
-                                                const isResigned = col.key === '퇴사정보' && row[col.key] !== '-'
-                                                
+                                                const isResigned = col.key === '퇴사정보' && rawVal && rawVal !== '-'
+                                                const isSerialCol = col.key === 'Lease_List' || col.key === 'Ipad_List'
+                                                const missingSerial = isSerialCol && !hasSerial(rawVal)
+
                                                 let style = {}
                                                 if (isDuplicate) style = { color: '#ef4444', fontWeight: 'bold' }
                                                 if (isResigned) style = { color: '#ef4444', fontWeight: 'bold' }
+                                                if (missingSerial) style = { color: '#94a3b8', background: '#fafafa', fontStyle: 'italic' }
 
                                                 return (
-                                                    <td key={col.key} style={style}>
-                                                        {value}
+                                                    <td key={col.key} style={style} title={missingSerial ? '시리얼 번호 없음' : undefined}>
+                                                        {missingSerial ? '- (미등록)' : value}
                                                     </td>
                                                 )
                                             })}
