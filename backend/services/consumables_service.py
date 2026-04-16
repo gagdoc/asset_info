@@ -690,7 +690,7 @@ def _get_toner_inventory_impl():
         headers = [str(h).strip() for h in raw_headers]
 
         # 주요 컬럼 인덱스 탐색
-        name_col_idx   = _find_col_idx(headers, ['품번', '토너_품번', 'toner', 'tonner', '토너', '품목명', '명칭', 'name', '모델', 'model', '품목', '명'])
+        name_col_idx   = _find_col_idx(headers, ['품번', '토너_품번', 'toner', 'tonner', '토너', '품목명', '명칭', 'name', '모델', 'model', '품목'])
         stock_col_idx  = _find_col_idx(headers, ['재고', 'stock', 'qty', '수량'])
         model_col_idx  = _find_col_idx(headers, ['기종', 'compatible', '호환', 'printer'])
 
@@ -779,7 +779,7 @@ def deduct_toner_stock(item_name: str, quantity: int) -> bool:
             return False
 
         headers = [str(h).strip() for h in all_values[0]]
-        name_col_idx  = _find_col_idx(headers, ['품번', '토너_품번', 'toner', 'tonner', '토너', '품목명', '명칭', 'name', '모델', 'model', '품목', '명'])
+        name_col_idx  = _find_col_idx(headers, ['품번', '토너_품번', 'toner', 'tonner', '토너', '품목명', '명칭', 'name', '모델', 'model', '품목'])
         stock_col_idx = _find_col_idx(headers, ['재고', 'stock', 'qty', '수량'])
 
         if name_col_idx is None:
