@@ -1025,9 +1025,9 @@ const ItemsTab = ({ month }) => {
     const [filterCategory, setFilterCategory] = useState('')
 
     const { data: items, isLoading } = useQuery({
-        queryKey: ['consumables-items', month],
+        queryKey: ['consumables-items'],
         queryFn: async () => {
-            const { data } = await axios.get(`/api/consumables/items?month=${month || ''}`)
+            const { data } = await axios.get('/api/consumables/items')
             return data
         }
     })
@@ -1037,7 +1037,7 @@ const ItemsTab = ({ month }) => {
             return axios.post('/api/consumables/items', newData)
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['consumables-items', month])
+            queryClient.invalidateQueries(['consumables-items'])
             setShowForm(false)
             setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
             alert("품목이 저장되었습니다.")
@@ -1079,7 +1079,7 @@ const ItemsTab = ({ month }) => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
                 <h3 style={{ margin: 0 }}>
                     소모품 마스터 리스트 (단가표)
-                    {month && <span style={{ fontSize: '0.85em', color: '#0ea5e9', marginLeft: '10px' }}>- {month} 기준 재고</span>}
+                    <span style={{ fontSize: '0.85em', color: '#64748b', marginLeft: '10px' }}>- 전체 누적 재고 기준</span>
                 </h3>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <ExportButton
@@ -1295,9 +1295,9 @@ const TrackedItemsTab = ({ month }) => {
     const queryClient = useQueryClient()
     const [selectedHistoryItem, setSelectedHistoryItem] = useState(null)
     const { data: items, isLoading } = useQuery({
-        queryKey: ['consumables-items', month],
+        queryKey: ['consumables-items'],
         queryFn: async () => {
-            const { data } = await axios.get(`/api/consumables/items?month=${month || ''}`)
+            const { data } = await axios.get('/api/consumables/items')
             return data
         }
     })
@@ -1307,7 +1307,7 @@ const TrackedItemsTab = ({ month }) => {
             return axios.post('/api/consumables/items', newData)
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['consumables-items', month])
+            queryClient.invalidateQueries(['consumables-items'])
             // alert("수정되었습니다.") // 조용한 반영을 위해 주석 처리하거나 토스트 사용 권장
         },
         onError: () => alert("수정 중 오류가 발생했습니다.")

@@ -165,7 +165,8 @@ def _get_available_months_impl():
     return months
 
 def get_items_list(month=None):
-    return _get_cached(f"items_{month}", lambda: _get_items_list_impl(month=month))
+    # 재고는 항상 전체 누적 기준이므로 캐시 키를 단일키로 통합
+    return _get_cached("items_all", lambda: _get_items_list_impl())
 
 def _get_items_list_impl(month=None):
     # 품목 정보는 Master 시트에서 가져옴
@@ -215,14 +216,12 @@ def _get_items_list_impl(month=None):
             })
 
         # 2단계: Tracking 대상이 있으면 출고 데이터를 합산
+        # 재고는 월 필터와 무관하게 항상 전체 월 누적 출고량으로 계산 (물류 입출고 방식)
         if tracked_item_names:
-            if month and month != "전체":
-                months = [month]
-            else:
-                _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
-                if not ss_outbound: return items
-                months = [ws.title for ws in ss_outbound.worksheets() if "월" in ws.title and ws.title != "품목리스트"]
-                
+            _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
+            if not ss_outbound: return items
+            months = [ws.title for ws in ss_outbound.worksheets() if "월" in ws.title and ws.title != "품목리스트"]
+
             if months:
                 _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
                 if not ss_outbound: return items
@@ -399,7 +398,7 @@ def add_outbound(month: str, data: dict) -> bool:
             data.get('delivery', ''),
         ]])
         invalidate_cache(f"outbound_{month}")
-        invalidate_cache(f"items_{month}")
+        invalidate_cache("items_all")
         # 데이터 변경 시 재고리스트 요약 시트 동기화
         sync_inventory_summary_sheet()
 
@@ -499,7 +498,7 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
             data.get('delivery', ''),
         ]])
         invalidate_cache(f"outbound_{month}")
-        invalidate_cache(f"items_{month}")
+        invalidate_cache("items_all")
         sync_inventory_summary_sheet()
         return True
     except Exception as e:
@@ -525,7 +524,7 @@ def delete_outbound_history(month: str, row_index: int,
 
         ws.delete_rows(row_index)
         invalidate_cache(f"outbound_{month}")
-        invalidate_cache(f"items_{month}")
+        invalidate_cache("items_all")
         sync_inventory_summary_sheet()
         return True
     except Exception as e:
