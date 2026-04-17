@@ -257,17 +257,26 @@ const EstimateTab = ({ month }) => {
             window.URL.revokeObjectURL(url)
         } catch (error) {
             console.error('견적서 다운로드 오류:', error)
-            // 서버에서 blob으로 온 오류 메시지 파싱
-            let msg = '견적서 다운로드 중 오류가 발생했습니다.'
+            const status = error.response?.status || '?'
+            let msg = `견적서 다운로드 중 오류가 발생했습니다. (HTTP ${status})`
             try {
                 if (error.response?.data instanceof Blob) {
                     const text = await error.response.data.text()
-                    const json = JSON.parse(text)
-                    msg += `\n\n서버 오류: ${json.detail || text}`
+                    try {
+                        const json = JSON.parse(text)
+                        msg += `\n\n서버 오류: ${json.detail || text}`
+                    } catch (_) {
+                        // JSON 파싱 실패 시 원본 텍스트 일부 표시
+                        msg += `\n\n서버 응답: ${text.slice(0, 500)}`
+                    }
                 } else if (error.response?.data?.detail) {
                     msg += `\n\n서버 오류: ${error.response.data.detail}`
+                } else if (error.message) {
+                    msg += `\n\n${error.message}`
                 }
-            } catch (_) {}
+            } catch (e) {
+                msg += `\n\n(오류 파싱 실패: ${e.message})`
+            }
             alert(msg)
         } finally {
             setIsDownloading(false)

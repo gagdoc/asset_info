@@ -317,7 +317,10 @@ def get_estimate(month: str):
             continue
         i_name = h.get('item_name', '').strip()
         if not i_name: continue
-        
+        # 시트 맨 위 '==출고 내역 시작==' 마커 행 등 구분자 제외
+        if i_name.startswith('==') and i_name.endswith('=='):
+            continue
+
         qty_str = str(h.get('quantity', '0')).replace(',', '').strip()
         qty = int(qty_str) if qty_str.isdigit() else 0
         user = str(h.get('user_name', '')).strip()
