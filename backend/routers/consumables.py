@@ -180,6 +180,13 @@ def download_estimate_excel(month: str = Query(..., description="다운로드할
         PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid"),
     ]
 
+    def parse_int(val):
+        """문자열 숫자("1,500" 또는 "3" 등)를 정수로 안전하게 변환"""
+        try:
+            return int(str(val).replace(',', '').strip() or 0)
+        except (ValueError, TypeError):
+            return 0
+
     for idx, row in enumerate(estimate):
         r = DATA_START + idx
         ws.row_dimensions[r].height = 18
@@ -187,13 +194,18 @@ def download_estimate_excel(month: str = Query(..., description="다운로드할
         bdr_top = (idx == 0)
         bdr_bot = (idx == n - 1)
 
+        # get_estimate()는 수치를 문자열로 반환하므로 정수로 변환
+        qty_val   = parse_int(row.get("total_qty", 0))
+        unit_val  = parse_int(row.get("unit_price", 0))
+        total_p   = parse_int(row.get("total_price", 0))
+
         data_cols = [
             ("B", row.get("no", idx+1), False, "center", None),
             ("C", row.get("category", ""), False, "center", None),
             ("D", row.get("item_name", ""), True, "left", None),
-            ("E", row.get("total_qty", 0), True, "center", None),
-            ("F", row.get("unit_price", 0), False, "right", '#,##0'),
-            ("G", row.get("total_price", 0), True, "right", '#,##0'),
+            ("E", qty_val,  True,  "center", None),
+            ("F", unit_val, False, "right",  '#,##0'),
+            ("G", total_p,  True,  "right",  '#,##0'),
         ]
         for col, val, bold, align, nfmt in data_cols:
             c = ws[f"{col}{r}"]
@@ -219,7 +231,8 @@ def download_estimate_excel(month: str = Query(..., description="다운로드할
     c.fill = total_fill
     c.border = thin_border(top=True, bottom=True, left=True)
 
-    total_val = sum(r.get("total_price", 0) for r in estimate)
+    # total_price도 문자열이므로 정수 변환 후 합산
+    total_val = sum(parse_int(r.get("total_price", 0)) for r in estimate)
     c = ws[f"G{TOTAL_ROW}"]
     c.value = total_val
     c.font = Font(bold=True, size=11, color="FFFFFF", name="맑은 고딕")
