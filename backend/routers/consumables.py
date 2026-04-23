@@ -6,6 +6,8 @@ from backend.services.consumables_service import (
     delete_outbound_history, get_item_outbound_history,
     create_month_sheet, invalidate_cache, get_tonner_consignment_history,
     get_toner_inventory, update_toner_item, delete_item,
+    get_inbound_history, add_inbound, delete_inbound, update_inbound,
+    get_inventory_report,
 )
 from typing import List, Dict, Any
 import io
@@ -343,3 +345,69 @@ def update_toner_inventory_item(data: Dict[str, Any] = Body(...)):
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update toner inventory item")
     return {"status": "success"}
+
+
+# ─── 입고 이력 / 재고 입출고 현황 ──────────────────────────────
+
+@router.get("/inbound")
+def list_inbound(item_name: str = Query(None, description="특정 품목 필터 (없으면 전체)")):
+    """입고 이력 조회 (전체 또는 품목별)"""
+    return get_inbound_history(item_name=item_name)
+
+
+@router.post("/inbound")
+def create_inbound(data: Dict[str, Any] = Body(...)):
+    """입고 기록 추가"""
+    date = data.get("date", "")
+    item_name = data.get("item_name", "")
+    quantity = data.get("quantity", 0)
+    memo = data.get("memo", "")
+    if not date or not item_name:
+        raise HTTPException(status_code=400, detail="date와 item_name은 필수입니다.")
+    try:
+        qty = int(str(quantity).replace(",", ""))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="quantity는 숫자여야 합니다.")
+    success = add_inbound(date, item_name, qty, memo)
+    if not success:
+        raise HTTPException(status_code=500, detail="입고 기록 추가에 실패했습니다.")
+    return {"status": "success"}
+
+
+@router.put("/inbound")
+def modify_inbound(data: Dict[str, Any] = Body(...)):
+    """입고 기록 수정"""
+    row_index = data.get("row_index")
+    date = data.get("date", "")
+    item_name = data.get("item_name", "")
+    quantity = data.get("quantity", 0)
+    memo = data.get("memo", "")
+    verify_item = data.get("verify_item", item_name)
+    if not row_index or not date or not item_name:
+        raise HTTPException(status_code=400, detail="row_index, date, item_name은 필수입니다.")
+    try:
+        qty = int(str(quantity).replace(",", ""))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="quantity는 숫자여야 합니다.")
+    success = update_inbound(int(row_index), date, item_name, qty, memo, verify_item)
+    if not success:
+        raise HTTPException(status_code=500, detail="입고 기록 수정에 실패했습니다.")
+    return {"status": "success"}
+
+
+@router.delete("/inbound")
+def remove_inbound(
+    row_index: int = Query(..., description="삭제할 행 번호"),
+    item_name: str = Query(..., description="품목명 검증용"),
+):
+    """입고 기록 삭제"""
+    success = delete_inbound(row_index, item_name)
+    if not success:
+        raise HTTPException(status_code=500, detail="입고 기록 삭제에 실패했습니다.")
+    return {"status": "success"}
+
+
+@router.get("/inventory-report")
+def inventory_report():
+    """품목별 + 월별 입출고 현황 리포트 반환"""
+    return get_inventory_report()

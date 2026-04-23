@@ -906,3 +906,260 @@ def sync_inventory_summary_sheet():
     except Exception as e:
         logger.error(f"재고리스트 동기화 오류: {e}")
         return False
+
+
+# ────────────────────────────────────────────────
+# 입고 이력 (재고 입출고 추적 시스템)
+# ────────────────────────────────────────────────
+
+INBOUND_SHEET_NAME = "입고이력"
+INBOUND_HEADERS = ["날짜", "품목명", "수량", "비고"]
+
+
+def _ensure_inbound_sheet(ss) -> object:
+    """'입고이력' 시트가 없으면 생성하고 반환합니다."""
+    try:
+        existing = [ws.title for ws in ss.worksheets()]
+        if INBOUND_SHEET_NAME not in existing:
+            ws = ss.add_worksheet(title=INBOUND_SHEET_NAME, rows=2000, cols=10)
+            ws.update("A1:D1", [INBOUND_HEADERS])
+            logger.info(f"'{INBOUND_SHEET_NAME}' 시트 생성 완료")
+        else:
+            ws = ss.worksheet(INBOUND_SHEET_NAME)
+        return ws
+    except Exception as e:
+        logger.error(f"'{INBOUND_SHEET_NAME}' 시트 확보 오류: {e}")
+        return None
+
+
+def get_inbound_history(item_name: str = None) -> list:
+    """입고 이력 전체 또는 특정 품목 이력 반환."""
+    cache_key = f"inbound_{item_name or 'all'}"
+    return _get_cached(cache_key, _get_inbound_history_impl, item_name)
+
+
+def _get_inbound_history_impl(item_name: str = None) -> list:
+    _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss:
+        return []
+    try:
+        ws = _ensure_inbound_sheet(ss)
+        if not ws:
+            return []
+        records = _retry_sheets_op(lambda: ws.get_values("A2:D"))
+        result = []
+        for i, r in enumerate(records):
+            if not r or not str(r[0]).strip():
+                continue
+            i_name = str(r[1]).strip() if len(r) > 1 else ""
+            if item_name and i_name != item_name.strip():
+                continue
+            result.append({
+                "row_index": i + 2,
+                "date": str(r[0]).strip() if len(r) > 0 else "",
+                "item_name": i_name,
+                "quantity": str(r[2]).strip() if len(r) > 2 else "0",
+                "memo": str(r[3]).strip() if len(r) > 3 else "",
+            })
+        return result
+    except Exception as e:
+        logger.error(f"입고 이력 조회 오류: {e}")
+        return []
+
+
+def add_inbound(date: str, item_name: str, quantity: int, memo: str = "") -> bool:
+    """입고 이력 시트에 새 입고 기록을 추가합니다."""
+    _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss:
+        return False
+    try:
+        ws = _ensure_inbound_sheet(ss)
+        if not ws:
+            return False
+        col_a = _retry_sheets_op(lambda: ws.col_values(1))
+        next_row = len(col_a) + 1
+        ws.update(f"A{next_row}:D{next_row}", [[date, item_name, str(quantity), memo]])
+        invalidate_cache("inbound_")
+        invalidate_cache("inventory_report")
+        logger.info(f"입고 기록 추가: {date} / {item_name} / {quantity}")
+        return True
+    except Exception as e:
+        logger.error(f"입고 기록 추가 오류: {e}")
+        return False
+
+
+def delete_inbound(row_index: int, item_name: str) -> bool:
+    """입고 이력 시트에서 특정 행을 삭제합니다 (행 이름 검증 포함)."""
+    _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss:
+        return False
+    try:
+        ws = _ensure_inbound_sheet(ss)
+        if not ws:
+            return False
+        cell_val = ws.cell(row_index, 2).value
+        if str(cell_val).strip() != item_name.strip():
+            logger.warning(f"입고 삭제 검증 실패: row={row_index}, 기대={item_name}, 실제={cell_val}")
+            return False
+        ws.delete_rows(row_index)
+        invalidate_cache("inbound_")
+        invalidate_cache("inventory_report")
+        return True
+    except Exception as e:
+        logger.error(f"입고 이력 삭제 오류: {e}")
+        return False
+
+
+def update_inbound(row_index: int, date: str, item_name: str, quantity: int, memo: str = "", verify_item: str = "") -> bool:
+    """입고 이력 시트의 특정 행을 수정합니다."""
+    _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss:
+        return False
+    try:
+        ws = _ensure_inbound_sheet(ss)
+        if not ws:
+            return False
+        # 검증
+        if verify_item:
+            cell_val = str(ws.cell(row_index, 2).value or "").strip()
+            if cell_val != verify_item.strip():
+                logger.warning(f"입고 수정 검증 실패: row={row_index}, 기대={verify_item}, 실제={cell_val}")
+                return False
+        ws.update(f"A{row_index}:D{row_index}", [[date, item_name, str(quantity), memo]])
+        invalidate_cache("inbound_")
+        invalidate_cache("inventory_report")
+        return True
+    except Exception as e:
+        logger.error(f"입고 이력 수정 오류: {e}")
+        return False
+
+
+def get_inventory_report() -> dict:
+    """
+    전체 입고 이력 + 전체 출고 이력을 집계하여
+    품목별 / 월별 입출고 현황 리포트를 반환합니다.
+
+    반환 형태:
+    {
+      "by_item": {
+        "품목명": {
+          "total_in": 100, "total_out": 80, "balance": 20,
+          "monthly": {
+            "2026-04": {"in": 30, "out": 20},
+            ...
+          }
+        }, ...
+      },
+      "by_month": {
+        "2026-04": {
+          "total_in": 100, "total_out": 80,
+          "items": { "품목명": {"in": 30, "out": 20}, ... }
+        }, ...
+      }
+    }
+    """
+    return _get_cached("inventory_report", _get_inventory_report_impl)
+
+
+def _parse_ym(date_str: str) -> str:
+    """날짜 문자열에서 YYYY-MM 추출. 형식: YYYY-MM-DD 또는 YYYY/MM/DD 또는 MM/DD 등."""
+    import re
+    date_str = str(date_str).strip()
+    # YYYY-MM-DD 또는 YYYY/MM/DD
+    m = re.match(r"(\d{4})[-/](\d{1,2})", date_str)
+    if m:
+        return f"{m.group(1)}-{m.group(2).zfill(2)}"
+    # MM/DD 또는 M월 D일 형식 → 연도 없음 → 현재 연도로 가정
+    m2 = re.match(r"(\d{1,2})/(\d{1,2})", date_str)
+    if m2:
+        from datetime import datetime
+        year = datetime.now().year
+        return f"{year}-{m2.group(1).zfill(2)}"
+    # 한글 날짜: 2026년 4월 등
+    m3 = re.match(r"(\d{4})년\s*(\d{1,2})월", date_str)
+    if m3:
+        return f"{m3.group(1)}-{m3.group(2).zfill(2)}"
+    return ""
+
+
+def _get_inventory_report_impl() -> dict:
+    from datetime import datetime
+    by_item = {}
+    by_month = {}
+
+    def _ensure_item(name):
+        if name not in by_item:
+            by_item[name] = {"total_in": 0, "total_out": 0, "balance": 0, "monthly": {}}
+
+    def _ensure_month_item(ym, name):
+        if ym not in by_month:
+            by_month[ym] = {"total_in": 0, "total_out": 0, "items": {}}
+        if name not in by_month[ym]["items"]:
+            by_month[ym]["items"][name] = {"in": 0, "out": 0}
+
+    # 1. 입고 이력 집계
+    inbound = _get_inbound_history_impl()
+    for rec in inbound:
+        name = rec.get("item_name", "").strip()
+        if not name:
+            continue
+        try:
+            qty = int(str(rec.get("quantity", "0")).replace(",", ""))
+        except ValueError:
+            qty = 0
+        ym = _parse_ym(rec.get("date", ""))
+
+        _ensure_item(name)
+        by_item[name]["total_in"] += qty
+
+        if ym:
+            _ensure_month_item(ym, name)
+            by_item[name]["monthly"].setdefault(ym, {"in": 0, "out": 0})
+            by_item[name]["monthly"][ym]["in"] += qty
+            by_month[ym]["total_in"] += qty
+            by_month[ym]["items"][name]["in"] += qty
+
+    # 2. 출고 이력 집계 (전체 월별 시트)
+    _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
+    if ss_outbound:
+        months_list = [ws.title for ws in ss_outbound.worksheets()
+                       if "월" in ws.title and ws.title not in ("품목리스트", "재고리스트")]
+        if months_list:
+            ranges = [f"{m}!A2:C" for m in months_list]
+            try:
+                batch_res = ss_outbound.values_batch_get(ranges)
+                for sheet_title, res in zip(months_list, batch_res.get("valueRanges", [])):
+                    values = res.get("values", [])
+                    for row in values:
+                        if len(row) < 3:
+                            continue
+                        i_name = str(row[1]).strip()
+                        if not i_name or (i_name.startswith("==") and i_name.endswith("==")):
+                            continue
+                        try:
+                            qty = int(str(row[2]).replace(",", "").strip())
+                        except ValueError:
+                            continue
+                        date_str = str(row[0]).strip()
+                        ym = _parse_ym(date_str)
+
+                        _ensure_item(i_name)
+                        by_item[i_name]["total_out"] += qty
+
+                        if ym:
+                            _ensure_month_item(ym, i_name)
+                            by_item[i_name]["monthly"].setdefault(ym, {"in": 0, "out": 0})
+                            by_item[i_name]["monthly"][ym]["out"] += qty
+                            by_month[ym]["total_out"] += qty
+                            by_month[ym]["items"][i_name]["out"] += qty
+            except Exception as e:
+                logger.error(f"출고 이력 배치 조회 오류: {e}")
+
+    # 3. 잔고 계산
+    for name, data in by_item.items():
+        data["balance"] = data["total_in"] - data["total_out"]
+
+    # 4. by_month 정렬 (최신순)
+    by_month_sorted = dict(sorted(by_month.items(), reverse=True))
+
+    return {"by_item": by_item, "by_month": by_month_sorted}

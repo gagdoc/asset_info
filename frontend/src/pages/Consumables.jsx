@@ -123,6 +123,13 @@ const Consumables = () => {
                 >
                     🖨️ 위탁 토너 내역
                 </button>
+                <button
+                    className={`btn ${activeTab === 'inventory' ? 'btn-primary' : ''}`}
+                    onClick={() => setActiveTab('inventory')}
+                    style={{ backgroundColor: activeTab === 'inventory' ? '' : '#f0fdf4', border: '1px solid #22c55e', color: activeTab === 'inventory' ? '' : '#15803d' }}
+                >
+                    📊 입출고 현황
+                </button>
             </div>
 
             {activeTab === 'estimate' && selectedMonth && <EstimateTab month={selectedMonth} />}
@@ -131,6 +138,7 @@ const Consumables = () => {
             {activeTab === 'items' && <ItemsTab month={selectedMonth} />}
             {activeTab === 'tracked' && <TrackedItemsTab month={selectedMonth} />}
             {activeTab === 'tonner-consignment' && <TonnerConsignmentTab month={selectedMonth} months={monthsData} />}
+            {activeTab === 'inventory' && <InventoryTab />}
             
             {(activeTab === 'estimate' || activeTab === 'outbound') && !selectedMonth && (
                 <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>조회할 월(Month) 데이터를 불러오는 중입니다...</div>
@@ -1991,6 +1999,385 @@ const TonnerInventoryTab = () => {
             {!isLoading && items.length > 0 && (
                 <div style={{ marginTop: '0.75rem', fontSize: '0.8em', color: '#94a3b8', textAlign: 'right' }}>
                     💡 더블클릭하거나 ✏️ 버튼으로 수정 · 일반 출고 시 재고 자동 차감
+                </div>
+            )}
+        </div>
+    )
+}
+
+
+// ─── 입출고 현황 탭 ────────────────────────────────────────────
+const InventoryTab = () => {
+    const queryClient = useQueryClient()
+
+    // ── 입고 등록 폼 상태
+    const [form, setForm] = useState({ date: '', item_name: '', quantity: '', memo: '' })
+    const [showForm, setShowForm] = useState(false)
+
+    // ── 뷰 전환: 'report' | 'inbound'
+    const [view, setView] = useState('report')
+
+    // ── 리포트 필터
+    const [reportFilter, setReportFilter] = useState('month') // 'month' | 'item'
+    const [selectedYM, setSelectedYM] = useState('')
+
+    // ── 품목 목록 (입고 등록 셀렉트용)
+    const { data: allItems } = useQuery({
+        queryKey: ['consumables-items'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/consumables/items')
+            return data
+        }
+    })
+    const itemOptions = allItems?.map(it => ({ label: it.item_name, value: it.item_name })) || []
+
+    // ── 입고 이력 조회
+    const { data: inboundList = [], isLoading: inboundLoading } = useQuery({
+        queryKey: ['inbound-history'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/consumables/inbound')
+            return data
+        }
+    })
+
+    // ── 입출고 리포트 조회
+    const { data: report, isLoading: reportLoading } = useQuery({
+        queryKey: ['inventory-report'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/consumables/inventory-report')
+            return data
+        }
+    })
+
+    // ── 입고 등록 mutation
+    const addMutation = useMutation({
+        mutationFn: async (data) => axios.post('/api/consumables/inbound', data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['inbound-history'] })
+            queryClient.invalidateQueries({ queryKey: ['inventory-report'] })
+            setForm({ date: '', item_name: '', quantity: '', memo: '' })
+            setShowForm(false)
+            alert('입고 기록이 등록되었습니다.')
+        },
+        onError: (err) => {
+            alert('입고 등록 실패: ' + (err.response?.data?.detail || err.message))
+        }
+    })
+
+    // ── 입고 삭제 mutation
+    const deleteMutation = useMutation({
+        mutationFn: async ({ row_index, item_name }) =>
+            axios.delete(`/api/consumables/inbound?row_index=${row_index}&item_name=${encodeURIComponent(item_name)}`),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['inbound-history'] })
+            queryClient.invalidateQueries({ queryKey: ['inventory-report'] })
+        },
+        onError: (err) => {
+            alert('삭제 실패: ' + (err.response?.data?.detail || err.message))
+        }
+    })
+
+    const handleAddSubmit = (e) => {
+        e.preventDefault()
+        if (!form.date || !form.item_name || !form.quantity) {
+            alert('날짜, 품목명, 수량은 필수입니다.')
+            return
+        }
+        addMutation.mutate({ ...form, quantity: parseInt(form.quantity) })
+    }
+
+    const handleDelete = (rec) => {
+        if (!window.confirm(`입고 기록을 삭제하시겠습니까?\n[${rec.date}] ${rec.item_name} ${rec.quantity}개`)) return
+        deleteMutation.mutate({ row_index: rec.row_index, item_name: rec.item_name })
+    }
+
+    // ── 리포트 데이터 가공
+    const byMonth = report?.by_month || {}
+    const byItem = report?.by_item || {}
+    const allYMs = Object.keys(byMonth).sort().reverse()
+
+    // 월별 뷰에서 선택된 월의 데이터
+    const selectedMonthData = selectedYM ? byMonth[selectedYM] : null
+
+    return (
+        <div className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <h3 style={{ margin: 0 }}>📊 입출고 현황 관리</h3>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                        className={`btn ${view === 'report' ? 'btn-primary' : ''}`}
+                        onClick={() => setView('report')}
+                        style={{ fontSize: '0.9em' }}
+                    >📈 입출고 리포트</button>
+                    <button
+                        className={`btn ${view === 'inbound' ? 'btn-primary' : ''}`}
+                        onClick={() => setView('inbound')}
+                        style={{ fontSize: '0.9em' }}
+                    >📥 입고 이력</button>
+                    <button
+                        className="btn"
+                        onClick={() => setShowForm(v => !v)}
+                        style={{ backgroundColor: '#f0fdf4', border: '1px solid #22c55e', color: '#15803d', fontSize: '0.9em' }}
+                    >➕ 입고 등록</button>
+                </div>
+            </div>
+
+            {/* ── 입고 등록 폼 */}
+            {showForm && (
+                <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '1rem', marginBottom: '1.2rem' }}>
+                    <h4 style={{ margin: '0 0 0.8rem', color: '#15803d' }}>📥 입고 등록</h4>
+                    <form onSubmit={handleAddSubmit} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '0.8em', color: '#666' }}>입고 날짜 *</label>
+                            <input
+                                type="date"
+                                value={form.date}
+                                onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                                required
+                                style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: '4px' }}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '200px' }}>
+                            <label style={{ fontSize: '0.8em', color: '#666' }}>품목명 *</label>
+                            <SearchableSelect
+                                options={itemOptions}
+                                value={form.item_name}
+                                onChange={val => setForm(f => ({ ...f, item_name: val }))}
+                                placeholder="품목 선택 또는 입력"
+                                displayField="label"
+                                valueField="value"
+                                searchFields={["label"]}
+                                width="200px"
+                                allowCustom={true}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '0.8em', color: '#666' }}>수량 *</label>
+                            <input
+                                type="number"
+                                min="1"
+                                value={form.quantity}
+                                onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
+                                required
+                                placeholder="수량"
+                                style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: '4px', width: '80px' }}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: '150px' }}>
+                            <label style={{ fontSize: '0.8em', color: '#666' }}>비고</label>
+                            <input
+                                type="text"
+                                value={form.memo}
+                                onChange={e => setForm(f => ({ ...f, memo: e.target.value }))}
+                                placeholder="비고 (선택)"
+                                style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: '4px' }}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button type="submit" className="btn btn-primary" disabled={addMutation.isPending}>
+                                {addMutation.isPending ? '저장 중...' : '저장'}
+                            </button>
+                            <button type="button" className="btn" onClick={() => setShowForm(false)}>취소</button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/* ── 입출고 리포트 뷰 */}
+            {view === 'report' && (
+                <div>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <button
+                            className={`btn ${reportFilter === 'month' ? 'btn-primary' : ''}`}
+                            onClick={() => setReportFilter('month')}
+                            style={{ fontSize: '0.85em' }}
+                        >📅 월별 현황</button>
+                        <button
+                            className={`btn ${reportFilter === 'item' ? 'btn-primary' : ''}`}
+                            onClick={() => setReportFilter('item')}
+                            style={{ fontSize: '0.85em' }}
+                        >📦 품목별 현황</button>
+                    </div>
+
+                    {reportLoading && <div style={{ color: '#94a3b8', padding: '1rem' }}>리포트 로딩 중...</div>}
+
+                    {/* 월별 현황 */}
+                    {!reportLoading && reportFilter === 'month' && (
+                        <div>
+                            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                                <button
+                                    className={`btn ${!selectedYM ? 'btn-primary' : ''}`}
+                                    onClick={() => setSelectedYM('')}
+                                    style={{ fontSize: '0.8em' }}
+                                >전체 요약</button>
+                                {allYMs.map(ym => (
+                                    <button
+                                        key={ym}
+                                        className={`btn ${selectedYM === ym ? 'btn-primary' : ''}`}
+                                        onClick={() => setSelectedYM(ym)}
+                                        style={{ fontSize: '0.8em' }}
+                                    >{ym}</button>
+                                ))}
+                            </div>
+
+                            {/* 전체 요약 테이블 */}
+                            {!selectedYM && (
+                                <table className="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>년월</th>
+                                            <th style={{ textAlign: 'center', color: '#15803d' }}>총 입고</th>
+                                            <th style={{ textAlign: 'center', color: '#dc2626' }}>총 출고</th>
+                                            <th style={{ textAlign: 'center', color: '#2563eb' }}>차이 (입고-출고)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {allYMs.length === 0 ? (
+                                            <tr><td colSpan={4} style={{ textAlign: 'center', color: '#94a3b8', padding: '1rem' }}>데이터 없음</td></tr>
+                                        ) : allYMs.map(ym => {
+                                            const d = byMonth[ym]
+                                            const diff = d.total_in - d.total_out
+                                            return (
+                                                <tr key={ym} style={{ cursor: 'pointer' }} onClick={() => setSelectedYM(ym)}>
+                                                    <td><strong>{ym}</strong></td>
+                                                    <td style={{ textAlign: 'center', color: '#15803d', fontWeight: 'bold' }}>+{d.total_in.toLocaleString()}</td>
+                                                    <td style={{ textAlign: 'center', color: '#dc2626', fontWeight: 'bold' }}>-{d.total_out.toLocaleString()}</td>
+                                                    <td style={{ textAlign: 'center', fontWeight: 'bold', color: diff >= 0 ? '#2563eb' : '#dc2626' }}>
+                                                        {diff >= 0 ? '+' : ''}{diff.toLocaleString()}
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                </table>
+                            )}
+
+                            {/* 특정 월 상세 */}
+                            {selectedYM && selectedMonthData && (
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                                        <h4 style={{ margin: 0, color: '#334155' }}>📅 {selectedYM} 품목별 입출고 상세</h4>
+                                        <button className="btn" onClick={() => setSelectedYM('')} style={{ fontSize: '0.8em' }}>← 전체 요약</button>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '1rem', marginBottom: '0.75rem', fontSize: '0.9em' }}>
+                                        <span style={{ color: '#15803d', fontWeight: 'bold' }}>총 입고: {selectedMonthData.total_in.toLocaleString()}</span>
+                                        <span style={{ color: '#dc2626', fontWeight: 'bold' }}>총 출고: {selectedMonthData.total_out.toLocaleString()}</span>
+                                        <span style={{ color: '#2563eb', fontWeight: 'bold' }}>차이: {(selectedMonthData.total_in - selectedMonthData.total_out).toLocaleString()}</span>
+                                    </div>
+                                    <table className="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>품목명</th>
+                                                <th style={{ textAlign: 'center', color: '#15803d' }}>입고</th>
+                                                <th style={{ textAlign: 'center', color: '#dc2626' }}>출고</th>
+                                                <th style={{ textAlign: 'center', color: '#2563eb' }}>차이</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {Object.entries(selectedMonthData.items)
+                                                .sort((a, b) => (b[1].in + b[1].out) - (a[1].in + a[1].out))
+                                                .map(([name, d]) => {
+                                                    const diff = d.in - d.out
+                                                    return (
+                                                        <tr key={name}>
+                                                            <td>{name}</td>
+                                                            <td style={{ textAlign: 'center', color: '#15803d' }}>{d.in > 0 ? `+${d.in}` : '-'}</td>
+                                                            <td style={{ textAlign: 'center', color: '#dc2626' }}>{d.out > 0 ? `-${d.out}` : '-'}</td>
+                                                            <td style={{ textAlign: 'center', fontWeight: 'bold', color: diff >= 0 ? '#2563eb' : '#dc2626' }}>
+                                                                {diff > 0 ? '+' : ''}{diff !== 0 ? diff : '-'}
+                                                            </td>
+                                                        </tr>
+                                                    )
+                                                })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* 품목별 현황 */}
+                    {!reportLoading && reportFilter === 'item' && (
+                        <table className="data-table">
+                            <thead>
+                                <tr>
+                                    <th>품목명</th>
+                                    <th style={{ textAlign: 'center', color: '#15803d' }}>총 입고</th>
+                                    <th style={{ textAlign: 'center', color: '#dc2626' }}>총 출고</th>
+                                    <th style={{ textAlign: 'center', color: '#2563eb' }}>현재 잔고</th>
+                                    <th style={{ textAlign: 'center' }}>상태</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {Object.keys(byItem).length === 0 ? (
+                                    <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8', padding: '1rem' }}>데이터 없음</td></tr>
+                                ) : Object.entries(byItem)
+                                    .sort((a, b) => b[1].total_out - a[1].total_out)
+                                    .map(([name, d]) => (
+                                        <tr key={name}>
+                                            <td><strong>{name}</strong></td>
+                                            <td style={{ textAlign: 'center', color: '#15803d', fontWeight: 'bold' }}>+{d.total_in.toLocaleString()}</td>
+                                            <td style={{ textAlign: 'center', color: '#dc2626', fontWeight: 'bold' }}>-{d.total_out.toLocaleString()}</td>
+                                            <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '1.05em', color: d.balance >= 0 ? '#2563eb' : '#dc2626' }}>
+                                                {d.balance.toLocaleString()}
+                                            </td>
+                                            <td style={{ textAlign: 'center' }}>
+                                                {d.total_in === 0
+                                                    ? <span style={{ color: '#94a3b8', fontSize: '0.85em' }}>입고기록없음</span>
+                                                    : d.balance < 0
+                                                        ? <span style={{ color: '#dc2626' }}>🚨 초과출고</span>
+                                                        : d.balance === 0
+                                                            ? <span style={{ color: '#f59e0b' }}>⚠️ 재고없음</span>
+                                                            : <span style={{ color: '#15803d' }}>✅ 정상</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    ))}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+            )}
+
+            {/* ── 입고 이력 뷰 */}
+            {view === 'inbound' && (
+                <div>
+                    {inboundLoading && <div style={{ color: '#94a3b8', padding: '1rem' }}>입고 이력 로딩 중...</div>}
+                    {!inboundLoading && (
+                        <table className="data-table">
+                            <thead>
+                                <tr>
+                                    <th>날짜</th>
+                                    <th>품목명</th>
+                                    <th style={{ textAlign: 'center' }}>수량</th>
+                                    <th>비고</th>
+                                    <th style={{ textAlign: 'center', width: '60px' }}>삭제</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {inboundList.length === 0 ? (
+                                    <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8', padding: '1.5rem' }}>
+                                        입고 기록이 없습니다. ➕ 입고 등록 버튼으로 추가하세요.
+                                    </td></tr>
+                                ) : [...inboundList].reverse().map(rec => (
+                                    <tr key={rec.row_index}>
+                                        <td>{rec.date}</td>
+                                        <td><strong>{rec.item_name}</strong></td>
+                                        <td style={{ textAlign: 'center', color: '#15803d', fontWeight: 'bold' }}>+{Number(rec.quantity).toLocaleString()}</td>
+                                        <td style={{ color: '#64748b', fontSize: '0.9em' }}>{rec.memo || '-'}</td>
+                                        <td style={{ textAlign: 'center' }}>
+                                            <button
+                                                className="btn"
+                                                onClick={() => handleDelete(rec)}
+                                                disabled={deleteMutation.isPending}
+                                                style={{ padding: '2px 8px', fontSize: '0.8em', color: '#dc2626', border: '1px solid #fca5a5', backgroundColor: '#fff1f2' }}
+                                            >🗑️</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
                 </div>
             )}
         </div>
