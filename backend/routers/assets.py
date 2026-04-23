@@ -8,7 +8,9 @@ from backend.services.assets_service import (
     get_dashboard_integrated_data,
     perform_bulk_search,
     enrich_data_with_assets,
-    return_asset
+    return_asset,
+    export_sheets_to_excel,
+    EXPORT_SHEET_MAP,
 )
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
@@ -378,6 +380,32 @@ def bulk_search_assets(req: BulkSearchRequest):
         "notFound": not_found,
         "found_count": len(found_terms),  # 실제 매칭된 고유 검색어 수
     }
+
+# ── 전체 데이터 Excel 내보내기 ──────────────────────────
+@router.get("/export")
+def export_assets_excel(sheets: str = ""):
+    """
+    선택한 항목을 시트별로 구분한 Excel 파일로 다운로드.
+    sheets: 콤마 구분 키 목록 (예: "Lease,iPad,Monitor")
+            비어 있으면 전체 내보내기.
+    """
+    sheet_keys = [s.strip() for s in sheets.split(",") if s.strip()] if sheets else list(EXPORT_SHEET_MAP.keys())
+    invalid = [k for k in sheet_keys if k not in EXPORT_SHEET_MAP]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"유효하지 않은 항목: {invalid}. 허용: {list(EXPORT_SHEET_MAP.keys())}")
+
+    try:
+        output = export_sheets_to_excel(sheet_keys)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Excel 생성 오류: {str(e)}")
+
+    from datetime import date
+    filename = f"asset_export_{date.today().strftime('%Y%m%d')}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 # ── Asset List (Read) ────────────────────────────────
 @router.get("/{asset_type}")

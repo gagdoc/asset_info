@@ -9,12 +9,54 @@ const hasSerial = (val) => {
     return s !== '' && s !== '-' && s !== 'null' && s !== 'undefined'
 }
 
+// ── 내보내기 가능한 항목 정의 ──────────────────────────
+const EXPORT_ITEMS = [
+    { key: 'Lease',   label: '노트북 (Lease)' },
+    { key: 'iPad',    label: '아이패드 (iPad)' },
+    { key: 'Monitor', label: '모니터 (Monitor)' },
+    { key: 'Printer', label: '프린터 (Printer)' },
+    { key: 'Teams',   label: 'Teams 번호' },
+    { key: 'NewHire', label: '신규 입사자' },
+    { key: 'Resign',  label: '퇴사자 관리' },
+]
+
 const Dashboard = () => {
     const queryClient = useQueryClient()
     const [searchTerm, setSearchTerm] = useState('')
     const [serialFilter, setSerialFilter] = useState({ laptop: '', ipad: '' })
-    
-    // 모달 제어 상태
+
+    // Excel 내보내기 상태
+    const [selectedSheets, setSelectedSheets] = useState([])
+    const [isExporting, setIsExporting] = useState(false)
+
+    const allSelected = selectedSheets.length === EXPORT_ITEMS.length
+    const toggleSheet = (key) =>
+        setSelectedSheets(prev =>
+            prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+        )
+    const toggleAll = () =>
+        setSelectedSheets(allSelected ? [] : EXPORT_ITEMS.map(i => i.key))
+
+    const handleExport = async () => {
+        if (selectedSheets.length === 0) return
+        setIsExporting(true)
+        try {
+            const params = selectedSheets.join(',')
+            const res = await axios.get(`/api/assets/export?sheets=${params}`, { responseType: 'blob' })
+            const url = URL.createObjectURL(new Blob([res.data]))
+            const a = document.createElement('a')
+            const today = new Date().toISOString().slice(0,10).replace(/-/g,'')
+            a.href = url
+            a.download = `asset_export_${today}.xlsx`
+            a.click()
+            URL.revokeObjectURL(url)
+        } catch (e) {
+            alert('Excel 내보내기 실패: ' + (e.response?.data?.detail || e.message))
+        } finally {
+            setIsExporting(false)
+        }
+    }
+
     // 모달 제어 상태
     const [showResignModal, setShowResignModal] = useState(false)
     
@@ -122,7 +164,7 @@ const Dashboard = () => {
 
     return (
         <div>
-            <div className="dashboard-header-action flex justify-between items-center" style={{ marginBottom: '1.5rem' }}>
+            <div className="dashboard-header-action flex justify-between items-center" style={{ marginBottom: '1rem' }}>
                 <h1>📊 통합 자산 현황 (대시보드)</h1>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                     <ExportButton
@@ -141,6 +183,77 @@ const Dashboard = () => {
                     <button className="btn btn-danger" onClick={() => setShowResignModal(true)}>
                         👋 퇴사자 처리
                     </button>
+                </div>
+            </div>
+
+            {/* ── Excel 내보내기 패널 ─────────────────────────── */}
+            <div className="card" style={{
+                marginBottom: '1.5rem',
+                padding: '1rem 1.25rem',
+                border: '1px solid #e0e7ff',
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #f5f3ff 0%, #eff6ff 100%)',
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem' }}>
+                    <span style={{ fontSize: '1.1rem' }}>📥</span>
+                    <strong style={{ fontSize: '0.95rem', color: '#3730a3' }}>데이터 Excel 내보내기</strong>
+                    <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>— 원하는 항목을 선택하세요</span>
+                </div>
+
+                {/* 체크박스 목록 */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '0.85rem' }}>
+                    {EXPORT_ITEMS.map(item => (
+                        <label key={item.key} style={{
+                            display: 'flex', alignItems: 'center', gap: '5px',
+                            padding: '4px 12px',
+                            borderRadius: '20px',
+                            cursor: 'pointer',
+                            fontSize: '0.85rem',
+                            fontWeight: selectedSheets.includes(item.key) ? '600' : '400',
+                            background: selectedSheets.includes(item.key) ? '#4f46e5' : '#ffffff',
+                            color: selectedSheets.includes(item.key) ? '#ffffff' : '#374151',
+                            border: `1px solid ${selectedSheets.includes(item.key) ? '#4f46e5' : '#d1d5db'}`,
+                            transition: 'all 0.15s',
+                            userSelect: 'none',
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={selectedSheets.includes(item.key)}
+                                onChange={() => toggleSheet(item.key)}
+                                style={{ display: 'none' }}
+                            />
+                            {selectedSheets.includes(item.key) ? '✓ ' : ''}{item.label}
+                        </label>
+                    ))}
+                </div>
+
+                {/* 버튼 영역 */}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <button
+                        className="btn btn-secondary"
+                        style={{ fontSize: '0.82rem', padding: '5px 14px' }}
+                        onClick={toggleAll}
+                    >
+                        {allSelected ? '✕ 전체 해제' : '☑ 전체 선택'}
+                    </button>
+                    <button
+                        className="btn"
+                        style={{
+                            fontSize: '0.82rem', padding: '5px 16px',
+                            background: selectedSheets.length === 0 ? '#9ca3af' : '#4f46e5',
+                            color: '#fff', cursor: selectedSheets.length === 0 ? 'not-allowed' : 'pointer',
+                            border: 'none', borderRadius: '6px',
+                        }}
+                        disabled={selectedSheets.length === 0 || isExporting}
+                        onClick={handleExport}
+                    >
+                        {isExporting ? '⏳ 생성 중...' : `📥 Excel 내보내기 (${selectedSheets.length}개 선택)`}
+                    </button>
+                    {selectedSheets.length > 0 && (
+                        <span style={{ fontSize: '0.78rem', color: '#6b7280' }}>
+                            {EXPORT_ITEMS.filter(i => selectedSheets.includes(i.key)).map(i => i.label).join(', ')}
+                        </span>
+                    )}
                 </div>
             </div>
 

@@ -3,6 +3,8 @@ from datetime import datetime
 import io
 import re
 from typing import List, Dict, Any, Optional
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from backend.services.database import (
     load_from_db, update_db, normalize_email, get_connection, ASSET_DB_FILE
 )
@@ -348,3 +350,90 @@ def return_asset(email: str, asset_type: Optional[str], name: Optional[str], bu:
     if updated_tables:
         return {"success": True, "message": f"반납 처리 완료: {', '.join(updated_tables)}"}
     return {"success": False, "message": "할당된 자산이 없거나 이미 반납되었습니다."}
+
+
+# ─── 전체 데이터 Excel 내보내기 ─────────────────────────────────
+
+# 선택 가능한 시트 정의
+EXPORT_SHEET_MAP = {
+    "Lease":   "노트북",
+    "iPad":    "아이패드",
+    "Monitor": "모니터",
+    "Printer": "프린터",
+    "Teams":   "Teams번호",
+    "NewHire": "신규입사자",
+    "Resign":  "퇴사자",
+}
+
+def export_sheets_to_excel(sheet_keys: List[str]) -> io.BytesIO:
+    """
+    요청된 sheet_keys 에 해당하는 데이터를 Google Sheets에서 읽어
+    각각 별도 탭으로 구성된 단일 .xlsx 파일을 BytesIO로 반환한다.
+    """
+    dfs = load_from_db()
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)  # 기본 시트 제거
+
+    header_font  = Font(bold=True, color="FFFFFF", size=11)
+    header_fill  = PatternFill(fill_type="solid", fgColor="4F46E5")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin_side    = Side(style="thin", color="CCCCCC")
+    thin_border  = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+
+    valid_keys = [k for k in sheet_keys if k in EXPORT_SHEET_MAP]
+    if not valid_keys:
+        valid_keys = list(EXPORT_SHEET_MAP.keys())
+
+    for key in valid_keys:
+        sheet_title = EXPORT_SHEET_MAP[key]
+        df = dfs.get(key, pd.DataFrame())
+
+        # 불필요한 내부 컬럼 제거
+        df = df.copy()
+        drop_cols = [c for c in df.columns if c.startswith("Unnamed")]
+        df.drop(columns=drop_cols, inplace=True, errors="ignore")
+
+        ws = wb.create_sheet(title=sheet_title)
+
+        if df.empty:
+            ws.append(["데이터 없음"])
+            continue
+
+        # 헤더 행
+        headers = df.columns.tolist()
+        ws.append(headers)
+        for col_idx, _ in enumerate(headers, start=1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.font   = header_font
+            cell.fill   = header_fill
+            cell.alignment = header_align
+            cell.border = thin_border
+
+        # 데이터 행
+        for row_data in df.fillna("").values.tolist():
+            ws.append([str(v) if v is not None else "" for v in row_data])
+
+        # 테두리 + 셀 정렬 (데이터 행)
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, max_col=len(headers)):
+            for cell in row:
+                cell.border    = thin_border
+                cell.alignment = Alignment(vertical="center")
+
+        # 컬럼 너비 자동 조정
+        for col_idx, col_cells in enumerate(ws.columns, start=1):
+            max_len = max(
+                (len(str(cell.value)) if cell.value else 0 for cell in col_cells),
+                default=8
+            )
+            ws.column_dimensions[
+                openpyxl.utils.get_column_letter(col_idx)
+            ].width = min(max_len + 4, 40)
+
+        # 헤더 행 높이
+        ws.row_dimensions[1].height = 22
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
