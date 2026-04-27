@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { exportToCSV, todayStr, ExportButton } from '../utils/exportUtils'
+// exportUtils 불필요 (우측 상단 엑셀 버튼 제거됨)
 
 // 시리얼 번호 존재 여부 판단 헬퍼
 const hasSerial = (val) => {
@@ -11,13 +11,14 @@ const hasSerial = (val) => {
 
 // ── 내보내기 가능한 항목 정의 ──────────────────────────
 const EXPORT_ITEMS = [
-    { key: 'Lease',   label: '노트북 (Lease)' },
-    { key: 'iPad',    label: '아이패드 (iPad)' },
-    { key: 'Monitor', label: '모니터 (Monitor)' },
-    { key: 'Printer', label: '프린터 (Printer)' },
-    { key: 'Teams',   label: 'Teams 번호' },
-    { key: 'NewHire', label: '신규 입사자' },
-    { key: 'Resign',  label: '퇴사자 관리' },
+    { key: 'Lease',     label: '노트북 (Lease)' },
+    { key: 'iPad',      label: '아이패드 (iPad)' },
+    { key: 'Monitor',   label: '모니터 (Monitor)' },
+    { key: 'Printer',   label: '프린터 (Printer)' },
+    { key: 'Teams',     label: 'Teams 번호' },
+    { key: 'NewHire',   label: '신규 입사자' },
+    { key: 'Resign',    label: '퇴사자 관리' },
+    { key: 'Dashboard', label: '📋 자산 통합 상세 조회' },
 ]
 
 const Dashboard = () => {
@@ -167,10 +168,6 @@ const Dashboard = () => {
             <div className="dashboard-header-action flex justify-between items-center" style={{ marginBottom: '1rem' }}>
                 <h1>📊 통합 자산 현황 (대시보드)</h1>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <ExportButton
-                        onClick={() => exportToCSV(filteredData || [], `대시보드_통합현황_${todayStr()}`)}
-                        disabled={!filteredData || filteredData.length === 0}
-                    />
                     <button
                         className="btn btn-secondary"
                         onClick={() => {

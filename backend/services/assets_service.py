@@ -356,13 +356,14 @@ def return_asset(email: str, asset_type: Optional[str], name: Optional[str], bu:
 
 # 선택 가능한 시트 정의
 EXPORT_SHEET_MAP = {
-    "Lease":   "노트북",
-    "iPad":    "아이패드",
-    "Monitor": "모니터",
-    "Printer": "프린터",
-    "Teams":   "Teams번호",
-    "NewHire": "신규입사자",
-    "Resign":  "퇴사자",
+    "Lease":     "노트북",
+    "iPad":      "아이패드",
+    "Monitor":   "모니터",
+    "Printer":   "프린터",
+    "Teams":     "Teams번호",
+    "NewHire":   "신규입사자",
+    "Resign":    "퇴사자",
+    "Dashboard": "자산통합현황",
 }
 
 def export_sheets_to_excel(sheet_keys: List[str]) -> io.BytesIO:
@@ -387,7 +388,28 @@ def export_sheets_to_excel(sheet_keys: List[str]) -> io.BytesIO:
 
     for key in valid_keys:
         sheet_title = EXPORT_SHEET_MAP[key]
-        df = dfs.get(key, pd.DataFrame())
+
+        # ── Dashboard(자산 통합 상세 조회) 특별 처리 ──────────
+        if key == "Dashboard":
+            raw = get_dashboard_integrated_data()
+            df = pd.DataFrame(raw) if raw else pd.DataFrame()
+            # 컬럼명을 한국어 레이블로 변환
+            col_rename = {
+                "NAME":       "이름(영문)",
+                "이름":        "이름(한글)",
+                "email":      "이메일",
+                "BU":         "부서",
+                "ROLE":       "직책",
+                "Lease_List": "노트북 S/N",
+                "Ipad_List":  "아이패드 S/N",
+                "TeamsNum":   "Teams 번호",
+                "Printer":    "복합기",
+                "Monitor":    "모니터",
+                "퇴사정보":     "비고",
+            }
+            df = df.rename(columns={k: v for k, v in col_rename.items() if k in df.columns})
+        else:
+            df = dfs.get(key, pd.DataFrame())
 
         # 불필요한 내부 컬럼 제거
         df = df.copy()
