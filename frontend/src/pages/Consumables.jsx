@@ -163,6 +163,13 @@ const Consumables = () => {
                     🖨️ 위탁 토너 내역
                 </button>
                 <button
+                    className={`btn ${activeTab === 'purchase' ? 'btn-primary' : ''}`}
+                    onClick={() => setActiveTab('purchase')}
+                    style={{ backgroundColor: activeTab === 'purchase' ? '' : '#eff6ff', border: '1px solid #3b82f6', color: activeTab === 'purchase' ? '' : '#1d4ed8' }}
+                >
+                    🛒 구매 입고
+                </button>
+                <button
                     className={`btn ${activeTab === 'inventory' ? 'btn-primary' : ''}`}
                     onClick={() => setActiveTab('inventory')}
                     style={{ backgroundColor: activeTab === 'inventory' ? '' : '#f0fdf4', border: '1px solid #22c55e', color: activeTab === 'inventory' ? '' : '#15803d' }}
@@ -174,8 +181,9 @@ const Consumables = () => {
             {activeTab === 'estimate' && selectedMonth && <EstimateTab month={selectedMonth} />}
             {activeTab === 'outbound' && selectedMonth && <OutboundTab month={selectedMonth} isDev={isDev} />}
             {activeTab === 'create-month' && <CreateMonthTab />}
-            {activeTab === 'items' && <ItemsTab month={selectedMonth} />}
-            {activeTab === 'tracked' && <TrackedItemsTab month={selectedMonth} />}
+            {activeTab === 'items' && <ItemsTab month={selectedMonth} months={monthsData} />}
+            {activeTab === 'tracked' && <TrackedItemsTab month={selectedMonth} months={monthsData} />}
+            {activeTab === 'purchase' && <PurchaseTab months={monthsData} items={undefined} />}
             {activeTab === 'tonner-consignment' && <TonnerConsignmentTab month={selectedMonth} months={monthsData} />}
             {activeTab === 'inventory' && <InventoryTab />}
             
@@ -1295,17 +1303,28 @@ const isTonnerItem = (name, category) => {
         || c.includes('tonner') || c.includes('toner') || c.includes('토너')
 }
 
-const ItemsTab = ({ month }) => {
+const ItemsTab = ({ month, months }) => {
     const queryClient = useQueryClient()
     const [viewMode, setViewMode] = useState('general') // 'general' | 'toner-inventory'
+    const [dispatchMode, setDispatchMode] = useState('monthly') // 'monthly' | 'cumulative'
+    const [dispatchMonth, setDispatchMonth] = useState(month || '')
     const [showForm, setShowForm] = useState(false)
     const [formData, setFormData] = useState({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
     const [searchTerm, setSearchTerm] = useState('')
     const [filterCategory, setFilterCategory] = useState('')
+
+    // 부모에서 month가 바뀌면 dispatchMonth도 동기화
+    useEffect(() => {
+        if (month && !dispatchMonth) setDispatchMonth(month)
+    }, [month])
+
+    const itemsQueryKey = ['consumables-items', dispatchMode, dispatchMonth]
     const { data: items, isLoading } = useQuery({
-        queryKey: ['consumables-items'],
+        queryKey: itemsQueryKey,
         queryFn: async () => {
-            const { data } = await axios.get('/api/consumables/items')
+            const params = new URLSearchParams({ dispatch_mode: dispatchMode })
+            if (dispatchMode === 'monthly' && dispatchMonth) params.append('month', dispatchMonth)
+            const { data } = await axios.get(`/api/consumables/items?${params}`)
             return data
         }
     })
@@ -1314,7 +1333,7 @@ const ItemsTab = ({ month }) => {
     const mutation = useMutation({
         mutationFn: async (newData) => axios.post('/api/consumables/items', newData),
         onSuccess: () => {
-            queryClient.invalidateQueries(['consumables-items'])
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
             setShowForm(false)
             setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
             alert("품목이 저장되었습니다.")
@@ -1326,15 +1345,15 @@ const ItemsTab = ({ month }) => {
     const inlineMutation = useMutation({
         mutationFn: async (newData) => axios.post('/api/consumables/items', newData),
         onMutate: async (newData) => {
-            await queryClient.cancelQueries({ queryKey: ['consumables-items'] })
-            const prev = queryClient.getQueryData(['consumables-items'])
-            queryClient.setQueryData(['consumables-items'], (old) =>
+            await queryClient.cancelQueries({ queryKey: itemsQueryKey })
+            const prev = queryClient.getQueryData(itemsQueryKey)
+            queryClient.setQueryData(itemsQueryKey, (old) =>
                 old?.map(it => it.row_index === newData.row_index ? { ...it, ...newData } : it)
             )
             return { prev }
         },
         onError: (err, newData, context) => {
-            queryClient.setQueryData(['consumables-items'], context.prev)
+            queryClient.setQueryData(itemsQueryKey, context.prev)
             alert("수정 중 오류가 발생했습니다.")
         },
         onSettled: () => {
@@ -1389,10 +1408,9 @@ const ItemsTab = ({ month }) => {
     return (
         <div className="card">
             {/* 헤더 */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '8px' }}>
                 <h3 style={{ margin: 0 }}>
                     소모품 마스터 리스트 (단가표)
-                    <span style={{ fontSize: '0.85em', color: '#64748b', marginLeft: '10px' }}>- 전체 누적 재고 기준</span>
                 </h3>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <ExportButton
@@ -1403,6 +1421,44 @@ const ItemsTab = ({ month }) => {
                         {showForm ? '닫기' : '+ 품목 추가'}
                     </button>
                 </div>
+            </div>
+
+            {/* 출고 기준 토글 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem', padding: '10px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 'bold', fontSize: '0.88em', color: '#475569' }}>📊 출고 기준:</span>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                        onClick={() => setDispatchMode('monthly')}
+                        style={{
+                            padding: '4px 14px', borderRadius: '20px', border: '1px solid #4f46e5', cursor: 'pointer', fontSize: '0.85em', fontWeight: 'bold',
+                            background: dispatchMode === 'monthly' ? '#4f46e5' : 'white',
+                            color: dispatchMode === 'monthly' ? 'white' : '#4f46e5',
+                        }}
+                    >월별</button>
+                    <button
+                        onClick={() => setDispatchMode('cumulative')}
+                        style={{
+                            padding: '4px 14px', borderRadius: '20px', border: '1px solid #64748b', cursor: 'pointer', fontSize: '0.85em', fontWeight: 'bold',
+                            background: dispatchMode === 'cumulative' ? '#64748b' : 'white',
+                            color: dispatchMode === 'cumulative' ? 'white' : '#64748b',
+                        }}
+                    >누적</button>
+                </div>
+                {dispatchMode === 'monthly' && (
+                    <select
+                        value={dispatchMonth}
+                        onChange={e => setDispatchMonth(e.target.value)}
+                        style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #4f46e5', fontSize: '0.88em', color: '#4f46e5', fontWeight: 'bold' }}
+                    >
+                        <option value="">-- 월 선택 --</option>
+                        {(months || []).map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                )}
+                <span style={{ fontSize: '0.8em', color: '#94a3b8' }}>
+                    {dispatchMode === 'monthly'
+                        ? `${dispatchMonth || '월 선택 필요'} 출고량 기준`
+                        : '전체 기간 누적 출고량 기준'}
+                </span>
             </div>
 
             {/* 일반 소모품 / 토너 재고 관리 서브 탭 */}
@@ -1626,30 +1682,40 @@ const ItemHistoryModal = ({ itemName, onClose }) => {
     )
 }
 
-const TrackedItemsTab = ({ month }) => {
+const TrackedItemsTab = ({ month, months }) => {
     const queryClient = useQueryClient()
     const [selectedHistoryItem, setSelectedHistoryItem] = useState(null)
+    const [dispatchMode, setDispatchMode] = useState('monthly')
+    const [dispatchMonth, setDispatchMonth] = useState(month || '')
+
+    useEffect(() => {
+        if (month && !dispatchMonth) setDispatchMonth(month)
+    }, [month])
+
+    const trackedQueryKey = ['consumables-items', dispatchMode, dispatchMonth, 'tracked']
     const { data: items, isLoading } = useQuery({
-        queryKey: ['consumables-items'],
+        queryKey: trackedQueryKey,
         queryFn: async () => {
-            const { data } = await axios.get('/api/consumables/items')
+            const params = new URLSearchParams({ dispatch_mode: dispatchMode })
+            if (dispatchMode === 'monthly' && dispatchMonth) params.append('month', dispatchMonth)
+            const { data } = await axios.get(`/api/consumables/items?${params}`)
             return data
         }
     })
 
-    // TrackedItemsTab 인라인 수정용 mutation (Optimistic Update)
+    // 인라인 수정용 mutation
     const mutation = useMutation({
         mutationFn: async (newData) => axios.post('/api/consumables/items', newData),
         onMutate: async (newData) => {
-            await queryClient.cancelQueries({ queryKey: ['consumables-items'] })
-            const prev = queryClient.getQueryData(['consumables-items'])
-            queryClient.setQueryData(['consumables-items'], (old) =>
+            await queryClient.cancelQueries({ queryKey: trackedQueryKey })
+            const prev = queryClient.getQueryData(trackedQueryKey)
+            queryClient.setQueryData(trackedQueryKey, (old) =>
                 old?.map(it => it.row_index === newData.row_index ? { ...it, ...newData } : it)
             )
             return { prev }
         },
         onError: (err, newData, context) => {
-            queryClient.setQueryData(['consumables-items'], context.prev)
+            queryClient.setQueryData(trackedQueryKey, context.prev)
             alert("수정 중 오류가 발생했습니다.")
         },
         onSettled: () => {
@@ -1660,12 +1726,32 @@ const TrackedItemsTab = ({ month }) => {
     if (isLoading) return <LoadingModal isOpen={isLoading} message="재고 추적 데이터를 불러오는 중입니다..." />
 
     const trackedItems = items?.filter(item => item.is_tracked) || []
+    const dispatchLabel = dispatchMode === 'monthly' ? `${dispatchMonth || '월 선택 필요'} 출고량` : '누적 출고량'
 
     return (
         <div className="card">
-            <h3 style={{ marginBottom: '1rem' }}>📍 재고 추적 관리 현황 ({month || '전체'})</h3>
+            <h3 style={{ marginBottom: '0.75rem' }}>📍 재고 추적 관리 현황</h3>
+
+            {/* 출고 기준 토글 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem', padding: '10px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 'bold', fontSize: '0.88em', color: '#475569' }}>📊 출고 기준:</span>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => setDispatchMode('monthly')} style={{ padding: '4px 14px', borderRadius: '20px', border: '1px solid #4f46e5', cursor: 'pointer', fontSize: '0.85em', fontWeight: 'bold', background: dispatchMode === 'monthly' ? '#4f46e5' : 'white', color: dispatchMode === 'monthly' ? 'white' : '#4f46e5' }}>월별</button>
+                    <button onClick={() => setDispatchMode('cumulative')} style={{ padding: '4px 14px', borderRadius: '20px', border: '1px solid #64748b', cursor: 'pointer', fontSize: '0.85em', fontWeight: 'bold', background: dispatchMode === 'cumulative' ? '#64748b' : 'white', color: dispatchMode === 'cumulative' ? 'white' : '#64748b' }}>누적</button>
+                </div>
+                {dispatchMode === 'monthly' && (
+                    <select value={dispatchMonth} onChange={e => setDispatchMonth(e.target.value)} style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #4f46e5', fontSize: '0.88em', color: '#4f46e5', fontWeight: 'bold' }}>
+                        <option value="">-- 월 선택 --</option>
+                        {(months || []).map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                )}
+                <span style={{ fontSize: '0.8em', color: '#94a3b8' }}>
+                    {dispatchMode === 'monthly' ? `${dispatchMonth || '월 선택 필요'} 출고량 기준` : '전체 기간 누적 출고량 기준'}
+                </span>
+            </div>
+
             <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
-                💡 <strong>현재고 현황</strong> = <strong>총 재고 (구매+추가)</strong> - <strong>누적 출고 수량</strong><br/>
+                💡 <strong>현재고 현황</strong> = <strong>총 재고 (구매+추가)</strong> - <strong>{dispatchLabel}</strong><br/>
                 현재고가 5개 미만이면 🚨 <strong>부족</strong> 경고가 표시됩니다.
             </div>
 
@@ -1677,7 +1763,7 @@ const TrackedItemsTab = ({ month }) => {
                         <th style={{ textAlign: 'center', background: '#eff6ff', color: '#1d4ed8' }}>총 재고<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>구매+추가</small></th>
                         <th style={{ textAlign: 'center', background: '#f0fdf4', color: '#166534' }}>구매<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>업체 입고</small></th>
                         <th style={{ textAlign: 'center', background: '#fefce8', color: '#854d0e' }}>추가<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>개별 추가</small></th>
-                        <th style={{ textAlign: 'center', color: '#f59e0b' }}>출고량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
+                        <th style={{ textAlign: 'center', color: '#f59e0b' }}>출고량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMode === 'monthly' ? dispatchMonth || '선택월' : '누적'}</small></th>
                         <th style={{ textAlign: 'center', color: '#3b82f6', fontSize: '1.1em' }}>현재고 현황</th>
                         <th style={{ textAlign: 'center' }}>상태</th>
                         <th style={{ textAlign: 'center' }}>상세 내역</th>
@@ -2279,6 +2365,230 @@ const TonnerInventoryTab = () => {
             {!isLoading && items.length > 0 && (
                 <div style={{ marginTop: '0.75rem', fontSize: '0.8em', color: '#94a3b8', textAlign: 'right' }}>
                     💡 더블클릭하거나 ✏️ 버튼으로 수정 · 일반 출고 시 재고 자동 차감
+                </div>
+            )}
+        </div>
+    )
+}
+
+
+// ─── 구매 입고 내역 탭 ──────────────────────────────────────────
+const PurchaseTab = ({ months }) => {
+    const queryClient = useQueryClient()
+    const [showForm, setShowForm] = useState(false)
+    const [searchTerm, setSearchTerm] = useState('')
+    const [filterMonth, setFilterMonth] = useState('')
+    const today = new Date().toISOString().slice(0, 10)
+    const emptyForm = { date: today, item_name: '', quantity: '', vendor: '', staff: '', note: '' }
+    const [formData, setFormData] = useState(emptyForm)
+
+    // 품목 목록 (드롭다운용)
+    const { data: allItems } = useQuery({
+        queryKey: ['consumables-items', 'cumulative', null],
+        queryFn: async () => { const { data } = await axios.get('/api/consumables/items?dispatch_mode=cumulative'); return data },
+        staleTime: 60000,
+    })
+    const itemNames = useMemo(() => {
+        if (!allItems) return []
+        return [...new Set(allItems.map(it => it.item_name).filter(Boolean))].sort()
+    }, [allItems])
+
+    // 구매 입고 내역 조회
+    const { data: history, isLoading } = useQuery({
+        queryKey: ['purchase-history'],
+        queryFn: async () => { const { data } = await axios.get('/api/consumables/purchase-history'); return data },
+    })
+
+    // 등록 mutation
+    const addMutation = useMutation({
+        mutationFn: async (d) => axios.post('/api/consumables/purchase-history', d),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['purchase-history'] })
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            setFormData(emptyForm)
+            setShowForm(false)
+            alert("구매 입고가 등록되었습니다.")
+        },
+        onError: (e) => alert(`등록 실패: ${e?.response?.data?.detail || e.message}`)
+    })
+
+    // 삭제 mutation
+    const deleteMutation = useMutation({
+        mutationFn: async (row_index) => axios.delete(`/api/consumables/purchase-history/${row_index}`),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['purchase-history'] })
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            alert("삭제되었습니다.")
+        },
+        onError: () => alert("삭제 중 오류가 발생했습니다.")
+    })
+
+    const handleSubmit = (e) => {
+        e.preventDefault()
+        if (!formData.item_name || !formData.date || !formData.quantity) {
+            alert("날짜, 품목명, 수량은 필수입니다.")
+            return
+        }
+        addMutation.mutate({ ...formData, quantity: Number(formData.quantity) })
+    }
+
+    // 필터링
+    const filtered = useMemo(() => {
+        if (!history) return []
+        return history.filter(h => {
+            const matchSearch = !searchTerm || h.item_name.toLowerCase().includes(searchTerm.toLowerCase()) || (h.vendor || '').toLowerCase().includes(searchTerm.toLowerCase())
+            const matchMonth = !filterMonth || h.date.startsWith(filterMonth)
+            return matchSearch && matchMonth
+        })
+    }, [history, searchTerm, filterMonth])
+
+    // 월별 집계
+    const monthSummary = useMemo(() => {
+        if (!history) return {}
+        const agg = {}
+        history.forEach(h => {
+            const ym = h.date.slice(0, 7)
+            if (!agg[ym]) agg[ym] = { count: 0, total_qty: 0 }
+            agg[ym].count++
+            agg[ym].total_qty += Number(h.quantity) || 0
+        })
+        return agg
+    }, [history])
+
+    const totalQty = filtered.reduce((s, h) => s + (Number(h.quantity) || 0), 0)
+
+    return (
+        <div className="card">
+            {/* 헤더 */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
+                <h3 style={{ margin: 0 }}>🛒 구매 입고 내역</h3>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <ExportButton
+                        onClick={() => exportToCSV(filtered, `구매입고내역_${todayStr()}`)}
+                        disabled={!filtered.length}
+                    />
+                    <button className="btn btn-primary" onClick={() => setShowForm(v => !v)}>
+                        {showForm ? '닫기' : '+ 구매 등록'}
+                    </button>
+                </div>
+            </div>
+
+            {/* 등록 폼 */}
+            {showForm && (
+                <form onSubmit={handleSubmit} style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0', marginBottom: '1rem' }}>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '4px', fontWeight: 'bold', color: '#166534' }}>날짜 *</label>
+                        <input type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })}
+                            style={{ padding: '7px 10px', border: '1px solid #86efac', borderRadius: '6px' }} required />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '4px', fontWeight: 'bold', color: '#166534' }}>품목명 *</label>
+                        <select value={formData.item_name} onChange={e => setFormData({ ...formData, item_name: e.target.value })}
+                            style={{ padding: '7px 10px', border: '1px solid #86efac', borderRadius: '6px', minWidth: '180px' }} required>
+                            <option value="">-- 품목 선택 --</option>
+                            {itemNames.map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '4px', fontWeight: 'bold', color: '#166534' }}>수량 *</label>
+                        <input type="number" min="1" placeholder="0" value={formData.quantity} onChange={e => setFormData({ ...formData, quantity: e.target.value })}
+                            style={{ padding: '7px 10px', border: '1px solid #86efac', borderRadius: '6px', width: '80px' }} required />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '4px', color: '#555' }}>구매처</label>
+                        <input type="text" placeholder="예: 쿠팡, 영업팀" value={formData.vendor} onChange={e => setFormData({ ...formData, vendor: e.target.value })}
+                            style={{ padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', width: '130px' }} />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '4px', color: '#555' }}>담당자</label>
+                        <input type="text" placeholder="이름" value={formData.staff} onChange={e => setFormData({ ...formData, staff: e.target.value })}
+                            style={{ padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', width: '100px' }} />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '4px', color: '#555' }}>비고</label>
+                        <input type="text" placeholder="메모" value={formData.note} onChange={e => setFormData({ ...formData, note: e.target.value })}
+                            style={{ padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', width: '150px' }} />
+                    </div>
+                    <button type="submit" className="btn btn-primary" disabled={addMutation.isPending} style={{ alignSelf: 'flex-end' }}>
+                        {addMutation.isPending ? '저장 중...' : '등록'}
+                    </button>
+                </form>
+            )}
+
+            {/* 검색 & 필터 */}
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <input
+                    type="text" placeholder="🔍 품목명 또는 구매처 검색..."
+                    value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                    style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px', minWidth: '220px' }}
+                />
+                <input
+                    type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
+                    style={{ padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px' }}
+                    title="월별 필터"
+                />
+                {(searchTerm || filterMonth) && (
+                    <button className="btn btn-secondary" style={{ fontSize: '0.85em' }} onClick={() => { setSearchTerm(''); setFilterMonth('') }}>초기화</button>
+                )}
+                <span style={{ marginLeft: 'auto', fontSize: '0.88em', color: '#64748b', fontWeight: 'bold' }}>
+                    {filtered.length}건 · 총 {totalQty.toLocaleString()}개
+                </span>
+            </div>
+
+            {/* 월별 집계 요약 */}
+            {Object.keys(monthSummary).length > 0 && !filterMonth && !searchTerm && (
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                    {Object.entries(monthSummary).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 6).map(([ym, s]) => (
+                        <div key={ym} onClick={() => setFilterMonth(ym)} style={{ padding: '6px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '20px', cursor: 'pointer', fontSize: '0.83em', fontWeight: 'bold', color: '#1d4ed8' }}>
+                            {ym} · {s.count}건 / {s.total_qty}개
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* 테이블 */}
+            {isLoading ? <LoadingModal isOpen message="구매 입고 내역을 불러오는 중..." /> : (
+                <div className="table-wrapper">
+                    <table className="data-table">
+                        <thead>
+                            <tr>
+                                <th>날짜</th>
+                                <th style={{ fontWeight: 'bold' }}>품목명</th>
+                                <th style={{ textAlign: 'center', color: '#166534' }}>수량</th>
+                                <th>구매처</th>
+                                <th>담당자</th>
+                                <th>비고</th>
+                                <th style={{ textAlign: 'center' }}>삭제</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filtered.length > 0 ? filtered.map((h, idx) => (
+                                <tr key={idx}>
+                                    <td style={{ color: '#475569' }}>{h.date}</td>
+                                    <td style={{ fontWeight: 'bold' }}>{h.item_name}</td>
+                                    <td style={{ textAlign: 'center', color: '#166534', fontWeight: 'bold' }}>{Number(h.quantity).toLocaleString()}</td>
+                                    <td>{h.vendor || '-'}</td>
+                                    <td>{h.staff || '-'}</td>
+                                    <td style={{ color: '#64748b', fontSize: '0.9em' }}>{h.note || ''}</td>
+                                    <td style={{ textAlign: 'center' }}>
+                                        <button
+                                            className="btn btn-danger"
+                                            style={{ padding: '2px 8px', fontSize: '0.8em' }}
+                                            onClick={() => {
+                                                if (window.confirm(`"${h.item_name}" 입고 기록을 삭제하시겠습니까?`))
+                                                    deleteMutation.mutate(h.row_index)
+                                            }}
+                                            disabled={deleteMutation.isPending}
+                                        >🗑️</button>
+                                    </td>
+                                </tr>
+                            )) : (
+                                <tr><td colSpan="7" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
+                                    구매 입고 내역이 없습니다.
+                                </td></tr>
+                            )}
+                        </tbody>
+                    </table>
                 </div>
             )}
         </div>

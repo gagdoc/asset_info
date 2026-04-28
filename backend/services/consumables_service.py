@@ -165,11 +165,17 @@ def _get_available_months_impl():
     months.sort(key=sort_key, reverse=True)
     return months
 
-def get_items_list(month=None):
-    # 재고는 항상 전체 누적 기준이므로 캐시 키를 단일키로 통합
-    return _get_cached("items_all", lambda: _get_items_list_impl())
+def get_items_list(month=None, dispatch_mode="cumulative"):
+    """
+    품목 리스트를 반환합니다.
+    dispatch_mode:
+      'cumulative' - 전체 기간 누적 출고량 (기본값)
+      'monthly'    - 특정 월(month)의 출고량만 집계
+    """
+    cache_key = f"items_{dispatch_mode}_{month or 'all'}"
+    return _get_cached(cache_key, lambda: _get_items_list_impl(month=month, dispatch_mode=dispatch_mode))
 
-def _get_items_list_impl(month=None):
+def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
     # 품목 정보는 Master 시트에서 가져옴
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss_master: return []
@@ -178,7 +184,7 @@ def _get_items_list_impl(month=None):
         if not ws:
             logger.error("'품목리스트' 시트를 찾을 수 없습니다.")
             return []
-        # A부터 F열까지 (분류, 품목, 가격, 관리여부, 초기수량, 발주수량)
+        # A부터 F열까지 (분류, 품목, 가격, 관리여부, 구매수량, 추가수량)
         records = _retry_sheets_op(lambda: ws.get_values("A2:F"))
         items = []
         tracked_item_names = set()
@@ -213,20 +219,28 @@ def _get_items_list_impl(month=None):
                 "total_stock": total_stock,  # 총 재고 = 구매 + 추가 (읽기전용 계산값)
                 "current_stock": total_stock,  # 비추적: 총재고 그대로, 추적: 아래에서 갱신
                 "row_index": i + 2,
-                "dispatched_qty": 0 if is_tracked else None
+                "dispatched_qty": 0 if is_tracked else None,
+                "dispatch_mode": dispatch_mode,
+                "dispatch_month": month,
             })
 
         # 2단계: Tracking 대상이 있으면 출고 데이터를 합산
-        # 재고는 월 필터와 무관하게 항상 전체 월 누적 출고량으로 계산 (물류 입출고 방식)
         if tracked_item_names:
             _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
             if not ss_outbound: return items
-            months = [ws.title for ws in ss_outbound.worksheets() if "월" in ws.title and ws.title != "품목리스트"]
 
-            if months:
-                _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
-                if not ss_outbound: return items
-                ranges = [f"{m}!A2:D" for m in months]
+            all_ws = ss_outbound.worksheets()
+            all_month_titles = [w.title for w in all_ws if "월" in w.title and w.title != "품목리스트"]
+
+            if dispatch_mode == "monthly" and month:
+                # 월별 모드: 지정된 월의 시트만 읽음
+                target_months = [m for m in all_month_titles if m == month]
+            else:
+                # 누적 모드: 전체 월 합산
+                target_months = all_month_titles
+
+            if target_months:
+                ranges = [f"{m}!A2:E" for m in target_months]
                 batch_res = ss_outbound.values_batch_get(ranges)
                 dispatched_agg = {name: 0 for name in tracked_item_names}
 
@@ -235,6 +249,9 @@ def _get_items_list_impl(month=None):
                     for row in values:
                         if len(row) > 2:
                             i_name = str(row[1]).strip()
+                            outbound_type = str(row[4]).strip() if len(row) > 4 else "일반"
+                            if outbound_type == "위탁":
+                                continue
                             if i_name in tracked_item_names:
                                 try:
                                     qty = int(str(row[2]).strip().replace(',', ''))
@@ -253,6 +270,88 @@ def _get_items_list_impl(month=None):
     except Exception as e:
         print(f"Error reading items list: {e}")
         return []
+
+
+# ──────────────────────────────────────────────────────────────
+# 구매 입고 내역 (Purchase History)
+# 시트: CONSUMABLES_MASTER_SPREADSHEET_ID / "구매입고내역"
+# 컬럼: 날짜 | 품목명 | 수량 | 구매처 | 담당자 | 비고
+# ──────────────────────────────────────────────────────────────
+PURCHASE_SHEET = "구매입고내역"
+PURCHASE_HEADERS = ["날짜", "품목명", "수량", "구매처", "담당자", "비고"]
+
+def _ensure_purchase_sheet(ss_master):
+    """구매입고내역 시트가 없으면 자동 생성 후 반환"""
+    ws = _get_worksheet_safe(ss_master, PURCHASE_SHEET)
+    if not ws:
+        ws = ss_master.add_worksheet(title=PURCHASE_SHEET, rows=2000, cols=6)
+        ws.update("A1:F1", [PURCHASE_HEADERS])
+        logger.info(f"'{PURCHASE_SHEET}' 시트 자동 생성")
+    return ws
+
+def get_purchase_history():
+    return _get_cached("purchase_history", _get_purchase_history_impl)
+
+def _get_purchase_history_impl():
+    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss_master: return []
+    try:
+        ws = _ensure_purchase_sheet(ss_master)
+        records = _retry_sheets_op(lambda: ws.get_values("A2:F"))
+        history = []
+        for i, r in enumerate(records):
+            if not r or not str(r[0]).strip(): continue
+            history.append({
+                "row_index": i + 2,
+                "date": str(r[0]).strip() if len(r) > 0 else "",
+                "item_name": str(r[1]).strip() if len(r) > 1 else "",
+                "quantity": str(r[2]).strip() if len(r) > 2 else "",
+                "vendor": str(r[3]).strip() if len(r) > 3 else "",
+                "staff": str(r[4]).strip() if len(r) > 4 else "",
+                "note": str(r[5]).strip() if len(r) > 5 else "",
+            })
+        # 최신순 정렬
+        history.sort(key=lambda x: x["date"], reverse=True)
+        return history
+    except Exception as e:
+        logger.error(f"구매입고내역 조회 오류: {e}")
+        return []
+
+def add_purchase_record(data: dict) -> dict:
+    """구매 입고 내역 한 건 추가"""
+    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss_master:
+        return {"success": False, "error": "Google Sheets 연결 실패"}
+    try:
+        ws = _ensure_purchase_sheet(ss_master)
+        row = [
+            data.get("date", ""),
+            data.get("item_name", ""),
+            str(data.get("quantity", 0)),
+            data.get("vendor", ""),
+            data.get("staff", ""),
+            data.get("note", ""),
+        ]
+        ws.append_row(row, value_input_option="USER_ENTERED")
+        invalidate_cache("purchase_history")
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"구매입고내역 추가 오류: {e}")
+        return {"success": False, "error": str(e)}
+
+def delete_purchase_record(row_index: int) -> dict:
+    """구매 입고 내역 한 건 삭제 (행 번호 기준)"""
+    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss_master:
+        return {"success": False, "error": "Google Sheets 연결 실패"}
+    try:
+        ws = _ensure_purchase_sheet(ss_master)
+        ws.delete_rows(row_index)
+        invalidate_cache("purchase_history")
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"구매입고내역 삭제 오류: {e}")
+        return {"success": False, "error": str(e)}
 
 def get_outbound_history(month: str):
     return _get_cached(f"outbound_{month}", _get_outbound_history_impl, month)
