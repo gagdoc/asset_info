@@ -7,7 +7,7 @@ from backend.services.consumables_service import (
     create_month_sheet, invalidate_cache, get_tonner_consignment_history,
     get_toner_inventory, update_toner_item, delete_item,
     get_inbound_history, add_inbound, delete_inbound, update_inbound,
-    get_inventory_report,
+    get_inventory_report, sync_toner_to_items_list,
 )
 from typing import List, Dict, Any
 import io
@@ -329,6 +329,18 @@ def list_tonner_consignment(month: str = Query(None, description="조회할 월 
     """위탁 출고된 Tonner 내역 조회"""
     history = get_tonner_consignment_history(month=month)
     return history
+
+@router.post("/sync-toner")
+def sync_toner():
+    """토너 재고 시트 → 품목리스트 단방향 동기화.
+    토너 재고 시트에 있는 품목 중 품목리스트에 없는 항목을 자동으로 추가합니다."""
+    result = sync_toner_to_items_list()
+    return {
+        "success": True,
+        "added_count": len(result["added"]),
+        "added": result["added"],
+        "skipped_count": len(result["skipped"]),
+    }
 
 @router.get("/toner-inventory")
 def list_toner_inventory():

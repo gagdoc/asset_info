@@ -857,6 +857,63 @@ def _is_in_toner_sheet(item_name: str) -> bool:
         return any(kw in n for kw in ['tonner', 'toner', '토너'])
 
 
+def sync_toner_to_items_list() -> dict:
+    """
+    토너 전용 재고 시트에 있는 품목 중 마스터 '품목리스트' 시트에 없는 항목을
+    자동으로 추가합니다. (토너 재고 시트 → 품목리스트 단방향 동기화)
+
+    Returns:
+        {"added": [추가된 품목명 목록], "skipped": [이미 존재하는 품목명 목록]}
+    """
+    # 1. 토너 재고 시트에서 품목명 목록 수집
+    toner_inv = _get_toner_inventory_impl()
+    toner_items = toner_inv.get("items", [])
+    if not toner_items:
+        logger.info("토너 재고 시트에 품목이 없어 동기화를 건너뜁니다.")
+        return {"added": [], "skipped": []}
+
+    toner_names = [it.get("item_name", "").strip() for it in toner_items if it.get("item_name", "").strip()]
+
+    # 2. 품목리스트 시트에서 현재 등록된 Tonner 품목명 수집
+    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss_master:
+        logger.error("마스터 스프레드시트 접근 실패")
+        return {"added": [], "skipped": toner_names}
+
+    ws = _get_worksheet_safe(ss_master, "품목리스트")
+    if not ws:
+        logger.error("'품목리스트' 시트를 찾을 수 없습니다.")
+        return {"added": [], "skipped": toner_names}
+
+    existing_records = _retry_sheets_op(lambda: ws.get_values("A2:B"))
+    existing_names = set()
+    for r in existing_records:
+        if len(r) > 1 and str(r[1]).strip():
+            existing_names.add(str(r[1]).strip())
+
+    # 3. 누락된 토너 품목 추가
+    added = []
+    skipped = []
+    for name in toner_names:
+        if name in existing_names:
+            skipped.append(name)
+            continue
+        try:
+            # 품목리스트에 새 행 추가: [category, item_name, price, is_tracked, base_qty, order_qty]
+            ws.append_row(["Tonner", name, "0", "", "", ""], value_input_option="USER_ENTERED")
+            added.append(name)
+            existing_names.add(name)  # 중복 방지
+            logger.info(f"품목리스트에 토너 추가: '{name}'")
+        except Exception as e:
+            logger.error(f"토너 품목 추가 실패 ('{name}'): {e}")
+
+    # 4. 캐시 무효화 (품목리스트 변경됨)
+    if added:
+        invalidate_cache("items_all")
+
+    return {"added": added, "skipped": skipped}
+
+
 def sync_inventory_summary_sheet():
     """
     현재 등록된 모든 소모품의 마스터 정보와 '전체 기간' 기준 재고 현황을

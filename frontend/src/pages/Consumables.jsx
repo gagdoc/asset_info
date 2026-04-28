@@ -43,6 +43,25 @@ const Consumables = () => {
         }
     }, [monthsData, selectedMonth])
 
+    // 페이지 로딩 시 토너 재고 시트 → 품목리스트 자동 동기화 (1회)
+    useEffect(() => {
+        let cancelled = false
+        const runSync = async () => {
+            try {
+                const { data } = await axios.post('/api/consumables/sync-toner')
+                if (cancelled) return
+                if (data.added_count > 0) {
+                    queryClient.invalidateQueries(['consumables-items'])
+                    console.info(`토너 동기화: ${data.added_count}개 품목 추가 (${data.added.join(', ')})`)
+                }
+            } catch (e) {
+                console.warn('토너 동기화 실패:', e)
+            }
+        }
+        runSync()
+        return () => { cancelled = true }
+    }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
     return (
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
@@ -1040,7 +1059,6 @@ const ItemsTab = ({ month }) => {
     const [formData, setFormData] = useState({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
     const [searchTerm, setSearchTerm] = useState('')
     const [filterCategory, setFilterCategory] = useState('')
-
     const { data: items, isLoading } = useQuery({
         queryKey: ['consumables-items'],
         queryFn: async () => {
