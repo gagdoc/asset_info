@@ -8,10 +8,6 @@ from backend.services.consumables_service import (
     get_toner_inventory, update_toner_item, delete_item,
     get_inbound_history, add_inbound, delete_inbound, update_inbound,
     get_inventory_report, sync_toner_to_items_list,
-    get_month_close_status, confirm_month_snapshot, close_month,
-    reopen_month, get_monthly_toner_report, reset_month_snapshot,
-    get_purchase_history, add_purchase_record, delete_purchase_record,
-    IS_PRODUCTION,
 )
 from typing import List, Dict, Any
 import io
@@ -50,12 +46,9 @@ def add_new_month(data: Dict[str, str] = Body(...)):
     return {"status": "success"}
 
 @router.get("/items")
-def list_items(
-    month: str = Query(None, description="월 필터 (예: '2026년 4월')"),
-    dispatch_mode: str = Query("cumulative", description="출고 집계 모드: 'cumulative'(누적) | 'monthly'(월별)")
-):
-    """품목 리스트 반환. dispatch_mode=monthly 시 지정 month의 출고만 집계."""
-    items = get_items_list(month=month, dispatch_mode=dispatch_mode)
+def list_items(month: str = Query(None)):
+    """품목 리스트 반환 ('품목리스트' 시트) 및 선택적 월별 출고합산"""
+    items = get_items_list(month=month)
     return items
 
 @router.get("/items/{item_name}/outbound")
@@ -272,116 +265,15 @@ def download_estimate_excel(month: str = Query(..., description="다운로드할
 
 @router.post("/outbound")
 def create_outbound(data: Dict[str, Any] = Body(...)):
-    """월별 출고 데이터 추가 (마감된 월은 차단)"""
+    """월별 출고 데이터 추가"""
     month = data.get("month")
     if not month:
         raise HTTPException(status_code=400, detail="Month is required")
-
-    # 마감된 월에는 신규 출고 불가
-    status_info = get_month_close_status(month)
-    if status_info["status"] == "closed":
-        raise HTTPException(status_code=403, detail=f"'{month}'은(는) 마감된 월입니다. 출고 내역을 추가할 수 없습니다.")
-
+        
     success = add_outbound(month, data)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add outbound record")
     return {"status": "success"}
-
-
-# ── 월별 재고 마감 엔드포인트 ───────────────────────────────────
-
-@router.get("/month-status")
-def get_month_status(month: str = Query(..., description="조회할 월 (예: '2026년4월')")):
-    """월의 마감 상태 조회: open / confirmed / closed"""
-    return get_month_close_status(month)
-
-
-@router.post("/month-confirm")
-def confirm_snapshot(data: Dict[str, Any] = Body(...)):
-    """이달 재고 확정: 현재 토너 재고를 해당 월 시작 재고로 스냅샷 저장"""
-    month = data.get("month")
-    if not month:
-        raise HTTPException(status_code=400, detail="month는 필수입니다.")
-    result = confirm_month_snapshot(month)
-    if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error", "스냅샷 저장 실패"))
-    return result
-
-
-@router.post("/month-close")
-def close_month_endpoint(data: Dict[str, Any] = Body(...)):
-    """월 마감: 신규 출고 추가 차단 (수정은 허용)"""
-    month = data.get("month")
-    if not month:
-        raise HTTPException(status_code=400, detail="month는 필수입니다.")
-    result = close_month(month)
-    if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error", "마감 실패"))
-    return result
-
-
-@router.post("/month-reopen")
-def reopen_month_endpoint(data: Dict[str, Any] = Body(...)):
-    """마감 해제: closed → confirmed (수정을 위한 임시 해제)"""
-    month = data.get("month")
-    if not month:
-        raise HTTPException(status_code=400, detail="month는 필수입니다.")
-    result = reopen_month(month)
-    if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error", "마감 해제 실패"))
-    return result
-
-
-@router.get("/monthly-report")
-def get_monthly_report(month: str = Query(..., description="보고서 조회 월 (예: '2026년4월')")):
-    """월별 토너 재고 보고서: 시작재고 / 출고량 / 잔여재고"""
-    return get_monthly_toner_report(month)
-
-
-@router.get("/app-env")
-def get_app_env():
-    """현재 실행 환경 반환 (프론트엔드 개발 모드 배너용)"""
-    return {"is_production": IS_PRODUCTION, "app_env": "production" if IS_PRODUCTION else "development"}
-
-
-@router.post("/month-reset")
-def reset_month(data: Dict[str, Any] = Body(...)):
-    """[개발 전용] 월 스냅샷/마감 상태 초기화 → open으로 리셋. 프로덕션에서는 차단."""
-    month = data.get("month")
-    if not month:
-        raise HTTPException(status_code=400, detail="month는 필수입니다.")
-    result = reset_month_snapshot(month)
-    if not result.get("success"):
-        raise HTTPException(status_code=403, detail=result.get("error", "초기화 실패"))
-    return result
-
-# ── 구매 입고 내역 ─────────────────────────────────────────────
-
-@router.get("/purchase-history")
-def list_purchase_history():
-    """구매 입고 내역 전체 조회"""
-    return get_purchase_history()
-
-@router.post("/purchase-history")
-def create_purchase_record(data: Dict[str, Any] = Body(...)):
-    """구매 입고 내역 추가"""
-    if not data.get("item_name"):
-        raise HTTPException(status_code=400, detail="품목명은 필수입니다.")
-    if not data.get("date"):
-        raise HTTPException(status_code=400, detail="날짜는 필수입니다.")
-    result = add_purchase_record(data)
-    if not result.get("success"):
-        raise HTTPException(status_code=500, detail=result.get("error", "등록 실패"))
-    return {"status": "success"}
-
-@router.delete("/purchase-history/{row_index}")
-def remove_purchase_record(row_index: int = Path(..., description="삭제할 행 번호")):
-    """구매 입고 내역 삭제"""
-    result = delete_purchase_record(row_index)
-    if not result.get("success"):
-        raise HTTPException(status_code=500, detail=result.get("error", "삭제 실패"))
-    return {"status": "success"}
-
 
 @router.post("/items")
 def create_or_update_item(data: Dict[str, Any] = Body(...)):

@@ -72,18 +72,6 @@ const Consumables = () => {
 
     return (
         <div>
-            {/* 개발 모드 배너 */}
-            {isDev && (
-                <div style={{
-                    background: '#fff7ed', border: '2px solid #f97316', borderRadius: '8px',
-                    padding: '8px 16px', marginBottom: '1rem',
-                    display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.88rem'
-                }}>
-                    <span style={{ fontSize: '1.1em' }}>🧪</span>
-                    <span style={{ fontWeight: 'bold', color: '#c2410c' }}>개발 모드 (Development)</span>
-                    <span style={{ color: '#92400e' }}>— 재고 확정·마감 버튼은 실제 데이터에 저장되지 않습니다. 프로덕션 배포 후 정식 사용하세요.</span>
-                </div>
-            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                     <h1 style={{ margin: 0 }}>📦 소모품 월별 관리 및 견적서</h1>

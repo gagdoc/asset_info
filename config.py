@@ -4,18 +4,73 @@
 
 import os
 
+# ── 실행 환경 ────────────────────────────────────────────────────
+# APP_ENV=development  → 테스트 시트 사용, 쓰기 안전 모드
+# APP_ENV=production   → 실제 구글 시트에 반영
+APP_ENV = os.environ.get("APP_ENV", "development")  # 기본값: 개발 모드
+IS_PRODUCTION = APP_ENV == "production"
+
+# ── .env.development 자동 로드 (개발 모드에서만) ─────────────────
+# python-dotenv가 있으면 .env.development 파일에서 환경 변수를 불러옴
+if not IS_PRODUCTION:
+    try:
+        from dotenv import load_dotenv
+        _env_file = os.path.join(os.path.dirname(__file__), ".env.development")
+        if os.path.exists(_env_file):
+            load_dotenv(_env_file, override=False)  # 이미 설정된 env var는 유지
+    except ImportError:
+        pass  # python-dotenv 미설치 시 무시
+
 # 데이터베이스 설정
 DB_FILE = "asset_database.db"
 CONSUMABLES_DB_FILE = "consumables.db"
 
-# ── Google Sheets 설정 ──────────────────────────────
-# Google Sheets Spreadsheet ID (URL에서 /d/ 뒤 부분)
-SPREADSHEET_ID = "1__8NXfK6ruhlQtnomhIi_sjdkHgLD0C2N1Mw4P3GW7g"
+# ══════════════════════════════════════════════════════
+# Google Sheets ID 설정
+# 운영(PROD) ID는 코드에 직접 기재
+# 테스트(TEST) ID는 .env.development 파일에 기재
+# ══════════════════════════════════════════════════════
 
-# 소모품 관리 시트 (마스터 리스트 & 재고 요약)
-CONSUMABLES_MASTER_SPREADSHEET_ID = "1A4RvrDn_I3wev6UaqEGBRoADYRYwtQty0TPo-x6ehtw"
-# 소모품 출고 내역 시트 (월별 탭)
-CONSUMABLES_OUTBOUND_SPREADSHEET_ID = "1MgYUINr7T1t80MUlv-RRaL7GkK7NSNxuKmAzvqNGe-M"
+# ── 운영(PROD) 시트 ID ──────────────────────────────
+_PROD_SPREADSHEET_ID                  = "1__8NXfK6ruhlQtnomhIi_sjdkHgLD0C2N1Mw4P3GW7g"
+_PROD_CONSUMABLES_MASTER_ID           = "1A4RvrDn_I3wev6UaqEGBRoADYRYwtQty0TPo-x6ehtw"
+_PROD_CONSUMABLES_OUTBOUND_ID         = "1MgYUINr7T1t80MUlv-RRaL7GkK7NSNxuKmAzvqNGe-M"
+_PROD_TONER_ID                        = "19AMXwNtrF8BcA_BqXpBcy-vWKX8Wu2IkbFTYNPZORc0"
+
+# ── 테스트(TEST) 시트 ID (.env.development 또는 환경 변수에서 로드) ──
+# create_test_sheets.py를 실행하면 출력된 ID를 .env.development에 채워넣으세요.
+_TEST_SPREADSHEET_ID                  = os.environ.get("TEST_SPREADSHEET_ID", "")
+_TEST_CONSUMABLES_MASTER_ID           = os.environ.get("TEST_CONSUMABLES_MASTER_ID", "")
+_TEST_CONSUMABLES_OUTBOUND_ID         = os.environ.get("TEST_CONSUMABLES_OUTBOUND_ID", "")
+_TEST_TONER_ID                        = os.environ.get("TEST_TONER_ID", "")
+
+# ── 활성 시트 ID (환경에 따라 자동 선택) ────────────────────────
+SPREADSHEET_ID                  = _PROD_SPREADSHEET_ID          if IS_PRODUCTION else (_TEST_SPREADSHEET_ID or _PROD_SPREADSHEET_ID)
+CONSUMABLES_MASTER_SPREADSHEET_ID     = _PROD_CONSUMABLES_MASTER_ID    if IS_PRODUCTION else (_TEST_CONSUMABLES_MASTER_ID or _PROD_CONSUMABLES_MASTER_ID)
+CONSUMABLES_OUTBOUND_SPREADSHEET_ID   = _PROD_CONSUMABLES_OUTBOUND_ID  if IS_PRODUCTION else (_TEST_CONSUMABLES_OUTBOUND_ID or _PROD_CONSUMABLES_OUTBOUND_ID)
+TONER_SPREADSHEET_ID                  = _PROD_TONER_ID                 if IS_PRODUCTION else (_TEST_TONER_ID or _PROD_TONER_ID)
+
+# TEST ID 설정 여부 (프론트엔드 상태 표시용)
+TEST_SHEETS_CONFIGURED = bool(
+    _TEST_SPREADSHEET_ID and
+    _TEST_CONSUMABLES_MASTER_ID and
+    _TEST_CONSUMABLES_OUTBOUND_ID and
+    _TEST_TONER_ID
+)
+
+# 운영/테스트 ID를 명시적으로 노출 (sync 스크립트에서 사용)
+PROD_SHEET_IDS = {
+    "assets":               _PROD_SPREADSHEET_ID,
+    "consumables_master":   _PROD_CONSUMABLES_MASTER_ID,
+    "consumables_outbound": _PROD_CONSUMABLES_OUTBOUND_ID,
+    "toner":                _PROD_TONER_ID,
+}
+TEST_SHEET_IDS = {
+    "assets":               _TEST_SPREADSHEET_ID,
+    "consumables_master":   _TEST_CONSUMABLES_MASTER_ID,
+    "consumables_outbound": _TEST_CONSUMABLES_OUTBOUND_ID,
+    "toner":                _TEST_TONER_ID,
+}
 
 # Service Account JSON 키 파일 (로컬용)
 GOOGLE_CREDENTIALS_FILE = "data/st-asset-project-8000c6bb9905.json"
@@ -36,7 +91,6 @@ SHEET_MAPPING = {
 }
 
 # 자산 테이블별 주요 컬럼 매핑
-# (Excel 파일에서 변하기 쉬운 컬럼명들을 여러 옵션으로 정의)
 COLUMN_MAPPING = {
     "Lease": {
         "sn_options": ["S/N", "일련번호", "Serial"],
@@ -103,11 +157,10 @@ DEFAULT_SCHEMAS = {
 PAGE_TITLE = "사내 자산 & 소모품 관리 시스템"
 LAYOUT = "wide"
 
-# 토너 전용 재고 시트 (소모품 마스터와 별도 관리)
-TONER_SPREADSHEET_ID = "19AMXwNtrF8BcA_BqXpBcy-vWKX8Wu2IkbFTYNPZORc0"
-TONER_SHEET_GID = 394456635  # gid 파라미터 (구글 시트 특정 탭)
+# 토너 시트 특정 탭 GID
+TONER_SHEET_GID = 394456635
 
-# 소모품 필수 품목 재고 임계값 (fixed_qty)
+# 소모품 필수 품목 재고 임계값
 CONSUMABLES_DEFAULT_THRESHOLD = 5
 
 # 로깅 설정
