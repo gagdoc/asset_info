@@ -74,7 +74,26 @@ def _run_with_timeout(fn, timeout=SHEETS_TIMEOUT):
 # ── 클라이언트 초기화 ─────────────────────────────────────
 
 def _get_client():
-    """gspread 클라이언트 + 스프레드시트 반환 (내부용, 타임아웃 없음)"""
+    """
+    gspread 클라이언트 + 스프레드시트 반환 (내부용, 타임아웃 없음)
+    - 개발 환경: data/local/{SPREADSHEET_ID}.json 로컬 파일 사용
+    - 운영 환경: 실제 Google Sheets API 사용
+    """
+    # ── 개발 모드: 로컬 JSON 파일 사용 ─────────────────────
+    try:
+        from config import IS_PRODUCTION as _IS_PROD
+    except ImportError:
+        _IS_PROD = os.environ.get("APP_ENV", "development") == "production"
+
+    if not _IS_PROD and SPREADSHEET_ID:
+        try:
+            from backend.services.local_sheets import get_local_client
+            client = get_local_client()
+            return client, client.open_by_key(SPREADSHEET_ID)
+        except Exception as e:
+            logger.warning(f"로컬 클라이언트 초기화 실패, Google Sheets로 전환: {e}")
+
+    # ── 운영 모드: 실제 Google Sheets ───────────────────────
     if not GSPREAD_AVAILABLE:
         return None, None
 

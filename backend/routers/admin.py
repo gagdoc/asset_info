@@ -12,7 +12,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from config import (
     IS_PRODUCTION, APP_ENV,
-    PROD_SHEET_IDS, TEST_SHEET_IDS, TEST_SHEETS_CONFIGURED,
     SPREADSHEET_ID, CONSUMABLES_MASTER_SPREADSHEET_ID,
     CONSUMABLES_OUTBOUND_SPREADSHEET_ID, TONER_SPREADSHEET_ID,
 )
@@ -35,59 +34,57 @@ def _require_dev():
 @router.get("/env-status")
 def get_env_status():
     """
-    현재 실행 환경 및 연결된 시트 정보를 반환합니다.
+    현재 실행 환경 및 로컬 데이터 상태를 반환합니다.
     프론트엔드 개발 배너에서 사용합니다.
     """
+    local_data_ok = False
+    if not IS_PRODUCTION:
+        try:
+            from backend.services.local_sheets import local_data_exists
+            local_data_ok = local_data_exists()
+        except Exception:
+            pass
+
     return {
         "app_env": APP_ENV,
         "is_production": IS_PRODUCTION,
-        "test_sheets_configured": TEST_SHEETS_CONFIGURED,
+        "local_data_exists": local_data_ok,
         "active_sheet_ids": {
             "assets":               SPREADSHEET_ID,
             "consumables_master":   CONSUMABLES_MASTER_SPREADSHEET_ID,
             "consumables_outbound": CONSUMABLES_OUTBOUND_SPREADSHEET_ID,
             "toner":                TONER_SPREADSHEET_ID,
         },
-        "prod_sheet_ids": PROD_SHEET_IDS if not IS_PRODUCTION else {},
-        "test_sheet_ids": TEST_SHEET_IDS if not IS_PRODUCTION else {},
     }
 
 
-@router.post("/sync-prod-to-test")
-def sync_prod_to_test():
+@router.post("/sync-prod-to-local")
+def sync_prod_to_local():
     """
-    운영 시트의 모든 데이터를 테스트 시트로 복사합니다.
+    운영 Google Sheets 데이터를 data/local/*.json 으로 다운로드합니다.
+    로컬 서버는 이 파일을 읽고 씁니다 (Google API 불필요).
     개발 환경에서만 사용 가능합니다.
     """
     _require_dev()
 
-    if not TEST_SHEETS_CONFIGURED:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "테스트 시트 ID가 설정되지 않았습니다. "
-                "먼저 scripts/create_test_sheets.py 를 실행하고 "
-                ".env.development 에 ID를 설정하세요."
-            )
-        )
-
     logs = []
 
     try:
-        # sync 함수를 import (실행 시점 import로 순환 참조 방지)
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-        from scripts.sync_prod_to_test import run_sync
+        from scripts.download_to_local import run_download
 
         def log_fn(msg):
             logs.append(msg)
-            print(msg)  # 서버 로그에도 출력
+            print(msg)
 
-        result = run_sync(log_fn=log_fn)
+        result = run_download(log_fn=log_fn)
 
-        # 캐시 전체 무효화 (동기화 후 최신 데이터 반영)
+        # 캐시 전체 무효화 + 로컬 클라이언트 리셋
         try:
             from backend.services.consumables_service import invalidate_cache
             invalidate_cache()
+            from backend.services import local_sheets as _ls
+            _ls._client = None
         except Exception:
             pass
 
@@ -97,4 +94,4 @@ def sync_prod_to_test():
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"동기화 중 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"다운로드 중 오류: {str(e)}")

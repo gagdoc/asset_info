@@ -79,21 +79,33 @@ def _get_worksheet_safe(ss, sheet_name: str):
 def _get_consumables_client(spreadsheet_id: str = None):
     """
     구글 시트 클라이언트를 반환합니다.
+    - 개발 환경: data/local/{id}.json 로컬 파일 사용 (Google API 불필요)
+    - 운영 환경: 실제 Google Sheets API 사용
     spreadsheet_id가 전달되지 않으면 마스터 시트를 기본으로 반환합니다.
     """
     if not spreadsheet_id:
         spreadsheet_id = CONSUMABLES_MASTER_SPREADSHEET_ID
 
+    # ── 개발 모드: 로컬 JSON 파일 사용 ─────────────────────
+    if not IS_PRODUCTION:
+        try:
+            from backend.services.local_sheets import get_local_client
+            client = get_local_client()
+            return client, client.open_by_key(spreadsheet_id)
+        except Exception as e:
+            logger.warning(f"로컬 클라이언트 초기화 실패, Google Sheets로 전환: {e}")
+
+    # ── 운영 모드: 실제 Google Sheets ───────────────────────
     creds = None
     if GOOGLE_CREDENTIALS_JSON:
-        import json
-        creds = Credentials.from_service_account_info(json.loads(GOOGLE_CREDENTIALS_JSON), scopes=SCOPES)
+        import json as _json
+        creds = Credentials.from_service_account_info(_json.loads(GOOGLE_CREDENTIALS_JSON), scopes=SCOPES)
     elif os.path.exists(GOOGLE_CREDENTIALS_FILE):
         creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS_FILE, scopes=SCOPES)
     else:
         print("⚠️  소모품 시트 인증 정보 없음")
         return None, None
-        
+
     try:
         client = gspread.authorize(creds)
         spreadsheet = client.open_by_key(spreadsheet_id)
