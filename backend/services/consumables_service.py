@@ -1374,7 +1374,10 @@ def _get_month_close_status_impl(month: str) -> dict:
     try:
         _, close_ws = _ensure_snapshot_sheets(ss_master)
         rows = _retry_sheets_op(lambda: close_ws.get_all_values())
-        for row in rows[1:]:  # 헤더 제외
+        # 첫 번째 행이 헤더인지 판별 (헤더 없이 데이터만 있는 운영 시트 대응)
+        is_header = bool(rows and rows[0] and rows[0][0].strip().lower() in ("월", "month"))
+        data_rows = rows[1:] if is_header else rows
+        for row in data_rows:
             if len(row) > 0 and row[0].strip() == month:
                 return {
                     "month": month,
@@ -1445,7 +1448,10 @@ def confirm_month_snapshot(month: str) -> dict:
     # 기존 스냅샷 행 삭제 (재확정 시 덮어쓰기)
     try:
         all_snap = snap_ws.get_all_values()
-        rows_to_delete = [i + 1 for i, r in enumerate(all_snap) if i > 0 and len(r) > 0 and r[0].strip() == month]
+        # 첫 번째 행이 헤더인지 판별 — 헤더면 i=0 건너뜀, 데이터면 i=0부터 삭제
+        is_header = bool(all_snap and all_snap[0] and all_snap[0][0].strip().lower() in ("월", "month"))
+        start_idx = 1 if is_header else 0
+        rows_to_delete = [i + 1 for i, r in enumerate(all_snap) if i >= start_idx and len(r) > 0 and r[0].strip() == month]
         for row_idx in sorted(rows_to_delete, reverse=True):
             snap_ws.delete_rows(row_idx)
     except Exception as e:
@@ -1525,16 +1531,32 @@ def _get_monthly_toner_report_impl(month: str) -> dict:
     snap_ws, _ = _ensure_snapshot_sheets(ss_master)
 
     # 1. 스냅샷 로드 — 분류별로 분리
-    # 컬럼 형식: 월 | 분류 | 품목명 | 시작재고 | 스냅샷일시 | 이월여부
-    # 구형(분류 컬럼 없음): 월 | 품목명 | 시작재고 | ... → 분류="토너"로 간주
+    # 컬럼 형식(신형): 월 | 분류(일반/토너) | 품목명 | 시작재고 | 스냅샷일시 | 이월여부
+    # 구형(분류 컬럼 없음): 월 | 품목명 | 시작재고 | ...
+    # 헤더 행이 없을 수도 있음 (운영 시트에 헤더 없이 데이터만 저장된 경우)
     general_start = {}  # {품목명: 시작재고}
     toner_start   = {}
     try:
         all_snap = snap_ws.get_all_values()
-        headers = all_snap[0] if all_snap else []
-        has_type_col = len(headers) >= 2 and headers[1].strip() in ("분류", "type")
 
-        for row in all_snap[1:]:
+        if all_snap:
+            first_row = all_snap[0]
+            first_col0 = first_row[0].strip() if first_row else ""
+            # 첫 번째 행이 헤더인지 판별: "월" 또는 "month" → 헤더, 그 외 → 데이터
+            is_header_row = first_col0.lower() in ("월", "month")
+            if is_header_row:
+                has_type_col = len(first_row) >= 2 and first_row[1].strip() in ("분류", "type")
+                data_rows = all_snap[1:]
+            else:
+                # 헤더 없음 — col[1]이 "일반"/"토너"이면 신형 형식으로 간주
+                sample = [r for r in all_snap if len(r) >= 2 and r[0].strip()]
+                has_type_col = bool(sample and sample[0][1].strip() in ("일반", "토너"))
+                data_rows = all_snap
+        else:
+            has_type_col = True
+            data_rows = []
+
+        for row in data_rows:
             if not row or row[0].strip() != month:
                 continue
             if has_type_col:
@@ -1628,7 +1650,9 @@ def reset_month_snapshot(month: str) -> dict:
 
     try:
         all_snap = snap_ws.get_all_values()
-        rows_to_delete = [i + 1 for i, r in enumerate(all_snap) if i > 0 and len(r) > 0 and r[0].strip() == month]
+        is_header = bool(all_snap and all_snap[0] and all_snap[0][0].strip().lower() in ("월", "month"))
+        start_idx = 1 if is_header else 0
+        rows_to_delete = [i + 1 for i, r in enumerate(all_snap) if i >= start_idx and len(r) > 0 and r[0].strip() == month]
         for row_idx in sorted(rows_to_delete, reverse=True):
             snap_ws.delete_rows(row_idx)
             deleted_rows += 1
@@ -1637,7 +1661,10 @@ def reset_month_snapshot(month: str) -> dict:
 
     try:
         all_close = close_ws.get_all_values()
-        for i, row in enumerate(all_close[1:], start=2):
+        is_hdr = bool(all_close and all_close[0] and all_close[0][0].strip().lower() in ("월", "month"))
+        close_enum_start = 2 if is_hdr else 1
+        close_data = all_close[1:] if is_hdr else all_close
+        for i, row in enumerate(close_data, start=close_enum_start):
             if len(row) > 0 and row[0].strip() == month:
                 close_ws.delete_rows(i)
                 break
@@ -1658,7 +1685,9 @@ def _get_previous_month_remaining_by_type(month: str) -> dict:
     try:
         _, close_ws = _ensure_snapshot_sheets(ss_master)
         all_close = close_ws.get_all_values()
-        closed_months = [r[0].strip() for r in all_close[1:] if len(r) > 1 and r[1].strip() == "closed"]
+        is_header = bool(all_close and all_close[0] and all_close[0][0].strip().lower() in ("월", "month"))
+        close_data = all_close[1:] if is_header else all_close
+        closed_months = [r[0].strip() for r in close_data if len(r) > 1 and r[1].strip() == "closed"]
         if not closed_months:
             return {"일반": {}, "토너": {}}
 
@@ -1699,7 +1728,10 @@ def _upsert_close_status(close_ws, month: str, status: str, confirmed_at: str, c
     """월별마감 시트에서 해당 월 행을 찾아 업데이트하거나 새 행 추가."""
     try:
         all_rows = close_ws.get_all_values()
-        for i, row in enumerate(all_rows[1:], start=2):
+        is_header = bool(all_rows and all_rows[0] and all_rows[0][0].strip().lower() in ("월", "month"))
+        enum_start = 2 if is_header else 1
+        data_rows = all_rows[1:] if is_header else all_rows
+        for i, row in enumerate(data_rows, start=enum_start):
             if len(row) > 0 and row[0].strip() == month:
                 close_ws.update(f"A{i}:D{i}", [[month, status, confirmed_at, closed_at]])
                 return
