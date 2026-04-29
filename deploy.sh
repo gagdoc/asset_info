@@ -44,7 +44,7 @@ for i in $(seq 1 $MAX_RETRIES); do
     --platform managed \
     --region "$REGION" \
     --allow-unauthenticated \
-    --set-env-vars="^|^GOOGLE_CREDENTIALS_JSON=$JSON_CREDS"; then
+    --set-env-vars="^|^APP_ENV=production|GOOGLE_CREDENTIALS_JSON=$JSON_CREDS"; then
     SUCCESS=true
     break
   else
