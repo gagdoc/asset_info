@@ -2238,14 +2238,16 @@ const TonnerInventoryTab = () => {
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                     <ExportButton
-                        onClick={() => {
+                        onClick={async () => {
+                            // displayHeaders 기준으로 모든 컬럼 내보내기
+                            const expHeaders = ['품목명', '현재재고', ...displayHeaders.filter(h => h !== nameCol && h !== stockCol)]
                             const rows = filtered.map(it => {
-                                const { row_index, headers: _h, name_col_idx: _n, stock_col_idx: _s, current_stock: _c, compatible_models: _m, item_name: _i, ...rest } = it
-                                return rest
+                                const row = { '품목명': it.item_name, '현재재고': it.current_stock ?? 0 }
+                                displayHeaders.filter(h => h !== nameCol && h !== stockCol).forEach(h => { row[h] = it[h] ?? '' })
+                                return row
                             })
-                            await exportToXLSX({ filename: `토너재고_${todayStr()}`,
-                                columns: Object.keys(rows[0] || {}).map(k => ({ key: k, label: k })),
-                                rows })
+                            const columns = expHeaders.map(h => ({ key: h, label: h }))
+                            await exportToXLSX({ filename: `토너재고_${todayStr()}`, columns, rows })
                         }}
                         disabled={filtered.length === 0}
                     />
