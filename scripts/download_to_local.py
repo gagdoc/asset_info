@@ -64,7 +64,8 @@ def _auth():
 
 
 def _download_spreadsheet(client, sheet_id: str, label: str, log_fn) -> dict:
-    """지정된 스프레드시트의 모든 탭 데이터를 dict로 반환"""
+    """지정된 스프레드시트의 모든 탭 데이터를 dict로 반환.
+    '__gid_map__' 키에 {탭명: GID} 매핑을 함께 저장합니다."""
     log_fn(f"\n📥 [{label}] 다운로드 중...")
     try:
         ss = client.open_by_key(sheet_id)
@@ -73,6 +74,7 @@ def _download_spreadsheet(client, sheet_id: str, label: str, log_fn) -> dict:
         return {}
 
     data = {}
+    gid_map = {}
     for ws in ss.worksheets():
         title = ws.title
         if title in EXCLUDE_TABS:
@@ -81,11 +83,14 @@ def _download_spreadsheet(client, sheet_id: str, label: str, log_fn) -> dict:
         try:
             rows = ws.get_all_values()
             data[title] = rows
-            log_fn(f"   ✅ [{title}] {len(rows)}행")
+            gid_map[str(ws.id)] = title   # GID → 탭명 매핑 저장
+            log_fn(f"   ✅ [{title}] {len(rows)}행 (GID={ws.id})")
         except Exception as e:
             log_fn(f"   ⚠️  [{title}] 오류: {e}")
         time.sleep(0.3)  # API 레이트 리밋 방지
 
+    # 메타데이터로 GID 맵 저장 (탭 데이터와 구분하기 위해 __ 접두사)
+    data["__gid_map__"] = gid_map
     return data
 
 

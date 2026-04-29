@@ -36,17 +36,29 @@ def _col_to_idx(col_str: str) -> int:
 def _parse_range(range_str: str):
     """
     'A1:Z100' → (row_start, col_start, row_end, col_end)  ← 0-based index
+    'A2:F'    → (1, 0, None, 5)  ← 끝 행 없음 = 전체
     'A1'      → (0, 0, 0, 0)
     """
-    m = re.match(r"([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?", range_str.strip().upper())
+    s = range_str.strip().upper()
+
+    # 'A2:F' 형태 — 끝 열만 있고 끝 행 번호 없음
+    m_open = re.match(r"([A-Z]+)(\d+):([A-Z]+)$", s)
+    if m_open:
+        row_start = int(m_open.group(2)) - 1
+        col_start = _col_to_idx(m_open.group(1))
+        col_end   = _col_to_idx(m_open.group(3))
+        return row_start, col_start, None, col_end
+
+    # 'A1:Z100' 또는 'A1' 형태
+    m = re.match(r"([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?", s)
     if not m:
         return 0, 0, None, None
     c1, r1 = m.group(1), int(m.group(2))
     c2, r2 = m.group(3), m.group(4)
     row_start = r1 - 1
     col_start = _col_to_idx(c1)
-    row_end = int(r2) - 1 if r2 else row_start
-    col_end = _col_to_idx(c2) if c2 else col_start
+    row_end   = int(r2) - 1 if r2 else row_start
+    col_end   = _col_to_idx(c2) if c2 else col_start
     return row_start, col_start, row_end, col_end
 
 
@@ -81,6 +93,38 @@ class LocalWorksheet:
     def get_all_values(self):
         return [list(r) for r in self._data()]
 
+    def get_values(self, range_str: str = None):
+        """
+        gspread get_values() 호환.
+        range_str 예: "A2:F"  → row 2부터, col A~F만 반환
+        range_str 없으면 get_all_values()와 동일.
+        """
+        if not range_str:
+            return self.get_all_values()
+
+        row_start, col_start, row_end, col_end = _parse_range(range_str)
+        data = self._data()
+
+        # 시작 행 슬라이스
+        data = data[row_start:]
+
+        # 끝 행 슬라이스 (있을 경우)
+        if row_end is not None:
+            data = data[: row_end - row_start + 1]
+
+        # 열 슬라이스
+        if col_end is not None:
+            result = []
+            for row in data:
+                sliced = row[col_start: col_end + 1]
+                # 오른쪽 빈 셀 패딩
+                while len(sliced) < (col_end - col_start + 1):
+                    sliced.append("")
+                result.append(sliced)
+            return result
+
+        return [list(r[col_start:]) for r in data]
+
     def get_all_records(self):
         d = self._data()
         if len(d) < 2:
@@ -96,6 +140,22 @@ class LocalWorksheet:
     def col_values(self, col: int):
         """col 는 1-based"""
         return [r[col - 1] if len(r) >= col else "" for r in self._data()]
+
+    def cell(self, row: int, col: int):
+        """row, col 모두 1-based. .value 속성을 가진 객체 반환."""
+        data = self._data()
+        if row <= len(data) and col <= len(data[row - 1]):
+            val = data[row - 1][col - 1]
+        else:
+            val = ""
+
+        class _Cell:
+            def __init__(self, v):
+                self.value = v
+            def __repr__(self):
+                return f"Cell({self.value!r})"
+
+        return _Cell(val)
 
     # ── 쓰기 ──────────────────────────────────────────────
 
@@ -173,7 +233,7 @@ class LocalSpreadsheet:
         return LocalWorksheet(self, title)
 
     def worksheets(self):
-        return [LocalWorksheet(self, t) for t in self._data]
+        return [LocalWorksheet(self, t) for t in self._data if not t.startswith("__")]
 
     def add_worksheet(self, title: str, rows=None, cols=None) -> LocalWorksheet:
         if title not in self._data:
@@ -182,10 +242,46 @@ class LocalSpreadsheet:
         return LocalWorksheet(self, title)
 
     def get_worksheet(self, index: int):
-        titles = list(self._data.keys())
+        titles = [t for t in self._data.keys() if not t.startswith("__")]
         if index < len(titles):
             return LocalWorksheet(self, titles[index])
         return None
+
+    def get_worksheet_by_id(self, gid: int) -> "LocalWorksheet":
+        """GID로 워크시트를 반환합니다. __gid_map__ 메타데이터를 사용합니다."""
+        gid_map = self._data.get("__gid_map__", {})
+        title = gid_map.get(str(gid))
+        if title:
+            return LocalWorksheet(self, title)
+        # 폴백: GID가 없으면 데이터 탭 중 첫 번째 반환
+        tabs = [t for t in self._data.keys() if not t.startswith("__")]
+        return LocalWorksheet(self, tabs[0]) if tabs else None
+
+    def values_batch_get(self, ranges: list) -> dict:
+        """
+        gspread Spreadsheet.values_batch_get() 호환.
+        ranges: ["탭명!A2:E", "탭명2!A2:E", ...]
+        반환: {"valueRanges": [{"values": [[...], ...]}, ...]}
+        """
+        value_ranges = []
+        for r in ranges:
+            if "!" in r:
+                tab_title, cell_range = r.split("!", 1)
+            else:
+                tab_title, cell_range = r, None
+
+            ws = LocalWorksheet(self, tab_title)
+            if cell_range:
+                rows = ws.get_values(cell_range)
+            else:
+                rows = ws.get_all_values()
+
+            # 빈 후행 행 제거 (gspread 동작과 일치)
+            rows = [r for r in rows if any(str(c).strip() for c in r)]
+
+            value_ranges.append({"range": r, "values": rows})
+
+        return {"valueRanges": value_ranges}
 
 
 # ── LocalClient ────────────────────────────────────────────
