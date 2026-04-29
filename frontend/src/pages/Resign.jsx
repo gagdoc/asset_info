@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { exportToCSV, todayStr } from '../utils/exportUtils'
+import { exportToXLSX, todayStr } from '../utils/exportUtils'
 import { useToast } from '../components/Toast'
 
 const Resign = () => {
@@ -169,7 +169,11 @@ const ListTab = ({ resigns, isLoading, queryClient, addToast }) => {
                     <button
                         className="btn btn-sm"
                         style={{ backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #86efac', fontWeight: '600' }}
-                        onClick={() => exportToCSV(resigns || [], `퇴사자_${todayStr()}`)}
+                        onClick={async () => {
+                            const rows = (resigns || []).map(({ _is_deleted, ...r }) => r)
+                            const cols = rows.length ? Object.keys(rows[0]).map(k => ({ key: k, label: k })) : []
+                            await exportToXLSX({ filename: `퇴사자_${todayStr()}`, columns: cols, rows })
+                        }}
                         disabled={!resigns || resigns.length === 0}
                     >📥 엑셀 내보내기</button>
                     <button className="btn btn-sm" onClick={() => queryClient.invalidateQueries(['assets', 'Resign'])}>🔄 새로고침</button>

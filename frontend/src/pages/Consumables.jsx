@@ -4,7 +4,7 @@ import axios from 'axios'
 import ConfirmModal from '../components/ConfirmModal'
 import SearchableSelect from '../components/SearchableSelect'
 import LoadingModal from '../components/LoadingModal'
-import { exportToCSV, todayStr, ExportButton } from '../utils/exportUtils'
+import { exportToXLSX, todayStr, ExportButton } from '../utils/exportUtils'
 
 const Consumables = () => {
     const [activeTab, setActiveTab] = useState('estimate')
@@ -332,7 +332,16 @@ const EstimateTab = ({ month }) => {
                 <h3>{month} 견적서 산출 내역</h3>
                 <div style={{ display: 'flex', gap: '8px' }}>
                     <ExportButton
-                        onClick={() => exportToCSV(estimateData || [], `견적서_${month}_${todayStr()}`)}
+                        onClick={async () => {
+                        const rows = (estimateData || []).map(r => ({
+                            '구분(분류)': r.category, '품목명': r.item_name,
+                            '총수량': r.total_qty, '사용자': Array.isArray(r.users) ? r.users.join(', ') : (r.users || ''),
+                            '단가(원)': r.unit_price, '견적비용(원)': r.total_cost,
+                        }))
+                        await exportToXLSX({ filename: `견적서_${month}_${todayStr()}`,
+                            columns: [{key:'구분(분류)',label:'구분(분류)'},{key:'품목명',label:'품목명'},{key:'총수량',label:'총수량'},{key:'사용자',label:'사용자'},{key:'단가(원)',label:'단가(원)'},{key:'견적비용(원)',label:'견적비용(원)'}],
+                            rows })
+                    }}
                         disabled={!estimateData || estimateData.length === 0}
                     />
                     <button className="btn btn-secondary" onClick={() => refetch()} disabled={isFetching}>
@@ -674,7 +683,17 @@ const OutboundTab = ({ month, isDev = false }) => {
                 <h3 style={{ margin: 0 }}>{month} 출고 상세 기록</h3>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <ExportButton
-                        onClick={() => exportToCSV(history || [], `출고내역_${month}_${todayStr()}`)}
+                        onClick={async () => {
+                        const rows = (history || []).map(r => ({
+                            '출고날짜': r.date, '구분': r.category || '',
+                            '품목명': r.item_name, '지급수량': r.quantity,
+                            '지급대상자': r.user_name, '지급담당': r.staff || '',
+                            '수령방법': r.delivery || '', '유형': r.outbound_type || '일반',
+                        }))
+                        await exportToXLSX({ filename: `출고내역_${month}_${todayStr()}`,
+                            columns: [{key:'출고날짜',label:'출고날짜'},{key:'구분',label:'구분'},{key:'품목명',label:'품목명'},{key:'지급수량',label:'지급수량'},{key:'지급대상자',label:'지급대상자'},{key:'지급담당',label:'지급담당'},{key:'수령방법',label:'수령방법'},{key:'유형',label:'유형'}],
+                            rows })
+                    }}
                         disabled={!history || history.length === 0}
                     />
                     <MonthStatusButton month={month} isDev={isDev} />
@@ -1202,7 +1221,7 @@ const MonthlyTonerReport = ({ month }) => {
 
     if (!report || !report.has_snapshot || isLoading) return null
 
-    const handleExcel = () => {
+    const handleExcel = async () => {
         const generalRows = (report.general_items || []).map(it => ({
             '구분': '일반 소모품', '월': month,
             '품목명': it.item_name, '시작재고': it.start_stock,
@@ -1213,7 +1232,13 @@ const MonthlyTonerReport = ({ month }) => {
             '품목명': it.item_name, '시작재고': it.start_stock,
             '출고수량': it.outbound_qty, '잔여재고': it.remaining,
         }))
-        exportToCSV([...generalRows, ...tonerRows], `재고현황_${month}_${todayStr()}`)
+        await exportToXLSX({
+            filename: `재고현황_${month}_${todayStr()}`,
+            sheets: [
+                { title: '일반 소모품', columns: [{key:'구분',label:'구분'},{key:'월',label:'월'},{key:'품목명',label:'품목명'},{key:'시작재고',label:'시작재고'},{key:'출고수량',label:'출고수량'},{key:'잔여재고',label:'잔여재고'}], rows: generalRows },
+                { title: '토너', columns: [{key:'구분',label:'구분'},{key:'월',label:'월'},{key:'품목명',label:'품목명'},{key:'시작재고',label:'시작재고'},{key:'출고수량',label:'출고수량'},{key:'잔여재고',label:'잔여재고'}], rows: tonerRows },
+            ],
+        })
     }
 
     const statusMeta = STATUS_META[report.status] || STATUS_META.open
@@ -1402,7 +1427,18 @@ const ItemsTab = ({ month, months }) => {
                 </h3>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <ExportButton
-                        onClick={() => exportToCSV(filteredItems || [], `소모품리스트_${viewMode}_${todayStr()}`)}
+                        onClick={async () => {
+                        const rows = (filteredItems || []).map(r => ({
+                            '대분류': r.category, '품목명': r.item_name,
+                            '단가(원)': r.price, '재고추적': r.is_tracked ? 'Y' : 'N',
+                            '총재고': (r.base_qty||0)+(r.order_qty||0),
+                            '구매수량': r.base_qty || 0, '추가수량': r.order_qty || 0,
+                            '출고수량': r.dispatched_qty || 0, '현재재고': r.current_stock ?? '',
+                        }))
+                        await exportToXLSX({ filename: `소모품리스트_${viewMode}_${todayStr()}`,
+                            columns: [{key:'대분류',label:'대분류'},{key:'품목명',label:'품목명'},{key:'단가(원)',label:'단가(원)'},{key:'재고추적',label:'재고추적'},{key:'총재고',label:'총재고'},{key:'구매수량',label:'구매수량'},{key:'추가수량',label:'추가수량'},{key:'출고수량',label:'출고수량'},{key:'현재재고',label:'현재재고'}],
+                            rows })
+                    }}
                         disabled={!filteredItems || filteredItems.length === 0}
                     />
                     <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' }); }}>
@@ -2207,7 +2243,9 @@ const TonnerInventoryTab = () => {
                                 const { row_index, headers: _h, name_col_idx: _n, stock_col_idx: _s, current_stock: _c, compatible_models: _m, item_name: _i, ...rest } = it
                                 return rest
                             })
-                            exportToCSV(rows, `토너재고_${todayStr()}`)
+                            await exportToXLSX({ filename: `토너재고_${todayStr()}`,
+                                columns: Object.keys(rows[0] || {}).map(k => ({ key: k, label: k })),
+                                rows })
                         }}
                         disabled={filtered.length === 0}
                     />
@@ -2452,7 +2490,16 @@ const PurchaseTab = ({ months }) => {
                 <h3 style={{ margin: 0 }}>🛒 구매 입고 내역</h3>
                 <div style={{ display: 'flex', gap: '8px' }}>
                     <ExportButton
-                        onClick={() => exportToCSV(filtered, `구매입고내역_${todayStr()}`)}
+                        onClick={async () => {
+                        const rows = filtered.map(r => ({
+                            '구매일자': r.date, '품목명': r.item_name,
+                            '수량': r.quantity, '구매처': r.vendor || '',
+                            '담당자': r.staff || '', '비고': r.note || r.memo || '',
+                        }))
+                        await exportToXLSX({ filename: `구매입고내역_${todayStr()}`,
+                            columns: [{key:'구매일자',label:'구매일자'},{key:'품목명',label:'품목명'},{key:'수량',label:'수량'},{key:'구매처',label:'구매처'},{key:'담당자',label:'담당자'},{key:'비고',label:'비고'}],
+                            rows })
+                    }}
                         disabled={!filtered.length}
                     />
                     <button className="btn btn-primary" onClick={() => setShowForm(v => !v)}>

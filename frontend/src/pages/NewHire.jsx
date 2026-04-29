@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { exportToCSV, todayStr } from '../utils/exportUtils'
+import { exportToXLSX, todayStr } from '../utils/exportUtils'
 import { useToast } from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
 
@@ -303,7 +303,11 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                     <button
                         className="btn btn-sm"
                         style={{ backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #86efac', fontWeight: '600' }}
-                        onClick={() => exportToCSV(newhires || [], `신규입사자_${todayStr()}`)}
+                        onClick={async () => {
+                            const rows = newhires || []
+                            const cols = rows.length ? Object.keys(rows[0]).map(k => ({ key: k, label: k })) : []
+                            await exportToXLSX({ filename: `신규입사자_${todayStr()}`, columns: cols, rows })
+                        }}
                         disabled={!newhires || newhires.length === 0}
                     >
                         📥 엑셀 내보내기

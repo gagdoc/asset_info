@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { useToast } from '../components/Toast'
 import SearchableSelect from '../components/SearchableSelect'
-import { exportToCSV, todayStr } from '../utils/exportUtils'
+import { exportToXLSX, todayStr } from '../utils/exportUtils'
 
 const AssetList = () => {
     const { type } = useParams()
@@ -219,13 +219,15 @@ const AssetList = () => {
         }
     }
 
-    const handleDownload = () => {
+    const handleDownload = async () => {
         // 현재 필터가 적용된 결과 내보내기
         const rows = (displayedAssets || []).map(row => {
             const { _originalIdx, ...rest } = row
             return rest
         })
-        exportToCSV(rows, `${type}_${todayStr()}`)
+        if (!rows.length) return
+        const columns = Object.keys(rows[0]).map(k => ({ key: k, label: k }))
+        await exportToXLSX({ filename: `${type}_${todayStr()}`, columns, rows })
     }
 
     const handleDownloadAll = () => {

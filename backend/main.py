@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 import sys
 import os
 from backend.routers import assets, consumables, admin
+from backend.routers import export as export_router
 
 # Add parent directory to sys.path to allow imports from root
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -50,7 +51,8 @@ async def add_no_cache_header(request, call_next):
 
 app.include_router(assets.router)
 app.include_router(consumables.router)
-app.include_router(admin.router)  # 개발용 관리 API (운영에서는 403 반환)
+app.include_router(admin.router)    # 개발용 관리 API (운영에서는 403 반환)
+app.include_router(export_router.router)  # 공용 xlsx 내보내기
 
 # Mount React App
 frontend_build_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
