@@ -1598,20 +1598,28 @@ const ItemsTab = ({ month, months }) => {
                             inlineMutation.mutate({ ...item, [field]: newVal })
                         }
                         const totalStock = (item.base_qty || 0) + (item.order_qty || 0)
-                        const dispatched = item.dispatched_qty
-                        const currentStock = item.current_stock
-                        const isTracked = item.is_tracked
+                        const dispatched = item.dispatched_qty ?? 0
+                        const currentStock = item.current_stock ?? totalStock
+                        const isTracked = item.is_tracked  // UI 뱃지 표시용으로만 유지
 
-                        // 현재고 현황 표시
+                        // 현재고 현황 표시 — 모든 품목에 적용 (is_tracked 무관)
+                        const isLow = currentStock < 5
+                        const isNegative = currentStock < 0
                         let currentStockCell
-                        if (!isTracked) {
+                        if (totalStock === 0 && dispatched === 0) {
+                            // 입고 기록도 없고 출고도 없는 품목: 미운용
                             currentStockCell = <td style={{ textAlign: 'center', color: '#aaa', fontSize: '0.85em' }}>-</td>
+                        } else if (isNegative) {
+                            currentStockCell = (
+                                <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#b91c1c' }}>
+                                    🚨 {currentStock.toLocaleString()}
+                                </td>
+                            )
                         } else {
-                            const isLow = (currentStock || 0) < 5
                             currentStockCell = (
                                 <td style={{ textAlign: 'center', fontWeight: 'bold',
                                     color: isLow ? '#d32f2f' : '#2e7d32' }}>
-                                    {isLow ? `🚨 ${(currentStock || 0).toLocaleString()}` : `✅ ${(currentStock || 0).toLocaleString()}`}
+                                    {isLow ? `🚨 ${currentStock.toLocaleString()}` : `✅ ${currentStock.toLocaleString()}`}
                                 </td>
                             )
                         }
@@ -1629,9 +1637,11 @@ const ItemsTab = ({ month, months }) => {
                                 <EditableCell value={item.base_qty} onSave={(val) => handleInlineUpdate('base_qty', val)} align="center" type="number" />
                                 {/* 추가 (편집 가능, F열 = order_qty) */}
                                 <EditableCell value={item.order_qty} onSave={(val) => handleInlineUpdate('order_qty', val)} align="center" type="number" />
-                                {/* 출고 (읽기전용) */}
+                                {/* 출고 (읽기전용) — 모든 품목에 표시 */}
                                 <td style={{ textAlign: 'center', color: '#86198f' }}>
-                                    {isTracked ? (dispatched || 0).toLocaleString() : <span style={{ color: '#aaa' }}>-</span>}
+                                    {dispatched > 0
+                                        ? dispatched.toLocaleString()
+                                        : <span style={{ color: '#aaa' }}>0</span>}
                                 </td>
                                 {/* 현재고 현황 */}
                                 {currentStockCell}

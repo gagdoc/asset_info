@@ -16,9 +16,12 @@ const AssetList = () => {
     const [searchQuery, setSearchQuery] = useState('')
     const fileInputRef = useRef(null)
     
-    // 년, 월 필터 상태 추가
-    const [filterYear, setFilterYear] = useState('')
+    // 년, 월 필터 상태 추가 (filterYears: 다중 선택 배열)
+    const [filterYears, setFilterYears] = useState([])
+    const [filterYear, setFilterYear] = useState('')   // Lease/NewHire/Resign 단일선택 유지
     const [filterMonth, setFilterMonth] = useState('')
+    const [yearDropdownOpen, setYearDropdownOpen] = useState(false)
+    const yearDropdownRef = useRef(null)
     const [filterBU, setFilterBU] = useState('')
     const [filterModel, setFilterModel] = useState('')
     const [filterUser, setFilterUser] = useState('')
@@ -30,6 +33,7 @@ const AssetList = () => {
 
     // type(경로 파라미터)가 변경될 때 필터 상태 초기화
     useEffect(() => {
+        setFilterYears([])
         setFilterYear('')
         setFilterMonth('')
         setFilterBU('')
@@ -38,7 +42,19 @@ const AssetList = () => {
         setSearchQuery('')
         setSelectedRows(new Set())
         setShowDuplicateSummary(false)
+        setYearDropdownOpen(false)
     }, [type])
+
+    // 연도 드롭다운 외부 클릭 시 닫기
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (yearDropdownRef.current && !yearDropdownRef.current.contains(e.target)) {
+                setYearDropdownOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
 
     const { data: assets, isLoading } = useQuery({
         queryKey: ['assets', type],
@@ -90,20 +106,39 @@ const AssetList = () => {
     }
 
     const uniqueYears = Array.from(new Set(assets?.map(getYear).filter(v => v !== '' && v !== 'null' && v !== 'undefined'))).sort((a,b) => b.localeCompare(a))
-    
-    // filterYear가 변경될 때 유효하지 않은 filterMonth 초기화
+
+    // iPad: 다중 연도 선택 토글
+    const toggleYear = (year) => {
+        setFilterYears(prev =>
+            prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]
+        )
+        setFilterMonth('')
+    }
+    const clearYears = () => { setFilterYears([]); setFilterMonth('') }
+
+    // filterYear(단일) 또는 filterYears(다중) 변경 시 filterMonth 초기화
     useEffect(() => {
         if (filterYear && filterMonth) {
             const yearFilteredAssets = assets?.filter(row => getYear(row) === filterYear)
             const availableMonths = new Set(yearFilteredAssets?.map(getMonth))
-            if (!availableMonths.has(filterMonth)) {
-                setFilterMonth('')
-            }
+            if (!availableMonths.has(filterMonth)) setFilterMonth('')
         }
     }, [filterYear])
 
+    useEffect(() => {
+        if (filterYears.length > 0 && filterMonth) {
+            const yearFilteredAssets = assets?.filter(row => filterYears.includes(getYear(row)))
+            const availableMonths = new Set(yearFilteredAssets?.map(getMonth))
+            if (!availableMonths.has(filterMonth)) setFilterMonth('')
+        }
+    }, [filterYears])
+
+    // 월 목록: iPad는 선택된 연도들 기준, 나머지는 단일 filterYear 기준
+    const activeYearFilter = type === 'iPad' ? filterYears : (filterYear ? [filterYear] : [])
     const uniqueMonths = Array.from(new Set(
-        (filterYear ? assets?.filter(row => getYear(row) === filterYear) : assets)
+        (activeYearFilter.length > 0
+            ? assets?.filter(row => activeYearFilter.includes(getYear(row)))
+            : assets)
             ?.map(getMonth)
             .filter(v => v !== '' && v !== 'null' && v !== 'undefined')
     )).sort((a,b) => parseInt(a) - parseInt(b))
@@ -124,7 +159,12 @@ const AssetList = () => {
     const stockCount = assets?.filter(getIsStock).length || 0
 
     let displayedAssets = assetsWithIdx
-    if (filterYear) displayedAssets = displayedAssets?.filter(row => getYear(row) === filterYear)
+    // iPad: 다중 연도 필터 / 나머지: 단일 연도 필터
+    if (type === 'iPad') {
+        if (filterYears.length > 0) displayedAssets = displayedAssets?.filter(row => filterYears.includes(getYear(row)))
+    } else {
+        if (filterYear) displayedAssets = displayedAssets?.filter(row => getYear(row) === filterYear)
+    }
     if (filterMonth) displayedAssets = displayedAssets?.filter(row => getMonth(row) === filterMonth)
     if (filterBU) displayedAssets = displayedAssets?.filter(row => getBU(row) === filterBU)
 
@@ -305,10 +345,92 @@ const AssetList = () => {
                                     onChange={e => setSearchQuery(e.target.value)}
                                 />
                             </div>
-                            <select className="form-input" style={{ width: 'auto', padding: '4px 8px' }} value={filterYear} onChange={e => setFilterYear(e.target.value)}>
-                                <option value="">전체 연도</option>
-                                {uniqueYears.map(y => <option key={y} value={y}>{y}년</option>)}
-                            </select>
+                            {/* 연도 필터: iPad는 다중 선택, 나머지는 단일 선택 */}
+                            {type === 'iPad' ? (
+                                <div ref={yearDropdownRef} style={{ position: 'relative' }}>
+                                    <button
+                                        className="form-input"
+                                        onClick={() => setYearDropdownOpen(o => !o)}
+                                        style={{
+                                            width: 'auto', minWidth: '110px', padding: '4px 28px 4px 10px',
+                                            textAlign: 'left', cursor: 'pointer', position: 'relative',
+                                            background: filterYears.length > 0 ? '#eff6ff' : '',
+                                            color: filterYears.length > 0 ? '#1d4ed8' : '',
+                                            fontWeight: filterYears.length > 0 ? 'bold' : 'normal',
+                                            borderColor: filterYears.length > 0 ? '#93c5fd' : '',
+                                        }}
+                                    >
+                                        {filterYears.length === 0
+                                            ? '전체 연도'
+                                            : filterYears.length === 1
+                                                ? `${filterYears[0]}년`
+                                                : `${filterYears.length}개 연도`}
+                                        <span style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '10px', color: '#6b7280' }}>
+                                            {yearDropdownOpen ? '▲' : '▼'}
+                                        </span>
+                                    </button>
+                                    {yearDropdownOpen && (
+                                        <div style={{
+                                            position: 'absolute', top: '100%', left: 0, zIndex: 1000,
+                                            background: 'white', border: '1px solid #e5e7eb',
+                                            borderRadius: '8px', boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                                            minWidth: '140px', padding: '6px 0', marginTop: '4px',
+                                        }}>
+                                            {/* 전체 선택 해제 */}
+                                            <div
+                                                onClick={clearYears}
+                                                style={{
+                                                    padding: '6px 14px', cursor: 'pointer', fontSize: '0.85em',
+                                                    color: filterYears.length === 0 ? '#1d4ed8' : '#6b7280',
+                                                    fontWeight: filterYears.length === 0 ? 'bold' : 'normal',
+                                                    borderBottom: '1px solid #f3f4f6',
+                                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                                }}
+                                            >
+                                                <span style={{
+                                                    width: '14px', height: '14px', borderRadius: '3px', border: '1.5px solid #d1d5db',
+                                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                                    background: filterYears.length === 0 ? '#1d4ed8' : 'white',
+                                                }}>
+                                                    {filterYears.length === 0 && <span style={{ color: 'white', fontSize: '10px', lineHeight: 1 }}>✓</span>}
+                                                </span>
+                                                전체 연도
+                                            </div>
+                                            {uniqueYears.map(y => {
+                                                const checked = filterYears.includes(y)
+                                                return (
+                                                    <div
+                                                        key={y}
+                                                        onClick={() => toggleYear(y)}
+                                                        style={{
+                                                            padding: '6px 14px', cursor: 'pointer', fontSize: '0.85em',
+                                                            color: checked ? '#1d4ed8' : '#374151',
+                                                            background: checked ? '#eff6ff' : 'transparent',
+                                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                                        }}
+                                                        onMouseEnter={e => { if (!checked) e.currentTarget.style.background = '#f9fafb' }}
+                                                        onMouseLeave={e => { if (!checked) e.currentTarget.style.background = 'transparent' }}
+                                                    >
+                                                        <span style={{
+                                                            width: '14px', height: '14px', borderRadius: '3px', border: `1.5px solid ${checked ? '#1d4ed8' : '#d1d5db'}`,
+                                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                                            background: checked ? '#1d4ed8' : 'white',
+                                                        }}>
+                                                            {checked && <span style={{ color: 'white', fontSize: '10px', lineHeight: 1 }}>✓</span>}
+                                                        </span>
+                                                        {y}년
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <select className="form-input" style={{ width: 'auto', padding: '4px 8px' }} value={filterYear} onChange={e => setFilterYear(e.target.value)}>
+                                    <option value="">전체 연도</option>
+                                    {uniqueYears.map(y => <option key={y} value={y}>{y}년</option>)}
+                                </select>
+                            )}
                             <select className="form-input" style={{ width: 'auto', padding: '4px 8px' }} value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
                                 <option value="">전체 월</option>
                                 {uniqueMonths.map(m => <option key={m} value={m}>{m}월</option>)}

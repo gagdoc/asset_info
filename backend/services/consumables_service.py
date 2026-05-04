@@ -199,16 +199,16 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
         # A부터 F열까지 (분류, 품목, 가격, 관리여부, 구매수량, 추가수량)
         records = _retry_sheets_op(lambda: ws.get_values("A2:F"))
         items = []
-        tracked_item_names = set()
+        all_item_names = set()  # 추적 여부와 무관하게 모든 품목 대상
 
         for i, r in enumerate(records):
             if not r or not str(r[0]).strip(): continue
             is_tracked = len(r) > 3 and str(r[3]).strip().upper() == "O"
 
-            if is_tracked:
-                tracked_item_names.add(str(r[1]).strip())
+            item_name = str(r[1]).strip() if len(r) > 1 else ""
+            if item_name:
+                all_item_names.add(item_name)
 
-            # 추적 여부와 무관하게 시트에 저장된 수량 값을 항상 읽음
             try:
                 base_qty = int(str(r[4]).strip().replace(',', '')) if len(r) > 4 and str(r[4]).strip() else 0
             except ValueError:
@@ -223,21 +223,21 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
 
             items.append({
                 "category": str(r[0]).strip() if len(r) > 0 else "",
-                "item_name": str(r[1]).strip() if len(r) > 1 else "",
+                "item_name": item_name,
                 "price": str(r[2]).strip() if len(r) > 2 else "",
-                "is_tracked": is_tracked,
+                "is_tracked": is_tracked,  # UI 표시용 유지 (별도 관리 여부 표시)
                 "base_qty": base_qty,        # E열: 구매 수량 (업체 구매)
                 "order_qty": order_qty,      # F열: 추가 수량 (개별 추가)
                 "total_stock": total_stock,  # 총 재고 = 구매 + 추가 (읽기전용 계산값)
-                "current_stock": total_stock,  # 비추적: 총재고 그대로, 추적: 아래에서 갱신
+                "current_stock": total_stock,  # 2단계에서 출고량 차감하여 갱신
                 "row_index": i + 2,
-                "dispatched_qty": 0 if is_tracked else None,
+                "dispatched_qty": 0,         # 모든 품목 기본값 0, 2단계에서 실제값으로 갱신
                 "dispatch_mode": dispatch_mode,
                 "dispatch_month": month,
             })
 
-        # 2단계: Tracking 대상이 있으면 출고 데이터를 합산
-        if tracked_item_names:
+        # 2단계: 모든 품목에 대해 출고 데이터 합산 (is_tracked 무관)
+        if all_item_names:
             _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
             if not ss_outbound: return items
 
@@ -245,16 +245,14 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
             all_month_titles = [w.title for w in all_ws if "월" in w.title and w.title != "품목리스트"]
 
             if dispatch_mode == "monthly" and month:
-                # 월별 모드: 지정된 월의 시트만 읽음
                 target_months = [m for m in all_month_titles if m == month]
             else:
-                # 누적 모드: 전체 월 합산
                 target_months = all_month_titles
 
             if target_months:
                 ranges = [f"{m}!A2:E" for m in target_months]
                 batch_res = ss_outbound.values_batch_get(ranges)
-                dispatched_agg = {name: 0 for name in tracked_item_names}
+                dispatched_agg = {name: 0 for name in all_item_names}
 
                 for res in batch_res.get('valueRanges', []):
                     values = res.get('values', [])
@@ -264,19 +262,23 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
                             outbound_type = str(row[4]).strip() if len(row) > 4 else "일반"
                             if outbound_type == "위탁":
                                 continue
-                            if i_name in tracked_item_names:
+                            if i_name in dispatched_agg:
                                 try:
                                     qty = int(str(row[2]).strip().replace(',', ''))
                                     dispatched_agg[i_name] += qty
                                 except ValueError:
                                     pass
+                            else:
+                                # 마스터 리스트에 없는 품목 출고 기록 (경고)
+                                if i_name and i_name not in ("==출고 내역 시작==", "품목 명", "날짜"):
+                                    logger.warning(f"[출고-마스터 불일치] 출고시트에만 존재하는 품목: '{i_name}' — 마스터리스트에 추가 필요")
 
+                # 모든 품목의 출고량 및 현재고 갱신
                 for item in items:
-                    if item["is_tracked"]:
-                        i_name = item["item_name"]
-                        d_qty = dispatched_agg.get(i_name, 0)
-                        item["dispatched_qty"] = d_qty
-                        item["current_stock"] = item["total_stock"] - d_qty  # 현재고 = 총재고 - 출고
+                    i_name = item["item_name"]
+                    d_qty = dispatched_agg.get(i_name, 0)
+                    item["dispatched_qty"] = d_qty
+                    item["current_stock"] = item["total_stock"] - d_qty  # 현재고 = 총재고 - 출고
 
         return items
     except Exception as e:
@@ -513,7 +515,7 @@ def add_outbound(month: str, data: dict) -> bool:
             data.get('delivery', ''),
         ]])
         invalidate_cache(f"outbound_{month}")
-        invalidate_cache("items_all")
+        invalidate_cache("items_")  # "items_cumulative_all", "items_monthly_*" 등 모두 무효화
         # 데이터 변경 시 재고리스트 요약 시트 동기화
         sync_inventory_summary_sheet()
 
@@ -613,7 +615,7 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
             data.get('delivery', ''),
         ]])
         invalidate_cache(f"outbound_{month}")
-        invalidate_cache("items_all")
+        invalidate_cache("items_")  # "items_cumulative_all", "items_monthly_*" 등 모두 무효화
         sync_inventory_summary_sheet()
         return True
     except Exception as e:
@@ -639,7 +641,7 @@ def delete_outbound_history(month: str, row_index: int,
 
         ws.delete_rows(row_index)
         invalidate_cache(f"outbound_{month}")
-        invalidate_cache("items_all")
+        invalidate_cache("items_")  # "items_cumulative_all", "items_monthly_*" 등 모두 무효화
         sync_inventory_summary_sheet()
         return True
     except Exception as e:
@@ -712,7 +714,7 @@ def delete_item(row_index: int, item_name: str) -> bool:
 
         ws.delete_rows(row_index)
         invalidate_cache()
-        invalidate_cache("items_all")
+        invalidate_cache("items_")  # "items_cumulative_all", "items_monthly_*" 등 모두 무효화
         sync_inventory_summary_sheet()
         logger.info(f"품목 삭제 완료: row={row_index}, item={item_name}")
         return True
@@ -1021,7 +1023,7 @@ def sync_toner_to_items_list() -> dict:
 
     # 4. 캐시 무효화 (품목리스트 변경됨)
     if added:
-        invalidate_cache("items_all")
+        invalidate_cache("items_")  # "items_cumulative_all", "items_monthly_*" 등 모두 무효화
 
     return {"added": added, "skipped": skipped}
 
@@ -1044,12 +1046,14 @@ def sync_inventory_summary_sheet():
 
         for it in items:
             is_tracked = "O" if it.get("is_tracked") else "X"
-            dispatched = it.get("dispatched_qty", 0) if it.get("is_tracked") else "-"
-            current = it.get("current_stock", 0) if it.get("is_tracked") else "-"
+            dispatched = it.get("dispatched_qty", 0)   # 모든 품목 출고량 반영
+            current = it.get("current_stock", it.get("total_stock", 0))  # 모든 품목 현재고 반영
             total_stock = it.get("total_stock", 0)
 
-            status = "-"
-            if it.get("is_tracked"):
+            # 현재고 기준 상태 표시 (모든 품목)
+            if total_stock == 0 and dispatched == 0:
+                status = "-"  # 미운용 품목
+            else:
                 status = "🚨 부족" if (current or 0) < 5 else "✅ 양호"
 
             rows.append([
