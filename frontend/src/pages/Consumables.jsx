@@ -2171,7 +2171,7 @@ const TonnerInventoryTab = () => {
         ? items.filter(it => headers.some(h => String(it[h] || '').toLowerCase().includes(searchTerm.toLowerCase())))
         : items
 
-    // 출고수량 — 소모품 품목 목록에서 dispatched_qty 가져오기
+    // 출고수량 — 일반 출고 (dispatched_qty)
     const { data: itemsForDispatch } = useQuery({
         queryKey: ['consumables-items', 'cumulative', 'toner'],
         queryFn: async () => {
@@ -2180,14 +2180,35 @@ const TonnerInventoryTab = () => {
         },
         staleTime: 60000,
     })
+    // 위탁 출고 내역 (전체 월)
+    const { data: consignmentHistory } = useQuery({
+        queryKey: ['toner-consignment', 'all'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/consumables/tonner-consignment')
+            return data
+        },
+        staleTime: 60000,
+    })
+    // 일반 + 위탁 합산 출고맵
     const dispatchMap = useMemo(() => {
-        if (!itemsForDispatch) return {}
         const m = {}
-        itemsForDispatch.forEach(it => {
-            if (it.item_name) m[it.item_name.toLowerCase()] = it.dispatched_qty || 0
-        })
+        // 일반 출고 (위탁 제외된 dispatched_qty)
+        if (itemsForDispatch) {
+            itemsForDispatch.forEach(it => {
+                if (it.item_name) m[it.item_name.toLowerCase()] = it.dispatched_qty || 0
+            })
+        }
+        // 위탁 출고 추가 합산
+        if (consignmentHistory) {
+            consignmentHistory.forEach(rec => {
+                if (rec.item_name) {
+                    const key = rec.item_name.toLowerCase()
+                    m[key] = (m[key] || 0) + (rec.quantity || 0)
+                }
+            })
+        }
         return m
-    }, [itemsForDispatch])
+    }, [itemsForDispatch, consignmentHistory])
 
     const handleEditStart = (item) => {
         setEditingRow(item.row_index)
@@ -2300,16 +2321,22 @@ const TonnerInventoryTab = () => {
                     <table className="data-table">
                         <thead>
                             <tr>
-                                {displayHeaders.map(h => (
-                                    <th key={h} style={{
-                                        backgroundColor: h === stockCol ? '#f0fdf4' : h === nameCol ? '#eff6ff' : h === modelCol ? '#fefce8' : h === '안전재고' ? '#fff7ed' : undefined,
-                                        color: h === stockCol ? '#15803d' : h === nameCol ? '#1d4ed8' : h === modelCol ? '#854d0e' : h === '안전재고' ? '#c2410c' : undefined,
-                                        whiteSpace: 'nowrap'
-                                    }}>
-                                        {h === stockCol ? '📦 실재고' : h === nameCol ? '🖨️ 품목명' : h === modelCol ? `🔧 ${h}` : h === '안전재고' ? '⚠️ 안전재고' : h}
-                                    </th>
-                                ))}
-                                <th style={{ textAlign: 'center', whiteSpace: 'nowrap', backgroundColor: '#faf5ff', color: '#7c3aed' }}>📤 출고수량</th>
+                                {displayHeaders.flatMap(h => {
+                                    const cell = (
+                                        <th key={h} style={{
+                                            backgroundColor: h === stockCol ? '#f0fdf4' : h === nameCol ? '#eff6ff' : h === modelCol ? '#fefce8' : h === '안전재고' ? '#fff7ed' : undefined,
+                                            color: h === stockCol ? '#15803d' : h === nameCol ? '#1d4ed8' : h === modelCol ? '#854d0e' : h === '안전재고' ? '#c2410c' : undefined,
+                                            whiteSpace: 'nowrap'
+                                        }}>
+                                            {h === stockCol ? '📦 실재고' : h === nameCol ? '🖨️ 품목명' : h === modelCol ? `🔧 ${h}` : h === '안전재고' ? '⚠️ 안전재고' : h}
+                                        </th>
+                                    )
+                                    // 실재고 바로 다음에 출고수량 삽입
+                                    if (h === stockCol) {
+                                        return [cell, <th key="__dispatch__" style={{ textAlign: 'center', whiteSpace: 'nowrap', backgroundColor: '#faf5ff', color: '#7c3aed' }}>📤 출고수량</th>]
+                                    }
+                                    return [cell]
+                                })}
                                 <th style={{ textAlign: 'center', width: '60px' }}>수정</th>
                             </tr>
                         </thead>
@@ -2323,17 +2350,22 @@ const TonnerInventoryTab = () => {
                                     <tr key={item.row_index} style={{ backgroundColor: isEditing ? '#fefce8' : isLow ? '#fff5f5' : 'transparent' }}>
                                         {isEditing ? (
                                             <>
-                                                {displayHeaders.map(h => (
-                                                    <td key={h} style={{ padding: '4px' }}>
-                                                        <input
-                                                            type={h === stockCol || h === '안전재고' ? 'number' : 'text'}
-                                                            value={editForm[h] ?? ''}
-                                                            onChange={e => setEditForm(f => ({ ...f, [h]: e.target.value }))}
-                                                            style={{ width: '100%', padding: '4px 6px', borderRadius: '4px', border: '1px solid #93c5fd', boxSizing: 'border-box', minWidth: h === stockCol ? '70px' : '100px' }}
-                                                        />
-                                                    </td>
-                                                ))}
-                                                <td style={{ textAlign: 'center', color: '#7c3aed', fontWeight: 'bold' }}>{dispatchedQty}</td>
+                                                {displayHeaders.flatMap(h => {
+                                                    const inputCell = (
+                                                        <td key={h} style={{ padding: '4px' }}>
+                                                            <input
+                                                                type={h === stockCol || h === '안전재고' ? 'number' : 'text'}
+                                                                value={editForm[h] ?? ''}
+                                                                onChange={e => setEditForm(f => ({ ...f, [h]: e.target.value }))}
+                                                                style={{ width: '100%', padding: '4px 6px', borderRadius: '4px', border: '1px solid #93c5fd', boxSizing: 'border-box', minWidth: h === stockCol ? '70px' : '100px' }}
+                                                            />
+                                                        </td>
+                                                    )
+                                                    if (h === stockCol) {
+                                                        return [inputCell, <td key="__dispatch__" style={{ textAlign: 'center', color: '#7c3aed', fontWeight: 'bold', padding: '4px 8px' }}>{dispatchedQty}</td>]
+                                                    }
+                                                    return [inputCell]
+                                                })}
                                                 <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                                                     <button className="btn btn-primary" style={{ padding: '3px 8px', fontSize: '0.8em', marginRight: '3px' }} onClick={handleEditSave} disabled={updateMutation.isPending}>💾</button>
                                                     <button className="btn btn-secondary" style={{ padding: '3px 8px', fontSize: '0.8em' }} onClick={() => setEditingRow(null)}>✖</button>
@@ -2341,40 +2373,47 @@ const TonnerInventoryTab = () => {
                                             </>
                                         ) : (
                                             <>
-                                                {displayHeaders.map(h => (
-                                                    <td key={h}
-                                                        onDoubleClick={() => handleEditStart(item)}
-                                                        title="더블클릭으로 수정"
-                                                        style={{
-                                                            cursor: 'pointer',
-                                                            fontWeight: h === nameCol ? 'bold' : 'normal',
-                                                            textAlign: h === stockCol || h === '안전재고' ? 'center' : undefined,
-                                                            whiteSpace: h === modelCol ? 'pre-wrap' : undefined,
-                                                            maxWidth: h === modelCol ? '220px' : undefined,
-                                                            fontSize: h === modelCol ? '0.85em' : undefined
-                                                        }}
-                                                    >
-                                                        {h === stockCol ? (
-                                                            <span style={{
-                                                                display: 'inline-block',
-                                                                padding: '2px 12px',
-                                                                borderRadius: '12px',
-                                                                fontWeight: 'bold',
-                                                                fontSize: '0.95em',
-                                                                backgroundColor: isLow ? '#fee2e2' : '#dcfce7',
-                                                                color: isLow ? '#ef4444' : '#15803d',
-                                                                border: `1px solid ${isLow ? '#fca5a5' : '#86efac'}`
-                                                            }}>
-                                                                {isLow ? `🚨 ${item.current_stock ?? 0}개` : `${item.current_stock ?? 0}개`}
-                                                            </span>
-                                                        ) : h === '안전재고' ? (
-                                                            <span style={{ color: '#c2410c', fontWeight: 'bold' }}>{item[h] ?? '-'}</span>
-                                                        ) : item[h]}
-                                                    </td>
-                                                ))}
-                                                <td style={{ textAlign: 'center', color: '#7c3aed', fontWeight: 'bold' }}>
-                                                    {dispatchedQty > 0 ? `📤 ${dispatchedQty}` : '-'}
-                                                </td>
+                                                {displayHeaders.flatMap(h => {
+                                                    const cell = (
+                                                        <td key={h}
+                                                            onDoubleClick={() => handleEditStart(item)}
+                                                            title="더블클릭으로 수정"
+                                                            style={{
+                                                                cursor: 'pointer',
+                                                                fontWeight: h === nameCol ? 'bold' : 'normal',
+                                                                textAlign: h === stockCol || h === '안전재고' ? 'center' : undefined,
+                                                                whiteSpace: h === modelCol ? 'pre-wrap' : undefined,
+                                                                maxWidth: h === modelCol ? '220px' : undefined,
+                                                                fontSize: h === modelCol ? '0.85em' : undefined
+                                                            }}
+                                                        >
+                                                            {h === stockCol ? (
+                                                                <span style={{
+                                                                    display: 'inline-block',
+                                                                    padding: '2px 12px',
+                                                                    borderRadius: '12px',
+                                                                    fontWeight: 'bold',
+                                                                    fontSize: '0.95em',
+                                                                    backgroundColor: isLow ? '#fee2e2' : '#dcfce7',
+                                                                    color: isLow ? '#ef4444' : '#15803d',
+                                                                    border: `1px solid ${isLow ? '#fca5a5' : '#86efac'}`
+                                                                }}>
+                                                                    {isLow ? `🚨 ${item.current_stock ?? 0}개` : `${item.current_stock ?? 0}개`}
+                                                                </span>
+                                                            ) : h === '안전재고' ? (
+                                                                <span style={{ color: '#c2410c', fontWeight: 'bold' }}>{item[h] ?? '-'}</span>
+                                                            ) : item[h]}
+                                                        </td>
+                                                    )
+                                                    if (h === stockCol) {
+                                                        return [cell, (
+                                                            <td key="__dispatch__" style={{ textAlign: 'center', color: '#7c3aed', fontWeight: 'bold' }}>
+                                                                {dispatchedQty > 0 ? `📤 ${dispatchedQty}` : '-'}
+                                                            </td>
+                                                        )]
+                                                    }
+                                                    return [cell]
+                                                })}
                                                 <td style={{ textAlign: 'center' }}>
                                                     <button
                                                         title="수정"
@@ -2396,7 +2435,7 @@ const TonnerInventoryTab = () => {
 
             {!isLoading && items.length > 0 && (
                 <div style={{ marginTop: '0.75rem', fontSize: '0.8em', color: '#94a3b8', textAlign: 'right' }}>
-                    💡 더블클릭하거나 ✏️ 버튼으로 수정 · 일반 출고 시 재고 자동 차감
+                    💡 더블클릭하거나 ✏️ 버튼으로 수정 · 출고수량은 일반 + 위탁 합산 표시 · 출고 시 실재고 자동 차감
                 </div>
             )}
         </div>
