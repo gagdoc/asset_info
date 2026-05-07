@@ -645,7 +645,8 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
 def delete_outbound_history(month: str, row_index: int,
                             verify_date: str = "", verify_item: str = "", verify_user: str = "") -> bool:
     """월별 출고 시트의 특정 행(row_index)을 완전히 삭제합니다.
-    verify_date + verify_item + verify_user 3중 검증으로 중복 행 오탐 방지."""
+    verify_date + verify_item + verify_user 3중 검증으로 중복 행 오탐 방지.
+    삭제 후 해당 품목의 토너 실재고를 자동 복구합니다."""
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
@@ -658,10 +659,34 @@ def delete_outbound_history(month: str, row_index: int,
             if row_index == -1:
                 return False
 
+        # ── 삭제 전 행 데이터 읽기 (재고 복구용) ──────────────────
+        del_item_name = ""
+        del_qty = 0
+        try:
+            row_data = ws.row_values(row_index)
+            del_item_name = str(row_data[1]).strip() if len(row_data) > 1 else ""
+            del_qty_str   = str(row_data[2]).strip().replace(',', '') if len(row_data) > 2 else "0"
+            del_qty = int(float(del_qty_str)) if del_qty_str.replace('.','',1).isdigit() else 0
+        except Exception as _e:
+            logger.warning(f"삭제 행 데이터 읽기 실패 (재고 복구 불가): {_e}")
+
+        # ── 행 삭제 ────────────────────────────────────────────────
         ws.delete_rows(row_index)
         invalidate_cache(f"outbound_{month}")
         invalidate_cache("items_")  # "items_cumulative_all", "items_monthly_*" 등 모두 무효화
         sync_inventory_summary_sheet()
+
+        # ── 토너 실재고 복구 (일반·위탁 모두) ───────────────────────
+        if del_item_name and del_qty > 0:
+            try:
+                result = restore_toner_stock(del_item_name, del_qty)
+                if result:
+                    logger.info(f"출고 삭제 후 토너 재고 복구 완료: '{del_item_name}' +{del_qty}")
+                else:
+                    logger.debug(f"토너 재고 시트에 없는 품목 (복구 생략): '{del_item_name}'")
+            except Exception as e:
+                logger.error(f"출고 삭제 후 재고 복구 중 오류 (삭제는 성공): {e}")
+
         return True
     except Exception as e:
         logger.error(f"Error deleting outbound: {e}")
@@ -831,9 +856,22 @@ def _find_col_idx(headers: list, keywords: list) -> int | None:
     return None
 
 
+_TONER_LAST_GOOD: dict = {}  # API 실패 시 반환할 마지막 정상 데이터
+
 def get_toner_inventory():
-    """토너 전용 재고 시트 전체 데이터 반환 (캐시 적용)"""
-    return _get_cached("toner_inventory", _get_toner_inventory_impl)
+    """토너 전용 재고 시트 전체 데이터 반환 (캐시 적용, 실패 시 stale 데이터 반환)"""
+    try:
+        result = _get_cached("toner_inventory", _get_toner_inventory_impl)
+        if result.get("items"):  # 유효한 데이터면 stale 캐시 갱신
+            _TONER_LAST_GOOD.update(result)
+        elif _TONER_LAST_GOOD.get("items"):
+            # 빈 결과가 왔지만 이전 정상 데이터가 있으면 stale 반환
+            logger.warning("토너 재고 빈 응답 — 마지막 정상 캐시 반환")
+            return _TONER_LAST_GOOD
+        return result
+    except Exception as e:
+        logger.error(f"get_toner_inventory 오류: {e}")
+        return _TONER_LAST_GOOD or {"headers": [], "items": [], "name_col": None, "stock_col": None, "model_col": None}
 
 
 def _get_toner_inventory_impl():
@@ -1002,6 +1040,70 @@ def deduct_toner_stock(item_name: str, quantity: int) -> bool:
         return False
     except Exception as e:
         logger.error(f"토너 재고 차감 오류: {e}")
+        return False
+
+
+def restore_toner_stock(item_name: str, quantity: int) -> bool:
+    """
+    출고 삭제 시 토너 재고 복구.
+    item_name 으로 행을 찾아 실재고 컬럼에 quantity를 더한다.
+    """
+    ws = _get_toner_worksheet()
+    if not ws:
+        return False
+    try:
+        all_values = ws.get_all_values()
+        if not all_values:
+            return False
+
+        headers = [str(h).strip() for h in all_values[0]]
+        name_col_idx = _find_col_idx(headers, ['품번', '토너_품번', 'toner', 'tonner', '토너', '품목명', '명칭', 'name', '모델', 'model', '품목'])
+        # 실재고 컬럼 우선 탐색 (deduct_toner_stock과 동일 로직)
+        stock_col_idx = next(
+            (i for i, h in enumerate(headers) if h.strip() == '실재고'), None
+        )
+        if stock_col_idx is None:
+            stock_col_idx = _find_col_idx(headers, ['실재고', '현재고', 'current_stock'])
+        if stock_col_idx is None:
+            stock_col_idx = next(
+                (i for i, h in enumerate(headers)
+                 if '재고' in h and h not in ('안전재고', '중고재고', '재고상태')),
+                None
+            )
+        if stock_col_idx is None:
+            stock_col_idx = _find_col_idx(headers, ['stock', 'qty'])
+
+        if name_col_idx is None:
+            name_col_idx = 0
+        if stock_col_idx is None:
+            logger.warning(f"토너 재고 컬럼 없음 (복구 불가). 헤더: {headers}")
+            return False
+
+        item_name_lower = item_name.lower()
+        for row_num, row in enumerate(all_values[1:], start=2):
+            if name_col_idx >= len(row):
+                continue
+            row_name = str(row[name_col_idx]).strip()
+            if row_name.lower() != item_name_lower:
+                continue
+
+            current_str = row[stock_col_idx].replace(',', '') if stock_col_idx < len(row) else "0"
+            try:
+                current = int(float(current_str)) if current_str.strip() else 0
+            except (ValueError, TypeError):
+                current = 0
+
+            new_stock = current + quantity   # 복구: 더하기
+            stock_cell = f"{chr(65 + stock_col_idx)}{row_num}"
+            ws.update(stock_cell, [[str(new_stock)]])
+            invalidate_cache("toner_inventory")  # 토너 캐시만 초기화 (전체 초기화 시 과다 API 호출 방지)
+            logger.info(f"토너 재고 복구: '{item_name}' {current} → {new_stock} (+{quantity})")
+            return True
+
+        logger.warning(f"토너 재고 시트에서 품목 미발견 (복구 없음): '{item_name}'")
+        return False
+    except Exception as e:
+        logger.error(f"토너 재고 복구 오류: {e}")
         return False
 
 
