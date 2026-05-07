@@ -1322,7 +1322,7 @@ const ItemsTab = ({ month, months }) => {
     const [dispatchMode, setDispatchMode] = useState('monthly') // 'monthly' | 'cumulative'
     const [dispatchMonth, setDispatchMonth] = useState(month || '')
     const [showForm, setShowForm] = useState(false)
-    const [formData, setFormData] = useState({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
+    const [formData, setFormData] = useState({ row_index: null, category: '', item_name: '', price: '', is_tracked: false })
     const [searchTerm, setSearchTerm] = useState('')
     const [filterCategory, setFilterCategory] = useState('')
 
@@ -1348,7 +1348,7 @@ const ItemsTab = ({ month, months }) => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
             setShowForm(false)
-            setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' })
+            setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false })
             alert("품목이 저장되었습니다.")
         },
         onError: () => alert("오류가 발생했습니다. 구글 시트를 확인하세요.")
@@ -1400,7 +1400,7 @@ const ItemsTab = ({ month, months }) => {
     }
 
     const startEdit = (item) => {
-        setFormData({ row_index: item.row_index, category: item.category, item_name: item.item_name, price: item.price, is_tracked: item.is_tracked || false, base_qty: item.base_qty || '', order_qty: item.order_qty || '' })
+        setFormData({ row_index: item.row_index, category: item.category, item_name: item.item_name, price: item.price, is_tracked: item.is_tracked || false })
         setShowForm(true)
     }
 
@@ -1431,17 +1431,15 @@ const ItemsTab = ({ month, months }) => {
                         const rows = (filteredItems || []).map(r => ({
                             '대분류': r.category, '품목명': r.item_name,
                             '단가(원)': r.price, '재고추적': r.is_tracked ? 'Y' : 'N',
-                            '총재고': (r.base_qty||0)+(r.order_qty||0),
-                            '구매수량': r.base_qty || 0, '추가수량': r.order_qty || 0,
-                            '출고수량': r.dispatched_qty || 0, '현재재고': r.current_stock ?? '',
+                            '출고수량': r.dispatched_qty || 0, '실재고수량': r.current_stock ?? '',
                         }))
                         await exportToXLSX({ filename: `소모품리스트_${viewMode}_${todayStr()}`,
-                            columns: [{key:'대분류',label:'대분류'},{key:'품목명',label:'품목명'},{key:'단가(원)',label:'단가(원)'},{key:'재고추적',label:'재고추적'},{key:'총재고',label:'총재고'},{key:'구매수량',label:'구매수량'},{key:'추가수량',label:'추가수량'},{key:'출고수량',label:'출고수량'},{key:'현재재고',label:'현재재고'}],
+                            columns: [{key:'대분류',label:'대분류'},{key:'품목명',label:'품목명'},{key:'단가(원)',label:'단가(원)'},{key:'재고추적',label:'재고추적'},{key:'출고수량',label:'출고수량'},{key:'실재고수량',label:'실재고수량'}],
                             rows })
                     }}
                         disabled={!filteredItems || filteredItems.length === 0}
                     />
-                    <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, base_qty: '', order_qty: '' }); }}>
+                    <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false }); }}>
                         {showForm ? '닫기' : '+ 품목 추가'}
                     </button>
                 </div>
@@ -1537,18 +1535,6 @@ const ItemsTab = ({ month, months }) => {
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#1976d2', fontWeight: 'bold' }}>재고 추적 🎯</label>
                         <input type="checkbox" checked={formData.is_tracked} onChange={e => setFormData({...formData, is_tracked: e.target.checked})} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
                     </div>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#166534', fontWeight: 'bold' }}>
-                            구매 수량 {formData.is_tracked ? '(업체 구매 입고량)' : '(선택 입력)'}
-                        </label>
-                        <input type="number" min="0" placeholder="0" value={formData.base_qty} onChange={e => setFormData({...formData, base_qty: e.target.value})} style={{ padding: '8px', width: '80px', border: '1px solid #166534' }} />
-                    </div>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#854d0e', fontWeight: 'bold' }}>
-                            추가 수량 {formData.is_tracked ? '(개별 추가량)' : '(선택 입력)'}
-                        </label>
-                        <input type="number" min="0" placeholder="0" value={formData.order_qty} onChange={e => setFormData({...formData, order_qty: e.target.value})} style={{ padding: '8px', width: '80px', border: '1px solid #854d0e' }} />
-                    </div>
                     <button type="submit" className="btn btn-primary" disabled={mutation.isPending} style={{ marginLeft: 'auto' }}>
                         저장하기
                     </button>
@@ -1584,11 +1570,8 @@ const ItemsTab = ({ month, months }) => {
                         <th>대분류 (Category)</th>
                         <th>{'소모품명 (Item Name)'}</th>
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
-                        <th style={{ textAlign: 'center', background: '#eff6ff', color: '#1d4ed8' }}>총 재고<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>구매+추가</small></th>
-                        <th style={{ textAlign: 'center', background: '#f0fdf4', color: '#166534' }}>구매<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>업체 입고</small></th>
-                        <th style={{ textAlign: 'center', background: '#fefce8', color: '#854d0e' }}>추가<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>개별 추가</small></th>
                         <th style={{ textAlign: 'center', background: '#fdf4ff', color: '#86198f' }}>출고<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
-                        <th style={{ textAlign: 'center', background: '#fff1f2', color: '#9f1239' }}>현재고 현황<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>총재고-출고</small></th>
+                        <th style={{ textAlign: 'center', background: '#fff1f2', color: '#9f1239' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>복합기_토너_재고_DB</small></th>
                         <th style={{ textAlign: 'center' }}>관리</th>
                     </tr>
                 </thead>
@@ -1597,17 +1580,14 @@ const ItemsTab = ({ month, months }) => {
                         const handleInlineUpdate = (field, newVal) => {
                             inlineMutation.mutate({ ...item, [field]: newVal })
                         }
-                        const totalStock = (item.base_qty || 0) + (item.order_qty || 0)
                         const dispatched = item.dispatched_qty ?? 0
-                        const currentStock = item.current_stock ?? totalStock
-                        const isTracked = item.is_tracked  // UI 뱃지 표시용으로만 유지
+                        const currentStock = item.current_stock ?? null
 
-                        // 현재고 현황 표시 — 모든 품목에 적용 (is_tracked 무관)
-                        const isLow = currentStock < 5
-                        const isNegative = currentStock < 0
+                        // 실재고 수량 표시
+                        const isLow = currentStock !== null && currentStock < 5
+                        const isNegative = currentStock !== null && currentStock < 0
                         let currentStockCell
-                        if (totalStock === 0 && dispatched === 0) {
-                            // 입고 기록도 없고 출고도 없는 품목: 미운용
+                        if (currentStock === null) {
                             currentStockCell = <td style={{ textAlign: 'center', color: '#aaa', fontSize: '0.85em' }}>-</td>
                         } else if (isNegative) {
                             currentStockCell = (
@@ -1629,21 +1609,13 @@ const ItemsTab = ({ month, months }) => {
                                 <EditableCell value={item.category} onSave={(val) => handleInlineUpdate('category', val)} />
                                 <EditableCell value={item.item_name} onSave={(val) => handleInlineUpdate('item_name', val)} bold={true} />
                                 <EditableCell value={item.price} onSave={(val) => handleInlineUpdate('price', val)} align="right" />
-                                {/* 총 재고 (읽기전용, 구매+추가 자동계산) */}
-                                <td style={{ textAlign: 'center', fontWeight: 'bold', background: '#eff6ff', color: '#1d4ed8' }}>
-                                    {totalStock.toLocaleString()}
-                                </td>
-                                {/* 구매 (편집 가능, E열 = base_qty) */}
-                                <EditableCell value={item.base_qty} onSave={(val) => handleInlineUpdate('base_qty', val)} align="center" type="number" />
-                                {/* 추가 (편집 가능, F열 = order_qty) */}
-                                <EditableCell value={item.order_qty} onSave={(val) => handleInlineUpdate('order_qty', val)} align="center" type="number" />
                                 {/* 출고 (읽기전용) — 모든 품목에 표시 */}
                                 <td style={{ textAlign: 'center', color: '#86198f' }}>
                                     {dispatched > 0
                                         ? dispatched.toLocaleString()
                                         : <span style={{ color: '#aaa' }}>0</span>}
                                 </td>
-                                {/* 현재고 현황 */}
+                                {/* 실재고 수량 (복합기_토너_재고_DB 기준) */}
                                 {currentStockCell}
                                 <td style={{ textAlign: 'center', display: 'flex', gap: '4px', justifyContent: 'center' }}>
                                     <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => startEdit(item)}>상세 수정</button>
@@ -1657,7 +1629,7 @@ const ItemsTab = ({ month, months }) => {
                             </tr>
                         )
                     }) : (
-                        <tr><td colSpan="9" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
+                        <tr><td colSpan="6" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
                             조건에 맞는 품목이 없습니다.
                         </td></tr>
                     )}
@@ -1785,8 +1757,8 @@ const TrackedItemsTab = ({ month, months }) => {
             </div>
 
             <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
-                💡 <strong>현재고 현황</strong> = <strong>총 재고 (구매+추가)</strong> - <strong>{dispatchLabel}</strong><br/>
-                현재고가 5개 미만이면 🚨 <strong>부족</strong> 경고가 표시됩니다.
+                💡 <strong>실재고 수량</strong>은 <strong>복합기_토너_재고_DB</strong> 시트의 실시간 재고를 표시합니다.<br/>
+                실재고가 5개 미만이면 🚨 <strong>부족</strong> 경고가 표시됩니다.
             </div>
 
             <table className="data-table">
@@ -1794,11 +1766,8 @@ const TrackedItemsTab = ({ month, months }) => {
                     <tr>
                         <th>품목명</th>
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
-                        <th style={{ textAlign: 'center', background: '#eff6ff', color: '#1d4ed8' }}>총 재고<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>구매+추가</small></th>
-                        <th style={{ textAlign: 'center', background: '#f0fdf4', color: '#166534' }}>구매<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>업체 입고</small></th>
-                        <th style={{ textAlign: 'center', background: '#fefce8', color: '#854d0e' }}>추가<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>개별 추가</small></th>
                         <th style={{ textAlign: 'center', color: '#f59e0b' }}>출고량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMode === 'monthly' ? dispatchMonth || '선택월' : '누적'}</small></th>
-                        <th style={{ textAlign: 'center', color: '#3b82f6', fontSize: '1.1em' }}>현재고 현황</th>
+                        <th style={{ textAlign: 'center', color: '#3b82f6', fontSize: '1.1em' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>복합기_토너_재고_DB</small></th>
                         <th style={{ textAlign: 'center' }}>상태</th>
                         <th style={{ textAlign: 'center' }}>상세 내역</th>
                     </tr>
@@ -1810,23 +1779,19 @@ const TrackedItemsTab = ({ month, months }) => {
                             mutation.mutate(updatedData)
                         }
 
-                        const totalStock = (item.base_qty || 0) + (item.order_qty || 0)
-                        const current = item.current_stock || 0
+                        const current = item.current_stock ?? null
                         const dispatched = item.dispatched_qty || 0
-                        const isLow = current < 5
+                        const isLow = current !== null && current < 5
 
                         return (
                             <tr key={idx} style={{ backgroundColor: isLow ? '#fff5f5' : 'transparent' }}>
                                 <td style={{ fontWeight: 'bold' }}>{item.item_name}</td>
                                 <EditableCell value={item.price} onSave={(val) => handleInlineUpdate('price', val)} align="right" />
-                                {/* 총 재고 (읽기전용) */}
-                                <td style={{ textAlign: 'center', fontWeight: 'bold', background: '#eff6ff', color: '#1d4ed8' }}>{totalStock.toLocaleString()}</td>
-                                {/* 구매 (E열, 편집 가능) */}
-                                <EditableCell value={item.base_qty} onSave={(val) => handleInlineUpdate('base_qty', val)} align="center" type="number" />
-                                {/* 추가 (F열, 편집 가능) */}
-                                <EditableCell value={item.order_qty} onSave={(val) => handleInlineUpdate('order_qty', val)} align="center" type="number" />
                                 <td style={{ textAlign: 'center', color: '#f59e0b', fontWeight: 'bold' }}>{dispatched.toLocaleString()}</td>
-                                <td style={{ textAlign: 'center', color: '#3b82f6', fontWeight: 'bold', fontSize: '1.2em' }}>{current.toLocaleString()}</td>
+                                {/* 실재고 수량 (복합기_토너_재고_DB 기준) */}
+                                <td style={{ textAlign: 'center', color: current !== null && !isLow ? '#3b82f6' : '#ef4444', fontWeight: 'bold', fontSize: '1.2em' }}>
+                                    {current !== null ? current.toLocaleString() : '-'}
+                                </td>
                                 <td style={{ textAlign: 'center' }}>
                                     <span style={{
                                         padding: '4px 10px', borderRadius: '12px', fontSize: '0.85em', fontWeight: 'bold', display: 'inline-block',
@@ -1841,7 +1806,7 @@ const TrackedItemsTab = ({ month, months }) => {
                             </tr>
                         )
                     }) : (
-                        <tr><td colSpan="9" style={{ textAlign: 'center' }}>재고 추적 중인 품목이 없습니다.</td></tr>
+                        <tr><td colSpan="6" style={{ textAlign: 'center' }}>재고 추적 중인 품목이 없습니다.</td></tr>
                     )}
                 </tbody>
             </table>

@@ -280,6 +280,25 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
                     item["dispatched_qty"] = d_qty
                     item["current_stock"] = item["total_stock"] - d_qty  # 현재고 = 총재고 - 출고
 
+        # 3단계: 복합기_토너_재고_DB 실재고를 해당 품목의 current_stock에 덮어쓰기
+        try:
+            toner_inv = _get_toner_inventory_impl()
+            toner_items_list = toner_inv.get("items", [])
+            if toner_items_list:
+                toner_stock_map = {}
+                for t in toner_items_list:
+                    t_name = t.get("item_name", "").strip()
+                    t_stock = t.get("current_stock")
+                    if t_name and t_stock is not None:
+                        toner_stock_map[t_name.lower()] = t_stock
+                # 일치하는 품목에 실재고 적용
+                for item in items:
+                    key = item["item_name"].lower()
+                    if key in toner_stock_map:
+                        item["current_stock"] = toner_stock_map[key]
+        except Exception as _e:
+            logger.warning(f"토너 실재고 적용 오류 (계산값 유지): {_e}")
+
         return items
     except Exception as e:
         print(f"Error reading items list: {e}")
