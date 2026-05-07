@@ -850,7 +850,21 @@ def _get_toner_inventory_impl():
 
         # 주요 컬럼 인덱스 탐색
         name_col_idx   = _find_col_idx(headers, ['품번', '토너_품번', 'toner', 'tonner', '토너', '품목명', '명칭', 'name', '모델', 'model', '품목'])
-        stock_col_idx  = _find_col_idx(headers, ['재고', 'stock', 'qty', '수량'])
+        # 실재고 컬럼 우선 탐색: 정확히 '실재고' 헤더인 컬럼을 먼저 찾고 없으면 fallback
+        stock_col_idx = next(
+            (i for i, h in enumerate(headers) if h.strip() == '실재고'), None
+        )
+        if stock_col_idx is None:
+            stock_col_idx = _find_col_idx(headers, ['실재고', '현재고', 'current_stock'])
+        if stock_col_idx is None:
+            # 복합기 수량·안전재고·중고재고·재고상태 등 제외 후 fallback
+            stock_col_idx = next(
+                (i for i, h in enumerate(headers)
+                 if '재고' in h and h not in ('안전재고', '중고재고', '재고상태')),
+                None
+            )
+        if stock_col_idx is None:
+            stock_col_idx = _find_col_idx(headers, ['stock', 'qty'])
         model_col_idx  = _find_col_idx(headers, ['기종', 'compatible', '호환', 'printer'])
 
         if name_col_idx is None:
@@ -939,7 +953,20 @@ def deduct_toner_stock(item_name: str, quantity: int) -> bool:
 
         headers = [str(h).strip() for h in all_values[0]]
         name_col_idx  = _find_col_idx(headers, ['품번', '토너_품번', 'toner', 'tonner', '토너', '품목명', '명칭', 'name', '모델', 'model', '품목'])
-        stock_col_idx = _find_col_idx(headers, ['재고', 'stock', 'qty', '수량'])
+        # 실재고 컬럼 우선 탐색
+        stock_col_idx = next(
+            (i for i, h in enumerate(headers) if h.strip() == '실재고'), None
+        )
+        if stock_col_idx is None:
+            stock_col_idx = _find_col_idx(headers, ['실재고', '현재고', 'current_stock'])
+        if stock_col_idx is None:
+            stock_col_idx = next(
+                (i for i, h in enumerate(headers)
+                 if '재고' in h and h not in ('안전재고', '중고재고', '재고상태')),
+                None
+            )
+        if stock_col_idx is None:
+            stock_col_idx = _find_col_idx(headers, ['stock', 'qty'])
 
         if name_col_idx is None:
             name_col_idx = 0
