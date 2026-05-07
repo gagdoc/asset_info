@@ -32,7 +32,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 _CACHE = {}
-_CACHE_TTL = 120  # 120초 캐싱 (Google Sheets API 과다 호출 방지)
+_STALE_CACHE = {}          # 마지막으로 성공한 데이터 (API 실패 시 반환용)
+_CACHE_TTL = 120           # 120초 캐싱 (Google Sheets API 과다 호출 방지)
+
+def _is_empty_result(val):
+    """결과가 실질적으로 비어있는지 판단 (빈 리스트 / headers 없는 dict)"""
+    if val is None:
+        return True
+    if isinstance(val, list):
+        return len(val) == 0
+    if isinstance(val, dict):
+        # {"headers": [], "items": []} 형태를 빈 결과로 판단
+        return not val.get("items") and not val.get("headers")
+    return False
 
 def _get_cached(key, func, *args):
     now = time.time()
@@ -40,7 +52,25 @@ def _get_cached(key, func, *args):
         val, exp = _CACHE[key]
         if now < exp:
             return val
-    val = func(*args)
+    try:
+        val = func(*args)
+    except Exception as e:
+        logger.warning(f"[캐시] API 호출 실패 ({key}): {e}")
+        # 실패 시 stale 데이터 반환
+        if key in _STALE_CACHE:
+            logger.info(f"[캐시] stale 데이터 반환: {key}")
+            return _STALE_CACHE[key]
+        raise
+
+    # 유효한 결과만 stale 캐시에 저장
+    if not _is_empty_result(val):
+        _STALE_CACHE[key] = val
+
+    # 빈 결과가 왔지만 stale 데이터가 있으면 stale 반환 (rate limit 대응)
+    if _is_empty_result(val) and key in _STALE_CACHE:
+        logger.warning(f"[캐시] 빈 결과 수신 — stale 데이터 반환: {key}")
+        return _STALE_CACHE[key]
+
     _CACHE[key] = (val, now + _CACHE_TTL)
     return val
 
@@ -535,8 +565,8 @@ def add_outbound(month: str, data: dict) -> bool:
         ]])
         invalidate_cache(f"outbound_{month}")
         invalidate_cache("items_")  # "items_cumulative_all", "items_monthly_*" 등 모두 무효화
-        # 데이터 변경 시 재고리스트 요약 시트 동기화
-        sync_inventory_summary_sheet()
+        # sync_inventory_summary_sheet() 는 출고 추가 시 호출 제거
+        # (무거운 batch read + write 로 rate limit 유발 — 명시적 동기화 버튼으로만 실행)
 
         # 일반·위탁 모두 토너 재고 시트에서 품목 검색 후 차감
         # (사전 체크 없이 직접 deduct 시도 — _is_in_toner_sheet API 실패 우회)
@@ -674,7 +704,8 @@ def delete_outbound_history(month: str, row_index: int,
         ws.delete_rows(row_index)
         invalidate_cache(f"outbound_{month}")
         invalidate_cache("items_")  # "items_cumulative_all", "items_monthly_*" 등 모두 무효화
-        sync_inventory_summary_sheet()
+        # sync_inventory_summary_sheet() 는 삭제 시 호출 제거
+        # (무거운 batch read + write 로 rate limit 유발 — 명시적 동기화 버튼으로만 실행)
 
         # ── 토너 실재고 복구 (일반·위탁 모두) ───────────────────────
         if del_item_name and del_qty > 0:
@@ -856,22 +887,9 @@ def _find_col_idx(headers: list, keywords: list) -> int | None:
     return None
 
 
-_TONER_LAST_GOOD: dict = {}  # API 실패 시 반환할 마지막 정상 데이터
-
 def get_toner_inventory():
-    """토너 전용 재고 시트 전체 데이터 반환 (캐시 적용, 실패 시 stale 데이터 반환)"""
-    try:
-        result = _get_cached("toner_inventory", _get_toner_inventory_impl)
-        if result.get("items"):  # 유효한 데이터면 stale 캐시 갱신
-            _TONER_LAST_GOOD.update(result)
-        elif _TONER_LAST_GOOD.get("items"):
-            # 빈 결과가 왔지만 이전 정상 데이터가 있으면 stale 반환
-            logger.warning("토너 재고 빈 응답 — 마지막 정상 캐시 반환")
-            return _TONER_LAST_GOOD
-        return result
-    except Exception as e:
-        logger.error(f"get_toner_inventory 오류: {e}")
-        return _TONER_LAST_GOOD or {"headers": [], "items": [], "name_col": None, "stock_col": None, "model_col": None}
+    """토너 전용 재고 시트 전체 데이터 반환 (캐시 적용, 실패 시 stale 데이터 자동 반환)"""
+    return _get_cached("toner_inventory", _get_toner_inventory_impl)
 
 
 def _get_toner_inventory_impl():
