@@ -11,6 +11,8 @@ from backend.services.consumables_service import (
     get_month_close_status, confirm_month_snapshot, close_month,
     reopen_month, get_monthly_toner_report, reset_month_snapshot,
     get_purchase_history, add_purchase_record, delete_purchase_record,
+    set_toner_stock_direct,
+    get_individual_inbound_history, add_individual_inbound, delete_individual_inbound,
     IS_PRODUCTION,
 )
 from typing import List, Dict, Any
@@ -531,3 +533,59 @@ def remove_inbound(
 def inventory_report():
     """품목별 + 월별 입출고 현황 리포트 반환"""
     return get_inventory_report()
+
+
+# ── 실재고 직접 수정 ──────────────────────────────────────────────
+
+@router.patch("/items/stock")
+def update_item_stock(data: Dict[str, Any] = Body(...)):
+    """토너 실재고를 지정한 값으로 직접 설정 (상세 수정 폼에서 사용)"""
+    item_name = (data.get("item_name") or "").strip()
+    new_stock  = data.get("stock")
+    if not item_name or new_stock is None:
+        raise HTTPException(status_code=400, detail="item_name과 stock이 필요합니다.")
+    try:
+        stock_int = int(str(new_stock).replace(',', ''))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="stock은 정수여야 합니다.")
+    success = set_toner_stock_direct(item_name, stock_int)
+    if not success:
+        raise HTTPException(status_code=500, detail="실재고 업데이트 실패 — 토너 시트에서 품목을 확인하세요.")
+    return {"status": "success"}
+
+
+# ── 개별 입고 내역 ──────────────────────────────────────────────
+
+@router.get("/individual-inbound")
+def list_individual_inbound(month: str = Query(None, description="조회할 월 (예: '2026년5월'), 없으면 전체")):
+    """개별 입고 내역 조회"""
+    return get_individual_inbound_history(month=month)
+
+
+@router.post("/individual-inbound")
+def create_individual_inbound(data: Dict[str, Any] = Body(...)):
+    """개별 입고 추가 (실재고 자동 반영)"""
+    if not data.get("item_name"):
+        raise HTTPException(status_code=400, detail="품목명은 필수입니다.")
+    if not data.get("date"):
+        raise HTTPException(status_code=400, detail="날짜는 필수입니다.")
+    qty = data.get("quantity", 0)
+    if not qty or int(str(qty).replace(',', '')) <= 0:
+        raise HTTPException(status_code=400, detail="수량은 1 이상이어야 합니다.")
+    success = add_individual_inbound(data)
+    if not success:
+        raise HTTPException(status_code=500, detail="개별 입고 추가 실패")
+    return {"status": "success"}
+
+
+@router.delete("/individual-inbound")
+def remove_individual_inbound(
+    row_index: int = Query(..., description="삭제할 행 번호"),
+    item_name: str = Query("", description="품목명 (검증용)"),
+    quantity:  int = Query(0,  description="수량 (실재고 차감용)"),
+):
+    """개별 입고 삭제 (실재고 차감)"""
+    result = delete_individual_inbound(row_index, item_name, quantity)
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "삭제 실패"))
+    return {"status": "success"}

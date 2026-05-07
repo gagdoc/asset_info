@@ -1322,9 +1322,13 @@ const ItemsTab = ({ month, months }) => {
     const [dispatchMode, setDispatchMode] = useState('monthly') // 'monthly' | 'cumulative'
     const [dispatchMonth, setDispatchMonth] = useState(month || '')
     const [showForm, setShowForm] = useState(false)
-    const [formData, setFormData] = useState({ row_index: null, category: '', item_name: '', price: '', is_tracked: false })
+    const [formData, setFormData] = useState({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, current_stock: '' })
     const [searchTerm, setSearchTerm] = useState('')
     const [filterCategory, setFilterCategory] = useState('')
+    // 개별 추가 모달
+    const [indivModal, setIndivModal] = useState(null)  // null | { item_name, item }
+    const today = new Date().toISOString().slice(0, 10)
+    const [indivForm, setIndivForm] = useState({ date: today, quantity: '', note: '' })
 
     // 부모에서 month가 바뀌면 dispatchMonth도 동기화
     useEffect(() => {
@@ -1390,19 +1394,78 @@ const ItemsTab = ({ month, months }) => {
         deleteMutation.mutate({ row_index: item.row_index, item_name: item.item_name })
     }
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault()
         if (!formData.category || !formData.item_name || !formData.price) {
             alert("모든 필드를 입력해주세요.")
             return
         }
+        // 기본 품목 저장
         mutation.mutate(formData)
+        // 실재고 수량이 변경됐으면 토너 시트도 업데이트
+        const newStock = formData.current_stock
+        const origStock = formData._orig_stock
+        if (newStock !== '' && newStock !== null && String(newStock) !== String(origStock ?? '')) {
+            try {
+                await axios.patch('/api/consumables/items/stock', {
+                    item_name: formData.item_name,
+                    stock: parseInt(String(newStock).replace(/,/g, '')) || 0,
+                })
+                queryClient.invalidateQueries(['toner-inventory'])
+            } catch (err) {
+                alert(`실재고 수정 실패: ${err?.response?.data?.detail || err.message}\n(품목 기본 정보는 저장되었습니다.)`)
+            }
+        }
     }
 
     const startEdit = (item) => {
-        setFormData({ row_index: item.row_index, category: item.category, item_name: item.item_name, price: item.price, is_tracked: item.is_tracked || false })
+        setFormData({
+            row_index: item.row_index,
+            category: item.category,
+            item_name: item.item_name,
+            price: item.price,
+            is_tracked: item.is_tracked || false,
+            current_stock: item.current_stock ?? '',   // 실재고 수량 (토너 시트)
+            _orig_stock: item.current_stock ?? null,   // 변경 여부 비교용
+        })
         setShowForm(true)
     }
+
+    // 개별 입고 내역 (선택 월 기준)
+    const { data: indivHistory } = useQuery({
+        queryKey: ['individual-inbound', dispatchMonth || 'all'],
+        queryFn: async () => {
+            const params = dispatchMonth ? `?month=${encodeURIComponent(dispatchMonth)}` : ''
+            const { data } = await axios.get(`/api/consumables/individual-inbound${params}`)
+            return data
+        },
+        staleTime: 60000,
+    })
+    const indivMap = useMemo(() => {
+        if (!indivHistory) return {}
+        const m = {}
+        indivHistory.forEach(rec => {
+            if (rec.item_name) {
+                const key = rec.item_name.toLowerCase()
+                m[key] = (m[key] || 0) + (rec.quantity || 0)
+            }
+        })
+        return m
+    }, [indivHistory])
+
+    // 개별 추가 뮤테이션
+    const indivAddMutation = useMutation({
+        mutationFn: (data) => axios.post('/api/consumables/individual-inbound', data),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['individual-inbound'])
+            queryClient.invalidateQueries(['toner-inventory'])
+            queryClient.invalidateQueries(['consumables-items'])
+            setIndivModal(null)
+            setIndivForm({ date: today, quantity: '', note: '' })
+            alert('개별 추가가 등록되었습니다.')
+        },
+        onError: (err) => alert(`개별 추가 실패: ${err?.response?.data?.detail || err.message}`),
+    })
 
     if (isLoading) return <LoadingModal isOpen={isLoading} message="소모품 마스터 리스트를 불러오는 중입니다..." />
 
@@ -1535,6 +1598,21 @@ const ItemsTab = ({ month, months }) => {
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#1976d2', fontWeight: 'bold' }}>재고 추적 🎯</label>
                         <input type="checkbox" checked={formData.is_tracked} onChange={e => setFormData({...formData, is_tracked: e.target.checked})} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
                     </div>
+                    {/* 실재고 수량 — 수정 모드(row_index 있을 때)에만 표시 */}
+                    {formData.row_index && (
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#b91c1c', fontWeight: 'bold' }}>실재고 수량 📦</label>
+                            <input
+                                type="number"
+                                min="0"
+                                placeholder="현재 실재고"
+                                value={formData.current_stock}
+                                onChange={e => setFormData({...formData, current_stock: e.target.value})}
+                                style={{ padding: '8px', width: '90px', borderColor: '#fca5a5' }}
+                            />
+                            <div style={{ fontSize: '0.75em', color: '#94a3b8', marginTop: '3px' }}>토너 시트 반영</div>
+                        </div>
+                    )}
                     <button type="submit" className="btn btn-primary" disabled={mutation.isPending} style={{ marginLeft: 'auto' }}>
                         저장하기
                     </button>
@@ -1571,6 +1649,7 @@ const ItemsTab = ({ month, months }) => {
                         <th>{'소모품명 (Item Name)'}</th>
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
                         <th style={{ textAlign: 'center', background: '#fdf4ff', color: '#86198f' }}>출고<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
+                        <th style={{ textAlign: 'center', background: '#f0fdf4', color: '#15803d' }}>개별추가<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMode === 'monthly' ? (dispatchMonth || '전체') : '전체'}</small></th>
                         <th style={{ textAlign: 'center', background: '#fff1f2', color: '#9f1239' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>복합기_토너_재고_DB</small></th>
                         <th style={{ textAlign: 'center' }}>관리</th>
                     </tr>
@@ -1604,21 +1683,33 @@ const ItemsTab = ({ month, months }) => {
                             )
                         }
 
+                        const indivQty = indivMap[item.item_name?.toLowerCase()] ?? 0
                         return (
                             <tr key={idx} style={{}}>
                                 <EditableCell value={item.category} onSave={(val) => handleInlineUpdate('category', val)} />
                                 <EditableCell value={item.item_name} onSave={(val) => handleInlineUpdate('item_name', val)} bold={true} />
                                 <EditableCell value={item.price} onSave={(val) => handleInlineUpdate('price', val)} align="right" />
-                                {/* 출고 (읽기전용) — 모든 품목에 표시 */}
+                                {/* 출고 (읽기전용) */}
                                 <td style={{ textAlign: 'center', color: '#86198f' }}>
                                     {dispatched > 0
                                         ? dispatched.toLocaleString()
                                         : <span style={{ color: '#aaa' }}>0</span>}
                                 </td>
+                                {/* 개별추가 수량 */}
+                                <td style={{ textAlign: 'center' }}>
+                                    {indivQty > 0
+                                        ? <span style={{ color: '#15803d', fontWeight: 'bold' }}>+{indivQty}</span>
+                                        : <span style={{ color: '#aaa' }}>-</span>}
+                                </td>
                                 {/* 실재고 수량 (복합기_토너_재고_DB 기준) */}
                                 {currentStockCell}
-                                <td style={{ textAlign: 'center', display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                <td style={{ textAlign: 'center', display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' }}>
                                     <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => startEdit(item)}>상세 수정</button>
+                                    <button
+                                        className="btn btn-primary"
+                                        style={{ padding: '2px 8px', fontSize: '0.8em', backgroundColor: '#16a34a', borderColor: '#16a34a' }}
+                                        onClick={() => { setIndivModal({ item_name: item.item_name, item }); setIndivForm({ date: today, quantity: '', note: '' }) }}
+                                    >+ 개별추가</button>
                                     <button
                                         className="btn btn-danger"
                                         style={{ padding: '2px 8px', fontSize: '0.8em' }}
@@ -1629,13 +1720,52 @@ const ItemsTab = ({ month, months }) => {
                             </tr>
                         )
                     }) : (
-                        <tr><td colSpan="6" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
+                        <tr><td colSpan="7" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
                             조건에 맞는 품목이 없습니다.
                         </td></tr>
                     )}
                 </tbody>
             </table>
             <LoadingModal isOpen={deleteMutation.isPending} message="품목을 삭제하고 있습니다..." />
+            <LoadingModal isOpen={indivAddMutation.isPending} message="개별 입고를 등록하는 중입니다..." />
+
+            {/* 개별 추가 모달 */}
+            {indivModal && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }}>
+                    <div className="card" style={{ width: '420px', padding: '1.5rem' }}>
+                        <h3 style={{ margin: '0 0 1rem' }}>📦 개별 추가 입고</h3>
+                        <p style={{ margin: '0 0 1rem', fontWeight: 'bold', color: '#15803d' }}>{indivModal.item_name}</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '4px', fontWeight: 'bold' }}>날짜</label>
+                                <input type="date" value={indivForm.date} onChange={e => setIndivForm(f => ({ ...f, date: e.target.value }))} style={{ width: '100%', padding: '8px', boxSizing: 'border-box', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '4px', fontWeight: 'bold' }}>추가 수량</label>
+                                <input type="number" min="1" placeholder="수량 입력" value={indivForm.quantity} onChange={e => setIndivForm(f => ({ ...f, quantity: e.target.value }))} style={{ width: '100%', padding: '8px', boxSizing: 'border-box', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '4px', fontWeight: 'bold' }}>비고 (선택)</label>
+                                <input type="text" placeholder="예: 비축용 개별 구매" value={indivForm.note} onChange={e => setIndivForm(f => ({ ...f, note: e.target.value }))} style={{ width: '100%', padding: '8px', boxSizing: 'border-box', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                            </div>
+                            <p style={{ fontSize: '0.82em', color: '#64748b', margin: 0 }}>
+                                💡 입고 수량이 실재고에 즉시 반영됩니다.
+                            </p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '1.2rem' }}>
+                            <button className="btn btn-secondary" onClick={() => setIndivModal(null)}>취소</button>
+                            <button
+                                className="btn btn-primary"
+                                style={{ backgroundColor: '#16a34a', borderColor: '#16a34a' }}
+                                disabled={indivAddMutation.isPending || !indivForm.quantity || parseInt(indivForm.quantity) <= 0}
+                                onClick={() => indivAddMutation.mutate({ item_name: indivModal.item_name, date: indivForm.date, quantity: parseInt(indivForm.quantity) || 0, note: indivForm.note })}
+                            >
+                                등록
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             </>}
         </div>
     )

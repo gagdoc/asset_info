@@ -1137,6 +1137,196 @@ def _is_in_toner_sheet(item_name: str) -> bool:
         return any(kw in n for kw in ['tonner', 'toner', '토너'])
 
 
+def set_toner_stock_direct(item_name: str, new_stock: int) -> bool:
+    """
+    토너 실재고를 지정한 값으로 직접 설정 (상세 수정 시 사용).
+    deduct_toner_stock / restore_toner_stock 과 달리 절대값으로 덮어씀.
+    """
+    ws = _get_toner_worksheet()
+    if not ws:
+        return False
+    try:
+        all_values = ws.get_all_values()
+        if not all_values:
+            return False
+
+        headers = [str(h).strip() for h in all_values[0]]
+        name_col_idx = _find_col_idx(headers, ['품번', '토너_품번', 'toner', 'tonner', '토너', '품목명', '명칭', 'name', '모델', 'model', '품목'])
+        stock_col_idx = next(
+            (i for i, h in enumerate(headers) if h.strip() == '실재고'), None
+        )
+        if stock_col_idx is None:
+            stock_col_idx = _find_col_idx(headers, ['실재고', '현재고', 'current_stock'])
+        if stock_col_idx is None:
+            stock_col_idx = next(
+                (i for i, h in enumerate(headers)
+                 if '재고' in h and h not in ('안전재고', '중고재고', '재고상태')),
+                None
+            )
+        if name_col_idx is None:
+            name_col_idx = 0
+        if stock_col_idx is None:
+            logger.warning(f"토너 실재고 컬럼 없음 (직접 설정 불가). 헤더: {headers}")
+            return False
+
+        item_name_lower = item_name.lower()
+        for row_num, row in enumerate(all_values[1:], start=2):
+            if name_col_idx >= len(row):
+                continue
+            if str(row[name_col_idx]).strip().lower() != item_name_lower:
+                continue
+            stock_cell = f"{chr(65 + stock_col_idx)}{row_num}"
+            ws.update(stock_cell, [[str(new_stock)]])
+            invalidate_cache("toner_inventory")
+            logger.info(f"토너 실재고 직접 설정: '{item_name}' = {new_stock}")
+            return True
+
+        logger.warning(f"토너 재고 시트에서 품목 미발견 (직접 설정 불가): '{item_name}'")
+        return False
+    except Exception as e:
+        logger.error(f"토너 실재고 직접 설정 오류: {e}")
+        return False
+
+
+# ── 개별 입고 (Individual Inbound) ─────────────────────────────────────────
+# 시트: CONSUMABLES_MASTER_SPREADSHEET_ID / "개별입고내역"
+# 컬럼: 날짜 | 품목명 | 수량 | 비고
+# 용도: 업체 구매가 아닌 개별 수동 입고 (실재고에 직접 반영)
+# ──────────────────────────────────────────────────────────────────────────
+
+INDIVIDUAL_INBOUND_SHEET = "개별입고내역"
+INDIVIDUAL_INBOUND_HEADERS = ["날짜", "품목명", "수량", "비고"]
+
+
+def _ensure_individual_inbound_sheet(ss_master):
+    """개별입고내역 시트가 없으면 자동 생성 후 반환"""
+    ws = _get_worksheet_safe(ss_master, INDIVIDUAL_INBOUND_SHEET)
+    if not ws:
+        ws = ss_master.add_worksheet(title=INDIVIDUAL_INBOUND_SHEET, rows=2000, cols=4)
+        ws.update("A1:D1", [INDIVIDUAL_INBOUND_HEADERS])
+        logger.info(f"'{INDIVIDUAL_INBOUND_SHEET}' 시트 자동 생성")
+    return ws
+
+
+def get_individual_inbound_history(month: str = None):
+    key = f"individual_inbound_{month or 'all'}"
+    return _get_cached(key, _get_individual_inbound_impl, month)
+
+
+def _get_individual_inbound_impl(month: str = None):
+    from datetime import datetime as _dt
+    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss_master:
+        return []
+    try:
+        ws = _get_worksheet_safe(ss_master, INDIVIDUAL_INBOUND_SHEET)
+        if not ws:
+            return []
+        records = _retry_sheets_op(lambda: ws.get_values("A2:D"))
+        history = []
+        for i, r in enumerate(records):
+            if not r or not str(r[0]).strip():
+                continue
+            date_str   = str(r[0]).strip()
+            item_name  = str(r[1]).strip() if len(r) > 1 else ""
+            qty_str    = str(r[2]).strip().replace(',', '') if len(r) > 2 else "0"
+            qty        = int(float(qty_str)) if qty_str.replace('.', '', 1).isdigit() else 0
+            note       = str(r[3]).strip() if len(r) > 3 else ""
+
+            # 날짜 → 월 파싱 (YYYY-MM-DD 형태 기준)
+            record_month = ""
+            try:
+                dt = _dt.strptime(date_str, "%Y-%m-%d")
+                record_month = f"{dt.year}년{dt.month}월"
+            except Exception:
+                pass
+
+            if month and record_month != month:
+                continue
+
+            history.append({
+                "row_index":  i + 2,
+                "date":       date_str,
+                "item_name":  item_name,
+                "quantity":   qty,
+                "note":       note,
+                "month":      record_month,
+            })
+        return history
+    except Exception as e:
+        logger.error(f"개별입고내역 조회 오류: {e}")
+        return []
+
+
+def add_individual_inbound(data: dict) -> bool:
+    """개별 입고 한 건 추가 + 토너 실재고 반영"""
+    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss_master:
+        return False
+    try:
+        ws = _ensure_individual_inbound_sheet(ss_master)
+        date      = data.get('date', '')
+        item_name = data.get('item_name', '').strip()
+        qty_raw   = str(data.get('quantity', '0')).replace(',', '')
+        qty       = int(float(qty_raw)) if qty_raw.replace('.', '', 1).isdigit() else 0
+        note      = data.get('note', '')
+
+        col_A    = _retry_sheets_op(lambda: ws.col_values(1))
+        next_row = len(col_A) + 1
+        ws.update(f"A{next_row}:D{next_row}", [[date, item_name, str(qty), note]])
+        invalidate_cache("individual_inbound_")
+
+        # 토너 실재고에 수량 추가
+        if item_name and qty > 0:
+            try:
+                restore_toner_stock(item_name, qty)
+                logger.info(f"개별 입고 후 토너 재고 추가: '{item_name}' +{qty}")
+            except Exception as e:
+                logger.warning(f"개별 입고 재고 추가 오류 (입고 기록은 완료): {e}")
+
+        return True
+    except Exception as e:
+        logger.error(f"개별 입고 추가 오류: {e}")
+        return False
+
+
+def delete_individual_inbound(row_index: int, item_name: str = "", quantity: int = 0) -> dict:
+    """개별 입고 한 건 삭제 + 토너 실재고 복원 차감"""
+    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss_master:
+        return {"success": False, "error": "Google Sheets 연결 실패"}
+    try:
+        ws = _get_worksheet_safe(ss_master, INDIVIDUAL_INBOUND_SHEET)
+        if not ws:
+            return {"success": False, "error": "개별입고내역 시트 없음"}
+
+        # 행 데이터 확인 (인자로 안 온 경우 시트에서 읽기)
+        if not item_name or not quantity:
+            try:
+                row_data  = ws.row_values(row_index)
+                item_name = str(row_data[1]).strip() if len(row_data) > 1 else item_name
+                qty_str   = str(row_data[2]).strip().replace(',', '') if len(row_data) > 2 else "0"
+                quantity  = int(float(qty_str)) if qty_str.replace('.', '', 1).isdigit() else quantity
+            except Exception as _e:
+                logger.warning(f"개별 입고 삭제 행 읽기 실패: {_e}")
+
+        ws.delete_rows(row_index)
+        invalidate_cache("individual_inbound_")
+
+        # 개별 입고 취소 → 실재고 차감
+        if item_name and quantity > 0:
+            try:
+                deduct_toner_stock(item_name, quantity)
+                logger.info(f"개별 입고 삭제 후 토너 재고 차감: '{item_name}' -{quantity}")
+            except Exception as e:
+                logger.warning(f"개별 입고 삭제 재고 차감 오류 (삭제는 완료): {e}")
+
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"개별 입고 삭제 오류: {e}")
+        return {"success": False, "error": str(e)}
+
+
 def sync_toner_to_items_list() -> dict:
     """
     토너 전용 재고 시트에 있는 품목 중 마스터 '품목리스트' 시트에 없는 항목을
