@@ -1327,6 +1327,54 @@ def delete_individual_inbound(row_index: int, item_name: str = "", quantity: int
         return {"success": False, "error": str(e)}
 
 
+def update_individual_inbound(row_index: int, new_data: dict) -> dict:
+    """개별 입고 수정 + 실재고 자동 조정 (수량 변경 시 차액만 반영)"""
+    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss_master:
+        return {"success": False, "error": "Google Sheets 연결 실패"}
+    try:
+        ws = _get_worksheet_safe(ss_master, INDIVIDUAL_INBOUND_SHEET)
+        if not ws:
+            return {"success": False, "error": "개별입고내역 시트 없음"}
+
+        # 현재 행 데이터 읽기 (old 수량 확보)
+        row_data   = ws.row_values(row_index)
+        old_item   = str(row_data[1]).strip() if len(row_data) > 1 else ""
+        old_qty_s  = str(row_data[2]).strip().replace(',', '') if len(row_data) > 2 else "0"
+        old_qty    = int(float(old_qty_s)) if old_qty_s.replace('.', '', 1).isdigit() else 0
+        old_note   = str(row_data[3]).strip() if len(row_data) > 3 else ""
+        old_date   = str(row_data[0]).strip() if row_data else ""
+
+        # 새 값 (없으면 기존 값 유지)
+        item_name = new_data.get('item_name', old_item).strip() or old_item
+        date      = new_data.get('date', old_date) or old_date
+        qty_raw   = str(new_data.get('quantity', old_qty)).replace(',', '')
+        new_qty   = int(float(qty_raw)) if qty_raw.replace('.', '', 1).isdigit() else old_qty
+        note      = new_data.get('note', old_note)
+
+        # 시트 행 업데이트
+        ws.update(f"A{row_index}:D{row_index}", [[date, item_name, str(new_qty), note]])
+        invalidate_cache("individual_inbound_")
+
+        # 실재고 차액 조정 (수량 변경 시만)
+        if item_name and new_qty != old_qty:
+            diff = new_qty - old_qty
+            try:
+                if diff > 0:
+                    restore_toner_stock(item_name, diff)
+                    logger.info(f"개별 입고 수정 재고 추가: '{item_name}' +{diff}")
+                else:
+                    deduct_toner_stock(item_name, abs(diff))
+                    logger.info(f"개별 입고 수정 재고 차감: '{item_name}' {diff}")
+            except Exception as e:
+                logger.warning(f"개별 입고 수정 재고 조정 오류 (수정은 완료): {e}")
+
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"개별 입고 수정 오류: {e}")
+        return {"success": False, "error": str(e)}
+
+
 def sync_toner_to_items_list() -> dict:
     """
     토너 전용 재고 시트에 있는 품목 중 마스터 '품목리스트' 시트에 없는 항목을

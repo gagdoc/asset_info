@@ -12,7 +12,7 @@ from backend.services.consumables_service import (
     reopen_month, get_monthly_toner_report, reset_month_snapshot,
     get_purchase_history, add_purchase_record, delete_purchase_record,
     set_toner_stock_direct,
-    get_individual_inbound_history, add_individual_inbound, delete_individual_inbound,
+    get_individual_inbound_history, add_individual_inbound, delete_individual_inbound, update_individual_inbound,
     IS_PRODUCTION,
 )
 from typing import List, Dict, Any
@@ -575,6 +575,21 @@ def create_individual_inbound(data: Dict[str, Any] = Body(...)):
     success = add_individual_inbound(data)
     if not success:
         raise HTTPException(status_code=500, detail="개별 입고 추가 실패")
+    return {"status": "success"}
+
+
+@router.put("/individual-inbound")
+def modify_individual_inbound(data: Dict[str, Any] = Body(...)):
+    """개별 입고 수정 (실재고 차액 자동 조정)"""
+    row_index = data.get("row_index")
+    if not row_index:
+        raise HTTPException(status_code=400, detail="row_index는 필수입니다.")
+    qty = data.get("quantity")
+    if qty is not None and int(str(qty).replace(',', '')) < 0:
+        raise HTTPException(status_code=400, detail="수량은 0 이상이어야 합니다.")
+    result = update_individual_inbound(int(row_index), data)
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "수정 실패"))
     return {"status": "success"}
 
 
