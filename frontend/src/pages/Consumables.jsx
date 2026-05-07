@@ -2163,13 +2163,31 @@ const TonnerInventoryTab = () => {
     const stockCol   = invData?.stock_col
     const modelCol   = invData?.model_col
 
-    // "실재고" 컬럼 숨김 처리
-    const HIDDEN_COLS = ['실재고', '중고재고']
+    // "중고재고"만 숨김 처리 — 실재고·안전재고는 표시
+    const HIDDEN_COLS = ['중고재고']
     const displayHeaders = headers.filter(h => !HIDDEN_COLS.includes(h))
 
     const filtered = searchTerm
         ? items.filter(it => headers.some(h => String(it[h] || '').toLowerCase().includes(searchTerm.toLowerCase())))
         : items
+
+    // 출고수량 — 소모품 품목 목록에서 dispatched_qty 가져오기
+    const { data: itemsForDispatch } = useQuery({
+        queryKey: ['consumables-items', 'cumulative', 'toner'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/consumables/items?dispatch_mode=cumulative')
+            return data
+        },
+        staleTime: 60000,
+    })
+    const dispatchMap = useMemo(() => {
+        if (!itemsForDispatch) return {}
+        const m = {}
+        itemsForDispatch.forEach(it => {
+            if (it.item_name) m[it.item_name.toLowerCase()] = it.dispatched_qty || 0
+        })
+        return m
+    }, [itemsForDispatch])
 
     const handleEditStart = (item) => {
         setEditingRow(item.row_index)
@@ -2185,11 +2203,13 @@ const TonnerInventoryTab = () => {
         refetch()
     }
 
-    // 재고 상태 뱃지
+    // 재고 상태 뱃지 (안전재고 기준으로 부족 판단)
+    const getSafetyQty = (item) => parseInt(String(item['안전재고'] || '0').replace(/,/g, '')) || 0
     const StockBadge = ({ item }) => {
         if (stockCol == null || item[stockCol] == null) return <span style={{ color: '#aaa', fontSize: '0.85em' }}>-</span>
         const qty = item.current_stock ?? 0
-        const isLow = qty <= 0
+        const safety = getSafetyQty(item)
+        const isLow = qty <= safety
         return (
             <span style={{
                 padding: '3px 10px', borderRadius: '12px', fontSize: '0.85em', fontWeight: 'bold', display: 'inline-block',
@@ -2197,7 +2217,7 @@ const TonnerInventoryTab = () => {
                 color: isLow ? '#ef4444' : '#22c55e',
                 border: `1px solid ${isLow ? '#fca5a5' : '#86efac'}`
             }}>
-                {isLow ? `🚨 재고 없음 (${qty}개)` : `✅ 재고 있음 (${qty}개)`}
+                {isLow ? `🚨 부족 (${qty}개)` : `✅ 충분 (${qty}개)`}
             </span>
         )
     }
@@ -2234,16 +2254,16 @@ const TonnerInventoryTab = () => {
 
             {/* 요약 카드 */}
             {items.length > 0 && (() => {
-                const lowStock  = items.filter(it => (it.current_stock ?? 0) <= 0)
-                const goodStock = items.filter(it => (it.current_stock ?? 0) > 0)
+                const lowStock  = items.filter(it => (it.current_stock ?? 0) <= getSafetyQty(it))
+                const goodStock = items.filter(it => (it.current_stock ?? 0) > getSafetyQty(it))
                 return (
                     <div style={{ display: 'flex', gap: '12px', marginBottom: '1rem', flexWrap: 'wrap' }}>
                         <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '10px 18px', minWidth: '120px' }}>
-                            <div style={{ fontSize: '0.75em', color: '#15803d', fontWeight: 'bold' }}>✅ 재고 있음</div>
+                            <div style={{ fontSize: '0.75em', color: '#15803d', fontWeight: 'bold' }}>✅ 재고 충분</div>
                             <div style={{ fontSize: '1.5em', fontWeight: 'bold', color: '#22c55e' }}>{goodStock.length}</div>
                         </div>
                         <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', padding: '10px 18px', minWidth: '120px' }}>
-                            <div style={{ fontSize: '0.75em', color: '#dc2626', fontWeight: 'bold' }}>🚨 재고 없음</div>
+                            <div style={{ fontSize: '0.75em', color: '#dc2626', fontWeight: 'bold' }}>🚨 안전재고 이하</div>
                             <div style={{ fontSize: '1.5em', fontWeight: 'bold', color: '#ef4444' }}>{lowStock.length}</div>
                         </div>
                         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 18px', minWidth: '120px' }}>
@@ -2282,20 +2302,23 @@ const TonnerInventoryTab = () => {
                             <tr>
                                 {displayHeaders.map(h => (
                                     <th key={h} style={{
-                                        backgroundColor: h === stockCol ? '#f0fdf4' : h === nameCol ? '#eff6ff' : h === modelCol ? '#fefce8' : undefined,
-                                        color: h === stockCol ? '#15803d' : h === nameCol ? '#1d4ed8' : h === modelCol ? '#854d0e' : undefined,
+                                        backgroundColor: h === stockCol ? '#f0fdf4' : h === nameCol ? '#eff6ff' : h === modelCol ? '#fefce8' : h === '안전재고' ? '#fff7ed' : undefined,
+                                        color: h === stockCol ? '#15803d' : h === nameCol ? '#1d4ed8' : h === modelCol ? '#854d0e' : h === '안전재고' ? '#c2410c' : undefined,
                                         whiteSpace: 'nowrap'
                                     }}>
-                                        {h === stockCol ? '📦 재고' : h === nameCol ? '🖨️ 품목명' : h === modelCol ? `🔧 ${h}` : h}
+                                        {h === stockCol ? '📦 실재고' : h === nameCol ? '🖨️ 품목명' : h === modelCol ? `🔧 ${h}` : h === '안전재고' ? '⚠️ 안전재고' : h}
                                     </th>
                                 ))}
+                                <th style={{ textAlign: 'center', whiteSpace: 'nowrap', backgroundColor: '#faf5ff', color: '#7c3aed' }}>📤 출고수량</th>
                                 <th style={{ textAlign: 'center', width: '60px' }}>수정</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filtered.length > 0 ? filtered.map((item) => {
                                 const isEditing = editingRow === item.row_index
-                                const isLow = (item.current_stock ?? 1) <= 0
+                                const safety = getSafetyQty(item)
+                                const isLow = (item.current_stock ?? 0) <= safety
+                                const dispatchedQty = dispatchMap[item.item_name?.toLowerCase()] ?? 0
                                 return (
                                     <tr key={item.row_index} style={{ backgroundColor: isEditing ? '#fefce8' : isLow ? '#fff5f5' : 'transparent' }}>
                                         {isEditing ? (
@@ -2303,13 +2326,14 @@ const TonnerInventoryTab = () => {
                                                 {displayHeaders.map(h => (
                                                     <td key={h} style={{ padding: '4px' }}>
                                                         <input
-                                                            type={h === stockCol ? 'number' : 'text'}
+                                                            type={h === stockCol || h === '안전재고' ? 'number' : 'text'}
                                                             value={editForm[h] ?? ''}
                                                             onChange={e => setEditForm(f => ({ ...f, [h]: e.target.value }))}
                                                             style={{ width: '100%', padding: '4px 6px', borderRadius: '4px', border: '1px solid #93c5fd', boxSizing: 'border-box', minWidth: h === stockCol ? '70px' : '100px' }}
                                                         />
                                                     </td>
                                                 ))}
+                                                <td style={{ textAlign: 'center', color: '#7c3aed', fontWeight: 'bold' }}>{dispatchedQty}</td>
                                                 <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                                                     <button className="btn btn-primary" style={{ padding: '3px 8px', fontSize: '0.8em', marginRight: '3px' }} onClick={handleEditSave} disabled={updateMutation.isPending}>💾</button>
                                                     <button className="btn btn-secondary" style={{ padding: '3px 8px', fontSize: '0.8em' }} onClick={() => setEditingRow(null)}>✖</button>
@@ -2324,7 +2348,7 @@ const TonnerInventoryTab = () => {
                                                         style={{
                                                             cursor: 'pointer',
                                                             fontWeight: h === nameCol ? 'bold' : 'normal',
-                                                            textAlign: h === stockCol ? 'center' : undefined,
+                                                            textAlign: h === stockCol || h === '안전재고' ? 'center' : undefined,
                                                             whiteSpace: h === modelCol ? 'pre-wrap' : undefined,
                                                             maxWidth: h === modelCol ? '220px' : undefined,
                                                             fontSize: h === modelCol ? '0.85em' : undefined
@@ -2337,15 +2361,20 @@ const TonnerInventoryTab = () => {
                                                                 borderRadius: '12px',
                                                                 fontWeight: 'bold',
                                                                 fontSize: '0.95em',
-                                                                backgroundColor: (item.current_stock ?? 0) <= 0 ? '#fee2e2' : '#dcfce7',
-                                                                color: (item.current_stock ?? 0) <= 0 ? '#ef4444' : '#15803d',
-                                                                border: `1px solid ${(item.current_stock ?? 0) <= 0 ? '#fca5a5' : '#86efac'}`
+                                                                backgroundColor: isLow ? '#fee2e2' : '#dcfce7',
+                                                                color: isLow ? '#ef4444' : '#15803d',
+                                                                border: `1px solid ${isLow ? '#fca5a5' : '#86efac'}`
                                                             }}>
-                                                                {(item.current_stock ?? 0) <= 0 ? `🚨 ${item.current_stock ?? 0}개` : `${item.current_stock ?? 0}개`}
+                                                                {isLow ? `🚨 ${item.current_stock ?? 0}개` : `${item.current_stock ?? 0}개`}
                                                             </span>
+                                                        ) : h === '안전재고' ? (
+                                                            <span style={{ color: '#c2410c', fontWeight: 'bold' }}>{item[h] ?? '-'}</span>
                                                         ) : item[h]}
                                                     </td>
                                                 ))}
+                                                <td style={{ textAlign: 'center', color: '#7c3aed', fontWeight: 'bold' }}>
+                                                    {dispatchedQty > 0 ? `📤 ${dispatchedQty}` : '-'}
+                                                </td>
                                                 <td style={{ textAlign: 'center' }}>
                                                     <button
                                                         title="수정"
@@ -2358,7 +2387,7 @@ const TonnerInventoryTab = () => {
                                     </tr>
                                 )
                             }) : (
-                                <tr><td colSpan={headers.length + 2} style={{ textAlign: 'center', color: '#94a3b8', padding: '1.5rem' }}>검색 결과가 없습니다.</td></tr>
+                                <tr><td colSpan={displayHeaders.length + 2} style={{ textAlign: 'center', color: '#94a3b8', padding: '1.5rem' }}>검색 결과가 없습니다.</td></tr>
                             )}
                         </tbody>
                     </table>
