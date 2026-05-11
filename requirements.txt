@@ -1,11 +1,14 @@
-streamlit
+# FastAPI 웹 서버
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+
+# 데이터 처리
 pandas
 openpyxl
 xlsxwriter
-supabase
-fastapi
-uvicorn
-python-multipart
-pydantic
+
+# Google Sheets 연동
 gspread
 google-auth

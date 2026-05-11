@@ -1,16 +1,21 @@
+# ── Git / IDE ─────────────────────────────────────────
 .git
 .gitignore
-.env
+.DS_Store
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# ── Python 캐시 ───────────────────────────────────────
 .venv
 venv
+env
 __pycache__
 *.pyc
 *.pyo
 *.pyd
 .Python
-env
 pip-log.txt
-pip-delete-this-directory.txt
 .tox
 .coverage
 .coverage.*
@@ -18,13 +23,40 @@ pip-delete-this-directory.txt
 nosetests.xml
 coverage.xml
 *.cover
+
+# ── 로그 ─────────────────────────────────────────────
 *.log
-.git
-.mypy_cache
-.pytest_cache
-.hypothesis
-frontend/node_modules
+uvicorn*.log
+
+# ── 데이터베이스 / 키 (보안) ──────────────────────────
 data/*.json
 *.db
 *.sqlite3
-.DS_Store
+
+# ── 문서 및 개발 전용 파일 ────────────────────────────
+.archive
+*.md
+AGENTS.md
+ARCHITECTURE.md
+DEVELOPMENT_GUIDE.md
+docs/
+.agents/
+.devcontainer/
+.streamlit/
+.github/
+deployment_config.json
+deploy.sh
+
+# ── 엑셀 (template.xlsx 는 포함, 나머지 제외) ──────────
+ASSET_INFO*.xlsx
+ASSET_INFO*.xlsx~
+~$*.xlsx
+상세내역*.xlsx
+
+# ── 프론트엔드 빌드 캐시 ──────────────────────────────
+frontend/node_modules
+frontend/dist
+
+# ── 기타 ─────────────────────────────────────────────
+package-lock.json
+*.zip
