@@ -1688,19 +1688,33 @@ const ItemsTab = ({ month, months }) => {
                             </div>
                         )
                     ) : (
-                        // 일반 소모품인 경우: 추가/수정 모두 구매 수량(초기재고) 설정 가능
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#2563eb', fontWeight: 'bold' }}>구매 수량 (초기재고) 📦</label>
-                            <input
-                                type="number"
-                                min="0"
-                                placeholder="초기 구매수량"
-                                value={formData.base_qty}
-                                onChange={e => setFormData({...formData, base_qty: e.target.value})}
-                                style={{ padding: '8px', width: '100px', borderColor: '#93c5fd' }}
-                            />
-                            <div style={{ fontSize: '0.75em', color: '#94a3b8', marginTop: '3px' }}>품목리스트 E열 반영</div>
-                        </div>
+                        // 일반 소모품인 경우: 추가/수정 모두 구매 수량(초기재고) 및 추가 수량 설정 가능
+                        <>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#2563eb', fontWeight: 'bold' }}>구매 수량 (초기재고) 📦</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    placeholder="초기 구매수량"
+                                    value={formData.base_qty}
+                                    onChange={e => setFormData({...formData, base_qty: e.target.value})}
+                                    style={{ padding: '8px', width: '100px', borderColor: '#93c5fd' }}
+                                />
+                                <div style={{ fontSize: '0.75em', color: '#94a3b8', marginTop: '3px' }}>품목리스트 E열 반영</div>
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#16a34a', fontWeight: 'bold' }}>추가 수량 (조정/기타) ➕</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    placeholder="추가 수량"
+                                    value={formData.order_qty}
+                                    onChange={e => setFormData({...formData, order_qty: e.target.value})}
+                                    style={{ padding: '8px', width: '100px', borderColor: '#bbf7d0' }}
+                                />
+                                <div style={{ fontSize: '0.75em', color: '#94a3b8', marginTop: '3px' }}>품목리스트 F열 반영</div>
+                            </div>
+                        </>
                     )}
                     <button type="submit" className="btn btn-primary" disabled={mutation.isPending} style={{ marginLeft: 'auto' }}>
                         저장하기
