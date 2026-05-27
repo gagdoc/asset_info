@@ -1322,7 +1322,16 @@ const ItemsTab = ({ month, months }) => {
     const [dispatchMode, setDispatchMode] = useState('monthly') // 'monthly' | 'cumulative'
     const [dispatchMonth, setDispatchMonth] = useState(month || '')
     const [showForm, setShowForm] = useState(false)
-    const [formData, setFormData] = useState({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, current_stock: '' })
+    const [formData, setFormData] = useState({
+        row_index: null,
+        category: '',
+        item_name: '',
+        price: '',
+        is_tracked: false,
+        current_stock: '',
+        base_qty: 0,
+        order_qty: 0
+    })
     const [searchTerm, setSearchTerm] = useState('')
     const [filterCategory, setFilterCategory] = useState('')
     // 개별 추가 모달
@@ -1355,7 +1364,7 @@ const ItemsTab = ({ month, months }) => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
             setShowForm(false)
-            setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false })
+            setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, current_stock: '', base_qty: 0, order_qty: 0 })
             alert("품목이 저장되었습니다.")
         },
         onError: () => alert("오류가 발생했습니다. 구글 시트를 확인하세요.")
@@ -1403,20 +1412,29 @@ const ItemsTab = ({ month, months }) => {
             alert("모든 필드를 입력해주세요.")
             return
         }
-        // 기본 품목 저장
-        mutation.mutate(formData)
-        // 실재고 수량이 변경됐으면 토너 시트도 업데이트
-        const newStock = formData.current_stock
-        const origStock = formData._orig_stock
-        if (newStock !== '' && newStock !== null && String(newStock) !== String(origStock ?? '')) {
-            try {
-                await axios.patch('/api/consumables/items/stock', {
-                    item_name: formData.item_name,
-                    stock: parseInt(String(newStock).replace(/,/g, '')) || 0,
-                })
-                queryClient.invalidateQueries(['toner-inventory'])
-            } catch (err) {
-                alert(`실재고 수정 실패: ${err?.response?.data?.detail || err.message}\n(품목 기본 정보는 저장되었습니다.)`)
+        const isTonner = isTonnerItem(formData.item_name, formData.category)
+        const payload = {
+            ...formData,
+            base_qty: isTonner ? 0 : (parseInt(String(formData.base_qty).replace(/,/g, '')) || 0),
+            order_qty: parseInt(String(formData.order_qty).replace(/,/g, '')) || 0
+        }
+        // 기본 품목 저장 (E열 base_qty, F열 order_qty 포함)
+        mutation.mutate(payload)
+        
+        // 토너 품목인 경우에만 실재고 수량 변경 시 토너 시트 업데이트
+        if (isTonner && formData.row_index) {
+            const newStock = formData.current_stock
+            const origStock = formData._orig_stock
+            if (newStock !== '' && newStock !== null && String(newStock) !== String(origStock ?? '')) {
+                try {
+                    await axios.patch('/api/consumables/items/stock', {
+                        item_name: formData.item_name,
+                        stock: parseInt(String(newStock).replace(/,/g, '')) || 0,
+                    })
+                    queryClient.invalidateQueries(['toner-inventory'])
+                } catch (err) {
+                    alert(`실재고 수정 실패: ${err?.response?.data?.detail || err.message}\n(품목 기본 정보는 저장되었습니다.)`)
+                }
             }
         }
     }
@@ -1430,6 +1448,8 @@ const ItemsTab = ({ month, months }) => {
             is_tracked: item.is_tracked || false,
             current_stock: item.current_stock ?? '',   // 실재고 수량 (토너 시트)
             _orig_stock: item.current_stock ?? null,   // 변경 여부 비교용
+            base_qty: item.base_qty ?? 0,
+            order_qty: item.order_qty ?? 0
         })
         setShowForm(true)
     }
@@ -1554,7 +1574,7 @@ const ItemsTab = ({ month, months }) => {
                     }}
                         disabled={!filteredItems || filteredItems.length === 0}
                     />
-                    <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false }); }}>
+                    <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, current_stock: '', base_qty: 0, order_qty: 0 }); }}>
                         {showForm ? '닫기' : '+ 품목 추가'}
                     </button>
                 </div>
@@ -1650,19 +1670,36 @@ const ItemsTab = ({ month, months }) => {
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#1976d2', fontWeight: 'bold' }}>재고 추적 🎯</label>
                         <input type="checkbox" checked={formData.is_tracked} onChange={e => setFormData({...formData, is_tracked: e.target.checked})} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
                     </div>
-                    {/* 실재고 수량 — 수정 모드(row_index 있을 때)에만 표시 */}
-                    {formData.row_index && (
+                    {/* 실재고 또는 구매 수량 입력 필드 */}
+                    {isTonnerItem(formData.item_name, formData.category) ? (
+                        // 토너 품목인 경우: 수정 시에만 실재고 수량 변경 노출 (토너 시트에 반영되므로)
+                        formData.row_index && (
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#b91c1c', fontWeight: 'bold' }}>실재고 수량 📦</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    placeholder="현재 실재고"
+                                    value={formData.current_stock}
+                                    onChange={e => setFormData({...formData, current_stock: e.target.value})}
+                                    style={{ padding: '8px', width: '90px', borderColor: '#fca5a5' }}
+                                />
+                                <div style={{ fontSize: '0.75em', color: '#94a3b8', marginTop: '3px' }}>토너 시트 반영</div>
+                            </div>
+                        )
+                    ) : (
+                        // 일반 소모품인 경우: 추가/수정 모두 구매 수량(초기재고) 설정 가능
                         <div>
-                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#b91c1c', fontWeight: 'bold' }}>실재고 수량 📦</label>
+                            <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#2563eb', fontWeight: 'bold' }}>구매 수량 (초기재고) 📦</label>
                             <input
                                 type="number"
                                 min="0"
-                                placeholder="현재 실재고"
-                                value={formData.current_stock}
-                                onChange={e => setFormData({...formData, current_stock: e.target.value})}
-                                style={{ padding: '8px', width: '90px', borderColor: '#fca5a5' }}
+                                placeholder="초기 구매수량"
+                                value={formData.base_qty}
+                                onChange={e => setFormData({...formData, base_qty: e.target.value})}
+                                style={{ padding: '8px', width: '100px', borderColor: '#93c5fd' }}
                             />
-                            <div style={{ fontSize: '0.75em', color: '#94a3b8', marginTop: '3px' }}>토너 시트 반영</div>
+                            <div style={{ fontSize: '0.75em', color: '#94a3b8', marginTop: '3px' }}>품목리스트 E열 반영</div>
                         </div>
                     )}
                     <button type="submit" className="btn btn-primary" disabled={mutation.isPending} style={{ marginLeft: 'auto' }}>
@@ -1702,7 +1739,7 @@ const ItemsTab = ({ month, months }) => {
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
                         <th style={{ textAlign: 'center', background: '#fdf4ff', color: '#86198f' }}>출고<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
                         <th style={{ textAlign: 'center', background: '#f0fdf4', color: '#15803d' }}>개별추가<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMode === 'monthly' ? (dispatchMonth || '전체') : '전체'}</small></th>
-                        <th style={{ textAlign: 'center', background: '#fff1f2', color: '#9f1239' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>복합기_토너_재고_DB</small></th>
+                        <th style={{ textAlign: 'center', background: '#fff1f2', color: '#9f1239' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>구매+추가-출고</small></th>
                         <th style={{ textAlign: 'center' }}>관리</th>
                     </tr>
                 </thead>

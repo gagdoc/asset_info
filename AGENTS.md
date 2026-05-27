@@ -3,6 +3,8 @@
 > 이 파일은 Claude Code, Cowork 등 AI 에이전트가 이 프로젝트를 처음 접할 때
 > 가장 먼저 읽어야 하는 핵심 문서입니다.
 > 자세한 내용은 `ARCHITECTURE.md`와 `docs/` 폴더를 참조하세요.
+>
+> 📋 **페이지별 디자인·데이터·보안 상세 가이드**: [`docs/PAGE_MASTER_GUIDE.md`](docs/PAGE_MASTER_GUIDE.md)
 
 ---
 

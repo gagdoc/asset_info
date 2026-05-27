@@ -6,6 +6,38 @@
 
 set -e
 
+# ==============================================================================
+# 오래된 Artifact Registry 이미지 자동 정리 함수 (비용 절감)
+# 최신 3개 이미지만 유지하고 나머지를 삭제합니다.
+# ==============================================================================
+cleanup_old_images() {
+  local REPO="asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$SERVICE_NAME"
+  echo "🧹 오래된 Artifact Registry 이미지 정리 중..."
+  echo "   (최신 3개만 유지, 나머지 삭제)"
+
+  # 최신 3개를 제외한 이미지 digest 목록 추출 (메인 이미지만, 레이어 제외)
+  local DIGESTS_TO_DELETE
+  DIGESTS_TO_DELETE=$(gcloud artifacts docker images list "$REPO" \
+    --sort-by="~CREATE_TIME" \
+    --format="value(version)" \
+    --filter="tags:latest OR tags:'' " 2>/dev/null | tail -n +4)
+
+  if [ -z "$DIGESTS_TO_DELETE" ]; then
+    echo "   ✅ 정리할 이미지가 없습니다."
+    return 0
+  fi
+
+  local DELETED_COUNT=0
+  while IFS= read -r DIGEST; do
+    if [ -n "$DIGEST" ]; then
+      gcloud artifacts docker images delete "$REPO@$DIGEST" \
+        --delete-tags --quiet 2>/dev/null && DELETED_COUNT=$((DELETED_COUNT + 1)) || true
+    fi
+  done <<< "$DIGESTS_TO_DELETE"
+
+  echo "   ✅ 이미지 정리 완료: ${DELETED_COUNT}개 삭제됨"
+}
+
 # Load configuration
 CONFIG_FILE="deployment_config.json"
 PROJECT_ID=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['project_id'])")
@@ -66,3 +98,6 @@ fi
 
 echo "✅ Deployment successful!"
 gcloud run services describe "$SERVICE_NAME" --platform managed --region "$REGION" --format 'value(status.url)'
+
+# 배포 성공 후 오래된 이미지 자동 정리 (Artifact Registry 비용 절감)
+cleanup_old_images
