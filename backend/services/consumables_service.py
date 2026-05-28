@@ -1258,8 +1258,38 @@ def _get_individual_inbound_impl(month: str = None):
         return []
 
 
+def adjust_general_item_order_qty(item_name: str, qty_diff: int) -> bool:
+    """일반 소모품의 추가 수량(order_qty, F열)을 조정합니다."""
+    _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss: return False
+    try:
+        ws = _get_worksheet_safe(ss, "품목리스트")
+        if not ws: return False
+        all_values = ws.get_all_values()
+        if not all_values: return False
+        
+        for row_num, row in enumerate(all_values[1:], start=2):
+            if len(row) > 1 and str(row[1]).strip().lower() == item_name.strip().lower():
+                current_order_qty_str = str(row[5]).strip().replace(',', '') if len(row) > 5 else "0"
+                try:
+                    current_order_qty = int(current_order_qty_str) if current_order_qty_str else 0
+                except ValueError:
+                    current_order_qty = 0
+                
+                new_order_qty = max(0, current_order_qty + qty_diff)
+                ws.update_cell(row_num, 6, str(new_order_qty))  # 6번째 열 = F열
+                invalidate_cache("items_")
+                sync_inventory_summary_sheet()
+                logger.info(f"일반 소모품 추가 수량 조정: '{item_name}' {current_order_qty} -> {new_order_qty} ({qty_diff:+#})")
+                return True
+        return False
+    except Exception as e:
+        logger.error(f"일반 소모품 추가 수량 조정 오류: {e}")
+        return False
+
+
 def add_individual_inbound(data: dict) -> bool:
-    """개별 입고 한 건 추가 + 토너 실재고 반영"""
+    """개별 입고 한 건 추가 + 토너 또는 일반 소모품 실재고 반영"""
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss_master:
         return False
@@ -1276,11 +1306,17 @@ def add_individual_inbound(data: dict) -> bool:
         ws.update(f"A{next_row}:D{next_row}", [[date, item_name, str(qty), note]])
         invalidate_cache("individual_inbound_")
 
-        # 토너 실재고에 수량 추가
+        # 실재고에 수량 추가
         if item_name and qty > 0:
             try:
-                restore_toner_stock(item_name, qty)
-                logger.info(f"개별 입고 후 토너 재고 추가: '{item_name}' +{qty}")
+                # 1. 먼저 토너 실재고 복구 시도
+                success = restore_toner_stock(item_name, qty)
+                # 2. 토너에 해당 품목이 없는 경우 일반 소모품 품목리스트의 추가 수량(F열)을 증가시킴
+                if not success:
+                    adjust_general_item_order_qty(item_name, qty)
+                    logger.info(f"개별 입고 후 일반 소모품 추가 수량 반영: '{item_name}' +{qty}")
+                else:
+                    logger.info(f"개별 입고 후 토너 재고 추가: '{item_name}' +{qty}")
             except Exception as e:
                 logger.warning(f"개별 입고 재고 추가 오류 (입고 기록은 완료): {e}")
 
@@ -1291,7 +1327,7 @@ def add_individual_inbound(data: dict) -> bool:
 
 
 def delete_individual_inbound(row_index: int, item_name: str = "", quantity: int = 0) -> dict:
-    """개별 입고 한 건 삭제 + 토너 실재고 복원 차감"""
+    """개별 입고 한 건 삭제 + 토너/일반 실재고 복원 차감"""
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss_master:
         return {"success": False, "error": "Google Sheets 연결 실패"}
@@ -1316,8 +1352,12 @@ def delete_individual_inbound(row_index: int, item_name: str = "", quantity: int
         # 개별 입고 취소 → 실재고 차감
         if item_name and quantity > 0:
             try:
-                deduct_toner_stock(item_name, quantity)
-                logger.info(f"개별 입고 삭제 후 토너 재고 차감: '{item_name}' -{quantity}")
+                success = deduct_toner_stock(item_name, quantity)
+                if not success:
+                    adjust_general_item_order_qty(item_name, -quantity)
+                    logger.info(f"개별 입고 삭제 후 일반 소모품 추가 수량 차감: '{item_name}' -{quantity}")
+                else:
+                    logger.info(f"개별 입고 삭제 후 토너 재고 차감: '{item_name}' -{quantity}")
             except Exception as e:
                 logger.warning(f"개별 입고 삭제 재고 차감 오류 (삭제는 완료): {e}")
 
@@ -1361,11 +1401,19 @@ def update_individual_inbound(row_index: int, new_data: dict) -> dict:
             diff = new_qty - old_qty
             try:
                 if diff > 0:
-                    restore_toner_stock(item_name, diff)
-                    logger.info(f"개별 입고 수정 재고 추가: '{item_name}' +{diff}")
+                    success = restore_toner_stock(item_name, diff)
+                    if not success:
+                        adjust_general_item_order_qty(item_name, diff)
+                        logger.info(f"개별 입고 수정 일반 소모품 추가 수량 반영: '{item_name}' +{diff}")
+                    else:
+                        logger.info(f"개별 입고 수정 토너 재고 추가: '{item_name}' +{diff}")
                 else:
-                    deduct_toner_stock(item_name, abs(diff))
-                    logger.info(f"개별 입고 수정 재고 차감: '{item_name}' {diff}")
+                    success = deduct_toner_stock(item_name, abs(diff))
+                    if not success:
+                        adjust_general_item_order_qty(item_name, diff) # diff가 음수이므로 그대로 더함
+                        logger.info(f"개별 입고 수정 일반 소모품 추가 수량 차감: '{item_name}' {diff}")
+                    else:
+                        logger.info(f"개별 입고 수정 토너 재고 차감: '{item_name}' {diff}")
             except Exception as e:
                 logger.warning(f"개별 입고 수정 재고 조정 오류 (수정은 완료): {e}")
 
