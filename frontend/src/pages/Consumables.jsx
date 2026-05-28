@@ -2127,7 +2127,7 @@ const TrackedItemsTab = ({ month, months }) => {
                         <th>품목명</th>
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
                         <th style={{ textAlign: 'center', color: '#f59e0b' }}>출고량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMode === 'monthly' ? dispatchMonth || '선택월' : '누적'}</small></th>
-                        <th style={{ textAlign: 'center', color: '#10b981' }}>개별추가<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMode === 'monthly' ? dispatchMonth || '선택월' : '전체'}</small></th>
+                        <th style={{ textAlign: 'center', color: '#2563eb' }}>개별추가<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMode === 'monthly' ? dispatchMonth || '선택월' : '전체'}</small></th>
                         <th style={{ textAlign: 'center', color: '#3b82f6', fontSize: '1.1em' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>실재고</small></th>
                         <th style={{ textAlign: 'center' }}>상태</th>
                         <th style={{ textAlign: 'center' }}>상세 내역</th>
@@ -2152,8 +2152,8 @@ const TrackedItemsTab = ({ month, months }) => {
                                 <td style={{ textAlign: 'center', color: '#f59e0b', fontWeight: 'bold' }}>{dispatched.toLocaleString()}</td>
                                 <td style={{ textAlign: 'center' }}>
                                     {indivQty > 0
-                                        ? <span style={{ color: '#15803d', fontWeight: 'bold' }}>+{indivQty}</span>
-                                        : <span style={{ color: '#aaa' }}>-</span>}
+                                        ? <span style={{ color: '#2563eb', fontWeight: 'bold' }}>+{indivQty}</span>
+                                        : <span style={{ color: '#94a3b8' }}>-</span>}
                                 </td>
                                 <td style={{ textAlign: 'center', color: current !== null && !isLow ? '#3b82f6' : '#ef4444', fontWeight: 'bold', fontSize: '1.2em' }}>
                                     {current !== null ? current.toLocaleString() : '-'}
@@ -2168,8 +2168,14 @@ const TrackedItemsTab = ({ month, months }) => {
                                 </td>
                                 <td style={{ textAlign: 'center' }}>
                                     <button
-                                        className="btn btn-info btn-sm"
-                                        style={{ marginRight: '6px', color: 'white', backgroundColor: '#0ea5e9', borderColor: '#0ea5e9' }}
+                                        className={indivQty > 0 ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
+                                        style={{ 
+                                            marginRight: '6px', 
+                                            color: indivQty > 0 ? '#ffffff' : '#475569', 
+                                            backgroundColor: indivQty > 0 ? '#2563eb' : '#f1f5f9', 
+                                            borderColor: indivQty > 0 ? '#2563eb' : '#e2e8f0',
+                                            fontWeight: indivQty > 0 ? 'bold' : 'normal'
+                                        }}
                                         onClick={() => setIndivModal({ item_name: item.item_name, item })}
                                     >📋 추가내역</button>
                                     <button className="btn btn-secondary btn-sm" onClick={() => setSelectedHistoryItem(item.item_name)}>년-월별 출고조회</button>
