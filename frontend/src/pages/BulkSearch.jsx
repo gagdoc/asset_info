@@ -252,8 +252,17 @@ export default function BulkSearch() {
           {/* 찾지 못한 항목 */}
           {results.notFound.length > 0 && (
             <div className="card" style={{ marginBottom: '2rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-              <div className="card-header" style={{ backgroundColor: 'rgba(239, 68, 68, 0.05)', color: 'var(--danger-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FaExclamationTriangle /> <h3>찾지 못한 항목 리스트</h3>
+              <div className="card-header" style={{ backgroundColor: 'rgba(239, 68, 68, 0.05)', color: 'var(--danger-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <FaExclamationTriangle /> <h3>찾지 못한 항목 리스트</h3>
+                </div>
+                <ExportButton
+                  onClick={async () => {
+                    const rows = results.notFound.map(term => ({ '찾지 못한 검색어': term }))
+                    const cols = [{ key: '찾지 못한 검색어', label: '찾지 못한 검색어' }]
+                    await exportToXLSX({ filename: `찾지못한항목_${todayStr()}`, columns: cols, rows })
+                  }}
+                />
               </div>
               <div className="card-body">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -280,8 +289,25 @@ export default function BulkSearch() {
           {/* 이메일 중복 항목 */}
           {duplicateGroups.length > 0 && (
             <div className="card" style={{ marginBottom: '2rem', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
-              <div className="card-header" style={{ backgroundColor: 'rgba(245, 158, 11, 0.07)', color: '#b45309', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FaExclamationTriangle /> <h3>이메일 중복 항목 리스트</h3>
+              <div className="card-header" style={{ backgroundColor: 'rgba(245, 158, 11, 0.07)', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <FaExclamationTriangle /> <h3>이메일 중복 항목 리스트</h3>
+                </div>
+                <ExportButton
+                  onClick={async () => {
+                    const rows = duplicateGroups.map(g => ({
+                      '이메일': g.email,
+                      '자산유형': g.type,
+                      '중복건수': g.count
+                    }))
+                    const cols = [
+                      { key: '이메일', label: '이메일' },
+                      { key: '자산유형', label: '자산유형' },
+                      { key: '중복건수', label: '중복건수' }
+                    ]
+                    await exportToXLSX({ filename: `이메일중복목록_${todayStr()}`, columns: cols, rows })
+                  }}
+                />
               </div>
               <div className="card-body">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
