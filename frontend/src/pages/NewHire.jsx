@@ -206,17 +206,74 @@ const RegisterForm = ({ deptConfig, queryClient, addToast }) => {
 }
 
 // ── 리스트 탭 ────────────────────────────────────────────
+import { FaSort, FaSortUp, FaSortDown } from 'react-icons/fa'
+
 const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryClient, addToast }) => {
     const [selectedRows, setSelectedRows] = useState(new Set())
     const [editingCell, setEditingCell] = useState(null) // { idx, col }
     const [editValue, setEditValue] = useState('')
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
 
-    const handleCellEdit = async (idx, col, value) => {
+    // 정렬 상태
+    const [sortCol, setSortCol] = useState('날짜') // 기본값 '날짜'
+    const [sortDir, setSortDir] = useState('desc') // 기본값 최신 날짜 우선
+
+    const handleSort = (col) => {
+        if (sortCol === col) {
+            setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+        } else {
+            setSortCol(col)
+            setSortDir('asc')
+        }
+    }
+
+    const SortIcon = ({ col }) => {
+        if (sortCol !== col) return <FaSort style={{ opacity: 0.3, marginLeft: '0.3rem', verticalAlign: 'middle', cursor: 'pointer' }} />
+        return sortDir === 'asc'
+            ? <FaSortUp style={{ marginLeft: '0.3rem', color: 'var(--primary-color)', verticalAlign: 'middle', cursor: 'pointer' }} />
+            : <FaSortDown style={{ marginLeft: '0.3rem', color: 'var(--primary-color)', verticalAlign: 'middle', cursor: 'pointer' }} />
+    }
+
+    // 정렬된 신규 입사자 목록 계산
+    const sortedNewHires = useMemo(() => {
+        if (!newhires) return []
+        const list = [...newhires]
+        
+        if (!sortCol) return list
+
+        list.sort((a, b) => {
+            // 날짜 정렬 처리
+            if (sortCol === '날짜') {
+                const valA = a['날짜'] || ''
+                const valB = b['날짜'] || ''
+                return sortDir === 'asc' 
+                    ? valA.localeCompare(valB) 
+                    : valB.localeCompare(valA)
+            }
+            
+            // 년, 월 정렬 처리
+            if (sortCol === '년' || sortCol === '월') {
+                const valA = Number(a[sortCol]) || 0
+                const valB = Number(b[sortCol]) || 0
+                return sortDir === 'asc' ? valA - valB : valB - valA
+            }
+
+            // 일반 문자열 정렬
+            const valA = String(a[sortCol] || '').toLowerCase()
+            const valB = String(b[sortCol] || '').toLowerCase()
+            return sortDir === 'asc'
+                ? valA.localeCompare(valB)
+                : valB.localeCompare(valA)
+        })
+
+        return list
+    }, [newhires, sortCol, sortDir])
+
+    const handleCellEdit = async (actualIndex, col, value) => {
         try {
             await axios.put('/api/assets/row/update', {
                 asset_type: 'NewHire',
-                row_index: idx,
+                row_index: actualIndex,
                 updates: { [col]: value }
             })
             addToast('✅ 수정 완료', 'success')
@@ -252,7 +309,15 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
     }
 
     const confirmDelete = async () => {
-        const remaining = newhires.filter((_, idx) => !selectedRows.has(idx))
+        // 실제 newhires 배열 기준 필터링 (선택된 row는 정렬 기준 map index 이므로 mapping 객체 또는 filter 활용 필요)
+        // selectedRows는 sortedNewHires의 index를 가지고 있으므로, 실제 원본 newhires의 index로 치환해야 함
+        const selectedIndicesInOriginal = new Set(
+            Array.from(selectedRows).map(sortedIdx => {
+                const item = sortedNewHires[sortedIdx]
+                return newhires.indexOf(item)
+            }).filter(idx => idx !== -1)
+        )
+        const remaining = newhires.filter((_, idx) => !selectedIndicesInOriginal.has(idx))
         try {
             await axios.post('/api/assets/NewHire/save', remaining)
             addToast(`✅ ${selectedRows.size}명 삭제 완료`, 'success')
@@ -304,7 +369,8 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                         className="btn btn-sm"
                         style={{ backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #86efac', fontWeight: '600' }}
                         onClick={async () => {
-                            const rows = newhires || []
+                            // 현재 보이는 정렬 상태 기준으로 엑셀 내보내기
+                            const rows = sortedNewHires || []
                             const cols = rows.length ? Object.keys(rows[0]).map(k => ({ key: k, label: k })) : []
                             await exportToXLSX({ filename: `신규입사자_${todayStr()}`, columns: cols, rows })
                         }}
@@ -325,73 +391,90 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                                     <th style={{ width: '40px' }}>
                                         <input
                                             type="checkbox"
-                                            checked={selectedRows.size === newhires.length && newhires.length > 0}
+                                            checked={selectedRows.size === sortedNewHires.length && sortedNewHires.length > 0}
                                             onChange={() => {
-                                                selectedRows.size === newhires.length
+                                                selectedRows.size === sortedNewHires.length
                                                     ? setSelectedRows(new Set())
-                                                    : setSelectedRows(new Set(newhires.map((_, i) => i)))
+                                                    : setSelectedRows(new Set(sortedNewHires.map((_, i) => i)))
                                             }}
                                         />
                                     </th>
-                                    {columns.map(col => <th key={col}>{col}</th>)}
+                                    {columns.map(col => {
+                                        const sortable = ['년', '월', '날짜', '이름', 'NAME', 'email', 'BU', 'ROLE'].includes(col)
+                                        return (
+                                            <th 
+                                                key={col} 
+                                                onClick={() => sortable && handleSort(col)}
+                                                style={sortable ? { cursor: 'pointer', userSelect: 'none' } : {}}
+                                            >
+                                                {col}
+                                                {sortable && <SortIcon col={col} />}
+                                            </th>
+                                        )
+                                    })}
                                 </tr>
                             </thead>
                             <tbody>
-                                {newhires.map((row, idx) => (
-                                    <tr
-                                        key={idx}
-                                        style={selectedRows.has(idx) ? { background: 'rgba(99,102,241,0.08)' } : {}}
-                                    >
-                                        <td className="checkbox-cell">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedRows.has(idx)}
-                                                onChange={(e) => {
-                                                    const s = new Set(selectedRows)
-                                                    e.target.checked ? s.add(idx) : s.delete(idx)
-                                                    setSelectedRows(s)
-                                                }}
-                                            />
-                                        </td>
-                                        {columns.map(col => {
-                                            const isEditable = ['이름', 'NAME', 'email', 'BU', 'ROLE', '추가사항'].includes(col)
-                                            const isEditing = editingCell?.idx === idx && editingCell?.col === col
+                                {sortedNewHires.map((row, idx) => {
+                                    // 원본 newhires 배열에서의 실제 인덱스 구하기
+                                    const actualIndex = newhires.indexOf(row)
 
-                                            return (
-                                                <td 
-                                                    key={col} 
-                                                    onDoubleClick={() => {
-                                                        if (isEditable) {
-                                                            setEditingCell({ idx, col })
-                                                            setEditValue(row[col] || '')
-                                                        }
+                                    return (
+                                        <tr
+                                            key={idx}
+                                            style={selectedRows.has(idx) ? { background: 'rgba(99,102,241,0.08)' } : {}}
+                                        >
+                                            <td className="checkbox-cell">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedRows.has(idx)}
+                                                    onChange={(e) => {
+                                                        const s = new Set(selectedRows)
+                                                        e.target.checked ? s.add(idx) : s.delete(idx)
+                                                        setSelectedRows(s)
                                                     }}
-                                                    style={isEditable ? { cursor: 'pointer' } : {}}
-                                                    title={isEditable ? '더블 클릭하여 수정' : ''}
-                                                >
-                                                    {isEditing ? (
-                                                        <input
-                                                            autoFocus
-                                                            className="form-input"
-                                                            style={{ padding: '2px 4px', fontSize: '0.9em' }}
-                                                            value={editValue}
-                                                            onChange={e => setEditValue(e.target.value)}
-                                                            onBlur={() => handleCellEdit(idx, col, editValue)}
-                                                            onKeyDown={e => {
-                                                                if (e.key === 'Enter') handleCellEdit(idx, col, editValue)
-                                                                if (e.key === 'Escape') setEditingCell(null)
-                                                            }}
-                                                        />
-                                                    ) : (
-                                                        row[col] !== null && row[col] !== undefined && row[col] !== ''
-                                                            ? String(row[col])
-                                                            : '-'
-                                                    )}
-                                                </td>
-                                            )
-                                        })}
-                                    </tr>
-                                ))}
+                                                />
+                                            </td>
+                                            {columns.map(col => {
+                                                const isEditable = ['이름', 'NAME', 'email', 'BU', 'ROLE', '추가사항'].includes(col)
+                                                const isEditing = editingCell?.idx === actualIndex && editingCell?.col === col
+
+                                                return (
+                                                    <td 
+                                                        key={col} 
+                                                        onDoubleClick={() => {
+                                                            if (isEditable) {
+                                                                setEditingCell({ idx: actualIndex, col })
+                                                                setEditValue(row[col] || '')
+                                                            }
+                                                        }}
+                                                        style={isEditable ? { cursor: 'pointer' } : {}}
+                                                        title={isEditable ? '더블 클릭하여 수정' : ''}
+                                                    >
+                                                        {isEditing ? (
+                                                            <input
+                                                                autoFocus
+                                                                className="form-input"
+                                                                style={{ padding: '2px 4px', fontSize: '0.9em' }}
+                                                                value={editValue}
+                                                                onChange={e => setEditValue(e.target.value)}
+                                                                onBlur={() => handleCellEdit(actualIndex, col, editValue)}
+                                                                onKeyDown={e => {
+                                                                    if (e.key === 'Enter') handleCellEdit(actualIndex, col, editValue)
+                                                                    if (e.key === 'Escape') setEditingCell(null)
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            row[col] !== null && row[col] !== undefined && row[col] !== ''
+                                                                ? String(row[col])
+                                                                : '-'
+                                                        )}
+                                                    </td>
+                                                )
+                                            })}
+                                        </tr>
+                                    )
+                                })}
                             </tbody>
                         </table>
                     </div>
