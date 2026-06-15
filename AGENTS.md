@@ -163,3 +163,7 @@ FastAPI (backend/main.py)
 | 소모품 API 400 오류 | 수량 값이 문자열로 전달됨 | `int(str(qty).replace(",",""))` 패턴 사용 |
 | 토너 재고 미차감 | name_col 매칭 실패 | `lower()` 비교, `토너_품번` 헤더 확인 |
 | Cloud Run 빌드 실패 | devDependency 누락 | `npm ci --include=dev` 확인 |
+
+## Imported Claude Cowork project instructions
+
+방금전까지 클로드 코드로 작업은 하던 자산 관리 앱입니다. 이 프로젝트에 첨부 되어 있는 지침을 면밀히 검토하고 진행해주시고 항상 최신 기술로 적용해 주세요
