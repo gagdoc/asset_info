@@ -510,10 +510,10 @@ def get_estimate(month: str):
             # 팀명 제거 (Name (Team) -> Name)
             name_only = u.split(' (')[0] if ' (' in u else u
             
-            # 사용자가 2명 이상이고, 해당 사용자가 받은 수량이 2개 이상일 때만 (Q) 표시
+            # 사용자가 2명 이상이고, 해당 사용자가 받은 수량이 2개 이상일 때만 (QEA) 표시
             # 사용자가 1명인 경우는 수량에 관계없이 이름만 표시
             if user_count > 1 and q > 1:
-                user_list.append(f"{name_only} ({q})")
+                user_list.append(f"{name_only} ({q}EA)")
             else:
                 user_list.append(name_only)
         users_str = ", ".join(user_list)

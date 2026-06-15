@@ -263,8 +263,6 @@ const EditableCell = ({ value, onSave, type = "text", bold = false, align = "lef
 }
 
 const EstimateTab = ({ month }) => {
-    const [isDownloading, setIsDownloading] = useState(false)
-
     const { data: estimateData, isLoading, refetch, isFetching } = useQuery({
         queryKey: ['consumables-estimate', month],
         queryFn: async () => {
@@ -282,49 +280,6 @@ const EstimateTab = ({ month }) => {
         const cost = parseInt(row.total_price?.toString().replace(/,/g, ''), 10)
         return acc + (isNaN(cost) ? 0 : cost)
     }, 0) || 0;
-
-    const handleDownload = async () => {
-        setIsDownloading(true)
-        try {
-            const response = await axios.get(`/api/consumables/estimate/download?month=${month}`, {
-                responseType: 'blob'
-            })
-            const url = window.URL.createObjectURL(new Blob([response.data]))
-            const link = document.createElement('a')
-            link.href = url
-            const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-            link.setAttribute('download', `견적서_${month}_${today}.xlsx`)
-            document.body.appendChild(link)
-            link.click()
-            link.remove()
-            window.URL.revokeObjectURL(url)
-        } catch (error) {
-            console.error('견적서 다운로드 오류:', error)
-            const status = error.response?.status || '?'
-            let msg = `견적서 다운로드 중 오류가 발생했습니다. (HTTP ${status})`
-            try {
-                if (error.response?.data instanceof Blob) {
-                    const text = await error.response.data.text()
-                    try {
-                        const json = JSON.parse(text)
-                        msg += `\n\n서버 오류: ${json.detail || text}`
-                    } catch (_) {
-                        // JSON 파싱 실패 시 원본 텍스트 일부 표시
-                        msg += `\n\n서버 응답: ${text.slice(0, 500)}`
-                    }
-                } else if (error.response?.data?.detail) {
-                    msg += `\n\n서버 오류: ${error.response.data.detail}`
-                } else if (error.message) {
-                    msg += `\n\n${error.message}`
-                }
-            } catch (e) {
-                msg += `\n\n(오류 파싱 실패: ${e.message})`
-            }
-            alert(msg)
-        } finally {
-            setIsDownloading(false)
-        }
-    }
 
     return (
         <div className="card">
@@ -346,14 +301,6 @@ const EstimateTab = ({ month }) => {
                     />
                     <button className="btn btn-secondary" onClick={() => refetch()} disabled={isFetching}>
                         {isFetching ? '새로고침 중...' : '시트 데이터 다시 불러오기'}
-                    </button>
-                    <button
-                        className="btn btn-primary"
-                        onClick={handleDownload}
-                        disabled={isDownloading || !estimateData?.length}
-                        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-                    >
-                        {isDownloading ? '생성 중...' : '📥 견적서 Excel 다운로드'}
                     </button>
                 </div>
             </div>
