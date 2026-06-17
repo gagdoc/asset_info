@@ -16,15 +16,20 @@ const AssetList = () => {
     const [searchQuery, setSearchQuery] = useState('')
     const fileInputRef = useRef(null)
     
-    // 년, 월 필터 상태 추가 (filterYears: 다중 선택 배열)
+    // 년, 월 필터 상태 추가 (filterYears, filterMonths: 다중 선택 배열)
     const [filterYears, setFilterYears] = useState([])
+    const [filterMonths, setFilterMonths] = useState([])
     const [filterYear, setFilterYear] = useState('')   // Lease/NewHire/Resign 단일선택 유지
-    const [filterMonth, setFilterMonth] = useState('')
+    const [filterMonth, setFilterMonth] = useState('') // Lease/NewHire/Resign 단일선택 유지
     const [yearDropdownOpen, setYearDropdownOpen] = useState(false)
+    const [monthDropdownOpen, setMonthDropdownOpen] = useState(false)
     const yearDropdownRef = useRef(null)
+    const monthDropdownRef = useRef(null)
     const [filterBU, setFilterBU] = useState('')
     const [filterModel, setFilterModel] = useState('')
     const [filterUser, setFilterUser] = useState('')
+    const [excludeQuery, setExcludeQuery] = useState('')
+    const [onlyWithEmail, setOnlyWithEmail] = useState(false)
 
     // 상세 수정 모달 상태
     const [isModalOpen, setIsModalOpen] = useState(false)
@@ -34,22 +39,29 @@ const AssetList = () => {
     // type(경로 파라미터)가 변경될 때 필터 상태 초기화
     useEffect(() => {
         setFilterYears([])
+        setFilterMonths([])
         setFilterYear('')
         setFilterMonth('')
         setFilterBU('')
         setFilterModel('')
         setFilterUser('')
         setSearchQuery('')
+        setExcludeQuery('')
+        setOnlyWithEmail(false)
         setSelectedRows(new Set())
         setShowDuplicateSummary(false)
         setYearDropdownOpen(false)
+        setMonthDropdownOpen(false)
     }, [type])
 
-    // 연도 드롭다운 외부 클릭 시 닫기
+    // 연도 및 월 드롭다운 외부 클릭 시 닫기
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (yearDropdownRef.current && !yearDropdownRef.current.contains(e.target)) {
                 setYearDropdownOpen(false)
+            }
+            if (monthDropdownRef.current && !monthDropdownRef.current.contains(e.target)) {
+                setMonthDropdownOpen(false)
             }
         }
         document.addEventListener('mousedown', handleClickOutside)
@@ -112,11 +124,19 @@ const AssetList = () => {
         setFilterYears(prev =>
             prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]
         )
-        setFilterMonth('')
+        setFilterMonths([])
     }
-    const clearYears = () => { setFilterYears([]); setFilterMonth('') }
+    const clearYears = () => { setFilterYears([]); setFilterMonths([]) }
 
-    // filterYear(단일) 또는 filterYears(다중) 변경 시 filterMonth 초기화
+    // iPad: 다중 월 선택 토글
+    const toggleMonth = (month) => {
+        setFilterMonths(prev =>
+            prev.includes(month) ? prev.filter(m => m !== month) : [...prev, month]
+        )
+    }
+    const clearMonths = () => { setFilterMonths([]) }
+
+    // 단일 연도 변경 시 단일 월 필터 유효성 검사
     useEffect(() => {
         if (filterYear && filterMonth) {
             const yearFilteredAssets = assets?.filter(row => getYear(row) === filterYear)
@@ -125,11 +145,12 @@ const AssetList = () => {
         }
     }, [filterYear])
 
+    // 다중 연도 변경 시 다중 월 필터 유효성 검사
     useEffect(() => {
-        if (filterYears.length > 0 && filterMonth) {
+        if (filterYears.length > 0 && filterMonths.length > 0) {
             const yearFilteredAssets = assets?.filter(row => filterYears.includes(getYear(row)))
             const availableMonths = new Set(yearFilteredAssets?.map(getMonth))
-            if (!availableMonths.has(filterMonth)) setFilterMonth('')
+            setFilterMonths(prev => prev.filter(m => availableMonths.has(m)))
         }
     }, [filterYears])
 
@@ -159,13 +180,14 @@ const AssetList = () => {
     const stockCount = assets?.filter(getIsStock).length || 0
 
     let displayedAssets = assetsWithIdx
-    // iPad: 다중 연도 필터 / 나머지: 단일 연도 필터
+    // iPad: 다중 연도/월 필터 / 나머지: 단일 연도/월 필터
     if (type === 'iPad') {
         if (filterYears.length > 0) displayedAssets = displayedAssets?.filter(row => filterYears.includes(getYear(row)))
+        if (filterMonths.length > 0) displayedAssets = displayedAssets?.filter(row => filterMonths.includes(getMonth(row)))
     } else {
         if (filterYear) displayedAssets = displayedAssets?.filter(row => getYear(row) === filterYear)
+        if (filterMonth) displayedAssets = displayedAssets?.filter(row => getMonth(row) === filterMonth)
     }
-    if (filterMonth) displayedAssets = displayedAssets?.filter(row => getMonth(row) === filterMonth)
     if (filterBU) displayedAssets = displayedAssets?.filter(row => getBU(row) === filterBU)
 
     if (filterModel) displayedAssets = displayedAssets?.filter(row => getModel(row) === filterModel)
@@ -195,6 +217,28 @@ const AssetList = () => {
             return Object.values(row).some(val => 
                 val !== null && String(val).toLowerCase().includes(q)
             )
+        })
+    }
+
+    // ── 제외 검색 필터링 ──
+    if (excludeQuery.trim()) {
+        const terms = excludeQuery.split(',').map(t => t.trim().toLowerCase()).filter(t => t !== '')
+        if (terms.length > 0) {
+            displayedAssets = displayedAssets?.filter(row => {
+                return !Object.values(row).some(val => {
+                    if (val === null) return false
+                    const valStr = String(val).toLowerCase()
+                    return terms.some(term => valStr.includes(term))
+                })
+            })
+        }
+    }
+
+    // ── 이메일 등록됨 필터링 ──
+    if (onlyWithEmail) {
+        displayedAssets = displayedAssets?.filter(row => {
+            const email = row['email'] || row['EMAIL'] || row['이메일'] || ''
+            return email && email.trim() !== '' && email.toLowerCase() !== 'missing' && email.includes('@')
         })
     }
 
@@ -333,18 +377,41 @@ const AssetList = () => {
                     )}
                 </div>
                 <div className="flex gap-1" style={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', flex: 1 }}>
+                    {/* 공통 검색/제외/이메일 필터 */}
+                    <div style={{ display: 'flex', gap: '5px', marginRight: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                            <span style={{ position: 'absolute', left: '10px', color: '#9ca3af' }}>🔍</span>
+                            <input
+                                className="form-input"
+                                style={{ padding: '4px 10px 4px 30px', width: '130px' }}
+                                placeholder="전체 검색..."
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                            <span style={{ position: 'absolute', left: '10px', color: '#f87171' }}>🚫</span>
+                            <input
+                                className="form-input"
+                                style={{ padding: '4px 10px 4px 30px', width: '130px', borderColor: '#fca5a5' }}
+                                placeholder="제외 검색..."
+                                value={excludeQuery}
+                                onChange={e => setExcludeQuery(e.target.value)}
+                            />
+                        </div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none', marginLeft: '5px', whiteSpace: 'nowrap' }}>
+                            <input
+                                type="checkbox"
+                                checked={onlyWithEmail}
+                                onChange={e => setOnlyWithEmail(e.target.checked)}
+                                style={{ cursor: 'pointer' }}
+                            />
+                            이메일 있음
+                        </label>
+                    </div>
+
                     {(type === 'NewHire' || type === 'Resign' || type === 'Lease' || type === 'iPad') && (
                         <div style={{ display: 'flex', gap: '5px', marginRight: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                                <span style={{ position: 'absolute', left: '10px', color: '#9ca3af' }}>🔍</span>
-                                <input
-                                    className="form-input"
-                                    style={{ padding: '4px 10px 4px 30px', width: '130px' }}
-                                    placeholder="전체 검색..."
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                />
-                            </div>
                             {/* 연도 필터: iPad는 다중 선택, 나머지는 단일 선택 */}
                             {type === 'iPad' ? (
                                 <div ref={yearDropdownRef} style={{ position: 'relative' }}>
@@ -431,10 +498,94 @@ const AssetList = () => {
                                     {uniqueYears.map(y => <option key={y} value={y}>{y}년</option>)}
                                 </select>
                             )}
-                            <select className="form-input" style={{ width: 'auto', padding: '4px 8px' }} value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
-                                <option value="">전체 월</option>
-                                {uniqueMonths.map(m => <option key={m} value={m}>{m}월</option>)}
-                            </select>
+
+                            {/* 월 필터: iPad는 다중 선택, 나머지는 단일 선택 */}
+                            {type === 'iPad' ? (
+                                <div ref={monthDropdownRef} style={{ position: 'relative' }}>
+                                    <button
+                                        className="form-input"
+                                        onClick={() => setMonthDropdownOpen(o => !o)}
+                                        style={{
+                                            width: 'auto', minWidth: '100px', padding: '4px 28px 4px 10px',
+                                            textAlign: 'left', cursor: 'pointer', position: 'relative',
+                                            background: filterMonths.length > 0 ? '#eff6ff' : '',
+                                            color: filterMonths.length > 0 ? '#1d4ed8' : '',
+                                            fontWeight: filterMonths.length > 0 ? 'bold' : 'normal',
+                                            borderColor: filterMonths.length > 0 ? '#93c5fd' : '',
+                                        }}
+                                    >
+                                        {filterMonths.length === 0
+                                            ? '전체 월'
+                                            : filterMonths.length === 1
+                                                ? `${filterMonths[0]}월`
+                                                : `${filterMonths.length}개 월`}
+                                        <span style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '10px', color: '#6b7280' }}>
+                                            {monthDropdownOpen ? '▲' : '▼'}
+                                        </span>
+                                    </button>
+                                    {monthDropdownOpen && (
+                                        <div style={{
+                                            position: 'absolute', top: '100%', left: 0, zIndex: 1000,
+                                            background: 'white', border: '1px solid #e5e7eb',
+                                            borderRadius: '8px', boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                                            minWidth: '130px', padding: '6px 0', marginTop: '4px',
+                                        }}>
+                                            {/* 전체 선택 해제 */}
+                                            <div
+                                                onClick={clearMonths}
+                                                style={{
+                                                    padding: '6px 14px', cursor: 'pointer', fontSize: '0.85em',
+                                                    color: filterMonths.length === 0 ? '#1d4ed8' : '#6b7280',
+                                                    fontWeight: filterMonths.length === 0 ? 'bold' : 'normal',
+                                                    borderBottom: '1px solid #f3f4f6',
+                                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                                }}
+                                            >
+                                                <span style={{
+                                                    width: '14px', height: '14px', borderRadius: '3px', border: '1.5px solid #d1d5db',
+                                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                                    background: filterMonths.length === 0 ? '#1d4ed8' : 'white',
+                                                }}>
+                                                    {filterMonths.length === 0 && <span style={{ color: 'white', fontSize: '10px', lineHeight: 1 }}>✓</span>}
+                                                </span>
+                                                전체 월
+                                            </div>
+                                            {uniqueMonths.map(m => {
+                                                const checked = filterMonths.includes(m)
+                                                return (
+                                                    <div
+                                                        key={m}
+                                                        onClick={() => toggleMonth(m)}
+                                                        style={{
+                                                            padding: '6px 14px', cursor: 'pointer', fontSize: '0.85em',
+                                                            color: checked ? '#1d4ed8' : '#374151',
+                                                            background: checked ? '#eff6ff' : 'transparent',
+                                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                                        }}
+                                                        onMouseEnter={e => { if (!checked) e.currentTarget.style.background = '#f9fafb' }}
+                                                        onMouseLeave={e => { if (!checked) e.currentTarget.style.background = 'transparent' }}
+                                                    >
+                                                        <span style={{
+                                                            width: '14px', height: '14px', borderRadius: '3px', border: `1.5px solid ${checked ? '#1d4ed8' : '#d1d5db'}`,
+                                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                                            background: checked ? '#1d4ed8' : 'white',
+                                                        }}>
+                                                            {checked && <span style={{ color: 'white', fontSize: '10px', lineHeight: 1 }}>✓</span>}
+                                                        </span>
+                                                        {m}월
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <select className="form-input" style={{ width: 'auto', padding: '4px 8px' }} value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
+                                    <option value="">전체 월</option>
+                                    {uniqueMonths.map(m => <option key={m} value={m}>{m}월</option>)}
+                                </select>
+                            )}
+
                             <div style={{ width: '160px' }}>
                                 <SearchableSelect
                                     options={buOptions}
@@ -459,53 +610,13 @@ const AssetList = () => {
                             </select>
                         </div>
                     )}
-                    {/* Monitor: 전체 검색만 */}
-                    {type === 'Monitor' && (
-                        <div style={{ display: 'flex', gap: '5px', marginRight: '10px', alignItems: 'center' }}>
-                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                                <span style={{ position: 'absolute', left: '10px', color: '#9ca3af' }}>🔍</span>
-                                <input
-                                    className="form-input"
-                                    style={{ padding: '4px 10px 4px 30px', width: '200px' }}
-                                    placeholder="전체 검색..."
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                    )}
-                    {/* Printer: 전체 검색 + Model 필터 */}
+                    {/* Printer: Model 필터 */}
                     {type === 'Printer' && (
                         <div style={{ display: 'flex', gap: '5px', marginRight: '10px', alignItems: 'center' }}>
-                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                                <span style={{ position: 'absolute', left: '10px', color: '#9ca3af' }}>🔍</span>
-                                <input
-                                    className="form-input"
-                                    style={{ padding: '4px 10px 4px 30px', width: '160px' }}
-                                    placeholder="전체 검색..."
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                />
-                            </div>
                             <select className="form-input" style={{ width: 'auto', maxWidth: '160px', padding: '4px 8px' }} value={filterModel} onChange={e => setFilterModel(e.target.value)}>
                                 <option value="">전체 Model</option>
                                 {uniqueModels.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
-                        </div>
-                    )}
-                    {/* Teams: 전체 검색만 */}
-                    {type === 'Teams' && (
-                        <div style={{ display: 'flex', gap: '5px', marginRight: '10px', alignItems: 'center' }}>
-                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                                <span style={{ position: 'absolute', left: '10px', color: '#9ca3af' }}>🔍</span>
-                                <input
-                                    className="form-input"
-                                    style={{ padding: '4px 10px 4px 30px', width: '200px' }}
-                                    placeholder="전체 검색..."
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                />
-                            </div>
                         </div>
                     )}
                     {selectedRows.size > 0 && (
