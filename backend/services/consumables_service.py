@@ -106,6 +106,9 @@ def _get_worksheet_safe(ss, sheet_name: str):
         logger.error(f"워크시트 '{sheet_name}' 없음 또는 접근 오류: {e}")
         return None
 
+_cached_client = None
+_cached_spreadsheets = {}
+
 def _get_consumables_client(spreadsheet_id: str = None):
     """
     구글 시트 클라이언트를 반환합니다.
@@ -113,6 +116,7 @@ def _get_consumables_client(spreadsheet_id: str = None):
     - 운영 환경: 실제 Google Sheets API 사용
     spreadsheet_id가 전달되지 않으면 마스터 시트를 기본으로 반환합니다.
     """
+    global _cached_client
     if not spreadsheet_id:
         spreadsheet_id = CONSUMABLES_MASTER_SPREADSHEET_ID
 
@@ -126,23 +130,38 @@ def _get_consumables_client(spreadsheet_id: str = None):
             logger.warning(f"로컬 클라이언트 초기화 실패, Google Sheets로 전환: {e}")
 
     # ── 운영 모드: 실제 Google Sheets ───────────────────────
-    creds = None
-    if GOOGLE_CREDENTIALS_JSON:
-        import json as _json
-        creds = Credentials.from_service_account_info(_json.loads(GOOGLE_CREDENTIALS_JSON), scopes=SCOPES)
-    elif os.path.exists(GOOGLE_CREDENTIALS_FILE):
-        creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS_FILE, scopes=SCOPES)
-    else:
-        print("⚠️  소모품 시트 인증 정보 없음")
-        return None, None
+    if not _cached_client:
+        creds = None
+        if GOOGLE_CREDENTIALS_JSON:
+            import json as _json
+            try:
+                creds = Credentials.from_service_account_info(_json.loads(GOOGLE_CREDENTIALS_JSON), scopes=SCOPES)
+            except Exception as e:
+                logger.error("GOOGLE_CREDENTIALS_JSON 인증 실패")
+        elif os.path.exists(GOOGLE_CREDENTIALS_FILE):
+            try:
+                creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS_FILE, scopes=SCOPES)
+            except Exception as e:
+                logger.error(f"GOOGLE_CREDENTIALS_FILE 파일 로드 실패: {GOOGLE_CREDENTIALS_FILE}")
+        
+        if not creds:
+            logger.error("⚠️  소모품 시트 인증 정보 없음")
+            return None, None
 
-    try:
-        client = gspread.authorize(creds)
-        spreadsheet = client.open_by_key(spreadsheet_id)
-        return client, spreadsheet
-    except Exception as e:
-        print(f"⚠️  소모품 Google Sheets 연결 오류 (ID: {spreadsheet_id}): {e}")
-        return None, None
+        try:
+            _cached_client = gspread.authorize(creds)
+        except Exception as e:
+            logger.error(f"gspread 인증 실패: {e}")
+            return None, None
+
+    if spreadsheet_id not in _cached_spreadsheets:
+        try:
+            _cached_spreadsheets[spreadsheet_id] = _cached_client.open_by_key(spreadsheet_id)
+        except Exception as e:
+            logger.error(f"⚠️  소모품 Google Sheets 연결 오류 (ID: {spreadsheet_id}): {e}")
+            return None, None
+
+    return _cached_client, _cached_spreadsheets[spreadsheet_id]
 
 def get_available_months():
     return _get_cached("months", _get_available_months_impl)

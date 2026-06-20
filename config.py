@@ -32,10 +32,10 @@ CONSUMABLES_DB_FILE = "consumables.db"
 # ══════════════════════════════════════════════════════
 
 # ── 운영(PROD) 시트 ID ──────────────────────────────
-_PROD_SPREADSHEET_ID                  = "1__8NXfK6ruhlQtnomhIi_sjdkHgLD0C2N1Mw4P3GW7g"
-_PROD_CONSUMABLES_MASTER_ID           = "1A4RvrDn_I3wev6UaqEGBRoADYRYwtQty0TPo-x6ehtw"
-_PROD_CONSUMABLES_OUTBOUND_ID         = "1MgYUINr7T1t80MUlv-RRaL7GkK7NSNxuKmAzvqNGe-M"
-_PROD_TONER_ID                        = "19AMXwNtrF8BcA_BqXpBcy-vWKX8Wu2IkbFTYNPZORc0"
+_PROD_SPREADSHEET_ID                  = os.environ.get("PROD_SPREADSHEET_ID", "1__8NXfK6ruhlQtnomhIi_sjdkHgLD0C2N1Mw4P3GW7g")
+_PROD_CONSUMABLES_MASTER_ID           = os.environ.get("PROD_CONSUMABLES_MASTER_ID", "1A4RvrDn_I3wev6UaqEGBRoADYRYwtQty0TPo-x6ehtw")
+_PROD_CONSUMABLES_OUTBOUND_ID         = os.environ.get("PROD_CONSUMABLES_OUTBOUND_ID", "1MgYUINr7T1t80MUlv-RRaL7GkK7NSNxuKmAzvqNGe-M")
+_PROD_TONER_ID                        = os.environ.get("PROD_TONER_ID", "19AMXwNtrF8BcA_BqXpBcy-vWKX8Wu2IkbFTYNPZORc0")
 
 # ── 테스트(TEST) 시트 ID (.env.development 또는 환경 변수에서 로드) ──
 # create_test_sheets.py를 실행하면 출력된 ID를 .env.development에 채워넣으세요.

@@ -73,12 +73,16 @@ def _run_with_timeout(fn, timeout=SHEETS_TIMEOUT):
 
 # ── 클라이언트 초기화 ─────────────────────────────────────
 
+_cached_client = None
+_cached_spreadsheets = {}
+
 def _get_client():
     """
     gspread 클라이언트 + 스프레드시트 반환 (내부용, 타임아웃 없음)
     - 개발 환경: data/local/{SPREADSHEET_ID}.json 로컬 파일 사용
     - 운영 환경: 실제 Google Sheets API 사용
     """
+    global _cached_client
     # ── 개발 모드: 로컬 JSON 파일 사용 ─────────────────────
     try:
         from config import IS_PRODUCTION as _IS_PROD
@@ -101,37 +105,44 @@ def _get_client():
         logger.warning("SPREADSHEET_ID가 설정되지 않았습니다.")
         return None, None
 
-    try:
-        creds = None
-        # 클라우드 배포 시 환경 변수 사용을 최우선으로 함
-        if GOOGLE_CREDENTIALS_JSON:
-            try:
-                creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
-                creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-            except json.JSONDecodeError:
-                logger.error("GOOGLE_CREDENTIALS_JSON 파싱 실패 (JSON 형식 오류) — 인증정보 내용은 로그에 기록하지 않음")
+    if not _cached_client:
+        try:
+            creds = None
+            # 클라우드 배포 시 환경 변수 사용을 최우선으로 함
+            if GOOGLE_CREDENTIALS_JSON:
+                try:
+                    creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+                    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+                except json.JSONDecodeError:
+                    logger.error("GOOGLE_CREDENTIALS_JSON 파싱 실패 (JSON 형식 오류) — 인증정보 내용은 로그에 기록하지 않음")
+                    return None, None
+                except Exception:
+                    logger.error("서비스 계정 인증 초기화 실패 — 인증정보 내용은 로그에 기록하지 않음")
+                    return None, None
+            # 환경 변수가 없으면 로컬 JSON 파일 사용
+            elif os.path.exists(GOOGLE_CREDENTIALS_FILE):
+                try:
+                    creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS_FILE, scopes=SCOPES)
+                except Exception:
+                    logger.error(f"서비스 계정 파일 로드 실패: {GOOGLE_CREDENTIALS_FILE}")
+                    return None, None
+            else:
+                logger.warning("Google Sheets 인증 정보 없음 (파일 및 환경 변수 모두 누락)")
                 return None, None
-            except Exception:
-                logger.error("서비스 계정 인증 초기화 실패 — 인증정보 내용은 로그에 기록하지 않음")
-                return None, None
-        # 환경 변수가 없으면 로컬 JSON 파일 사용
-        elif os.path.exists(GOOGLE_CREDENTIALS_FILE):
-            try:
-                creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS_FILE, scopes=SCOPES)
-            except Exception:
-                logger.error(f"서비스 계정 파일 로드 실패: {GOOGLE_CREDENTIALS_FILE}")
-                return None, None
-        else:
-            logger.warning("Google Sheets 인증 정보 없음 (파일 및 환경 변수 모두 누락)")
+
+            _cached_client = gspread.authorize(creds)
+        except Exception:
+            logger.error("Google Sheets 연결 오류 — 환경변수/파일 설정 확인 필요")
             return None, None
 
-        client = gspread.authorize(creds)
-        spreadsheet = client.open_by_key(SPREADSHEET_ID)
-        return client, spreadsheet
-    except Exception:
-        # 예외 메시지에 인증정보가 포함될 수 있으므로 상세 내용 미기록
-        logger.error("Google Sheets 연결 오류 — 환경변수/파일 설정 확인 필요")
-        return None, None
+    if SPREADSHEET_ID not in _cached_spreadsheets:
+        try:
+            _cached_spreadsheets[SPREADSHEET_ID] = _cached_client.open_by_key(SPREADSHEET_ID)
+        except Exception:
+            logger.error("Google Sheets 스프레드시트 열기 오류")
+            return None, None
+
+    return _cached_client, _cached_spreadsheets[SPREADSHEET_ID]
 
 
 def get_sheets_client():
