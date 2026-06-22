@@ -440,6 +440,16 @@ export default function BulkSearch() {
                             ) : (
                               <>
                                 <div>{d.Model || d['History'] || d['프린터정보'] || '-'}</div>
+                                {item.table_key === 'iPad' && (d.Date || d.date) && (d.Date || d.date) !== '-' && (
+                                  <div style={{ fontSize: '0.8rem', color: 'var(--primary-color)', marginTop: '2px' }}>
+                                    <span style={{ fontWeight: 'bold' }}>할당일:</span> {d.Date || d.date}
+                                  </div>
+                                )}
+                                {item.table_key === 'Lease' && (d['Lease Date'] || d['lease date']) && (d['Lease Date'] || d['lease date']) !== '-' && (
+                                  <div style={{ fontSize: '0.8rem', color: 'var(--primary-color)', marginTop: '2px' }}>
+                                    <span style={{ fontWeight: 'bold' }}>할당일:</span> {d['Lease Date'] || d['lease date']}
+                                  </div>
+                                )}
                                 <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{d['SNOW Tag'] || d['Additional Information'] || ''}</div>
                               </>
                             )}
