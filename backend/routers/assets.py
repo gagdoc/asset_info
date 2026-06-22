@@ -576,27 +576,27 @@ def register_new_hire(entry: NewHireEntry):
     # ── 대시보드(All_User) 자동 추가 연동 (이메일이 있을 경우에만) ──
     if email:
         df_all = dfs.get("All_User", pd.DataFrame())
-    if not df_all.empty:
-        try:
-            max_no = pd.to_numeric(df_all["NO"], errors="coerce").max()
-            if pd.isna(max_no): max_no = 0
-        except:
-            max_no = 0
-            
-        all_row = {
-            "NO": int(max_no) + 1,
-            "NAME": entry.NAME if entry.NAME else entry.korean_name,
-            "이름": entry.korean_name,
-            "email": email,
-            "BU": entry.BU,
-            "ROLE": entry.ROLE,
-        }
-        for col in df_all.columns:
-            if col not in all_row:
-                all_row[col] = "-"
+        if not df_all.empty:
+            try:
+                max_no = pd.to_numeric(df_all["NO"], errors="coerce").max()
+                if pd.isna(max_no): max_no = 0
+            except:
+                max_no = 0
                 
-        df_all = pd.concat([df_all, pd.DataFrame([all_row])], ignore_index=True)
-        update_db("All_User", df_all)
+            all_row = {
+                "NO": int(max_no) + 1,
+                "NAME": entry.NAME if entry.NAME else entry.korean_name,
+                "이름": entry.korean_name,
+                "email": email,
+                "BU": entry.BU,
+                "ROLE": entry.ROLE,
+            }
+            for col in df_all.columns:
+                if col not in all_row:
+                    all_row[col] = "-"
+                    
+            df_all = pd.concat([df_all, pd.DataFrame([all_row])], ignore_index=True)
+            update_db("All_User", df_all)
         
     return {"message": f"{email} 입사 등록 완료 (대시보드와 동기화 됨)"}
 
@@ -610,19 +610,16 @@ def sync_newhire_to_alluser():
     if new_hire_df.empty:
         return {"message": "신규 입사자 데이터가 없습니다.", "added": 0, "updated": 0}
     
-    # Port logic from sync_new_hire_list_to_all_user_smart
-    conn = get_connection(ASSET_DB_FILE)
-    try:
-        all_user_df = pd.read_sql("SELECT * FROM 'All_User'", conn)
-        all_user_df = normalize_email(all_user_df)
-    except:
+    all_user_df = dfs.get("All_User", pd.DataFrame())
+    if all_user_df.empty:
         all_user_df = pd.DataFrame(columns=["NO", "NAME", "이름", "email", "ROLE", "BU"])
+    all_user_df = normalize_email(all_user_df)
     
-    try:
-        resign_df = pd.read_sql("SELECT * FROM 'Resign'", conn)
+    resign_df = dfs.get("Resign", pd.DataFrame())
+    if not resign_df.empty:
         resign_df = normalize_email(resign_df)
         resigned_emails = set(resign_df["email"].dropna().unique()) if "email" in resign_df.columns else set()
-    except:
+    else:
         resigned_emails = set()
     
     added_count = 0
@@ -670,10 +667,13 @@ def sync_newhire_to_alluser():
     
     all_user_df.reset_index(drop=True, inplace=True)
     if rows_to_add:
-        all_user_df = pd.concat([all_user_df, pd.DataFrame(rows_to_add)], ignore_index=True)
+        df_to_add = pd.DataFrame(rows_to_add)
+        for col in all_user_df.columns:
+            if col not in df_to_add.columns:
+                df_to_add[col] = "-"
+        all_user_df = pd.concat([all_user_df, df_to_add], ignore_index=True)
     
-    all_user_df.to_sql("All_User", conn, if_exists="replace", index=False)
-    conn.close()
+    update_db("All_User", all_user_df)
     
     return {"message": f"동기화 완료: {added_count}명 추가, {updated_count}명 업데이트", "added": added_count, "updated": updated_count}
 
