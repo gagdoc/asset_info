@@ -422,7 +422,13 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                                     return (
                                         <tr
                                             key={idx}
-                                            style={selectedRows.has(idx) ? { background: 'rgba(99,102,241,0.08)' } : {}}
+                                            style={
+                                                selectedRows.has(idx) 
+                                                    ? { background: 'rgba(99,102,241,0.08)' } 
+                                                    : row.is_resigned 
+                                                        ? { background: 'rgba(239, 68, 68, 0.04)', color: '#9ca3af' } 
+                                                        : {}
+                                            }
                                         >
                                             <td className="checkbox-cell">
                                                 <input
@@ -466,7 +472,25 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                                                             />
                                                         ) : (
                                                             row[col] !== null && row[col] !== undefined && row[col] !== ''
-                                                                ? String(row[col])
+                                                                ? (
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                        <span style={col === '이름' && row.is_resigned ? { textDecoration: 'line-through' } : {}}>{String(row[col])}</span>
+                                                                        {col === '이름' && row.is_resigned && (
+                                                                            <span style={{
+                                                                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                                                                color: 'var(--danger-color)',
+                                                                                fontSize: '0.72rem',
+                                                                                padding: '1px 5px',
+                                                                                borderRadius: '4px',
+                                                                                fontWeight: 'bold',
+                                                                                border: '1px solid rgba(239, 68, 68, 0.2)',
+                                                                                whiteSpace: 'nowrap'
+                                                                            }}>
+                                                                                퇴사자
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                )
                                                                 : '-'
                                                         )}
                                                     </td>

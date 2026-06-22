@@ -288,6 +288,12 @@ def enrich_data_with_assets(target_df: pd.DataFrame, dfs: Dict[str, pd.DataFrame
         if "email" in target_df.columns:
             target_df["_is_deleted"] = ~target_df["email"].astype(str).str.strip().str.lower().isin(master_emails)
     
+    target_df["is_resigned"] = False
+    if "Resign" in dfs and not dfs["Resign"].empty and "email" in dfs["Resign"].columns:
+        resigned_emails = set(dfs["Resign"]["email"].dropna().astype(str).str.strip().str.lower())
+        if "email" in target_df.columns:
+            target_df["is_resigned"] = target_df["email"].astype(str).str.strip().str.lower().isin(resigned_emails)
+            
     return target_df
 
 def return_asset(email: str, asset_type: Optional[str], name: Optional[str], bu: Optional[str]) -> Dict[str, Any]:
