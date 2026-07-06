@@ -7,7 +7,7 @@ import ConfirmModal from '../components/ConfirmModal'
 
 // Google Sheets '신규입사자' 탭 컬럼 우선 표시 순서
 const PRIORITY_COLS = [
-    '년', '월', '날짜', '이름', 'NAME', 'email', 'BU', 'ROLE',
+    '입사일자', '이름', 'NAME', 'email', 'BU', 'ROLE',
     'FTE/Cont.', '노트북', '아이패드', '모니터', '복합기', 'Teams', '추가사항'
 ]
 
@@ -215,7 +215,7 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
 
     // 정렬 상태
-    const [sortCol, setSortCol] = useState('날짜') // 기본값 '날짜'
+    const [sortCol, setSortCol] = useState('입사일자') // 기본값 '입사일자'
     const [sortDir, setSortDir] = useState('desc') // 기본값 최신 날짜 우선
 
     const handleSort = (col) => {
@@ -243,9 +243,9 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
 
         list.sort((a, b) => {
             // 날짜 정렬 처리
-            if (sortCol === '날짜') {
-                const valA = a['날짜'] || ''
-                const valB = b['날짜'] || ''
+            if (sortCol === '입사일자' || sortCol === '날짜') {
+                const valA = a[sortCol] || ''
+                const valB = b[sortCol] || ''
                 return sortDir === 'asc' 
                     ? valA.localeCompare(valB) 
                     : valB.localeCompare(valA)
@@ -400,7 +400,7 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                                         />
                                     </th>
                                     {columns.map(col => {
-                                        const sortable = ['년', '월', '날짜', '이름', 'NAME', 'email', 'BU', 'ROLE'].includes(col)
+                                        const sortable = ['입사일자', '년', '월', '날짜', '이름', 'NAME', 'email', 'BU', 'ROLE'].includes(col)
                                         return (
                                             <th 
                                                 key={col} 

@@ -545,18 +545,16 @@ def register_new_hire(entry: NewHireEntry):
     email = entry.email.strip().lower() if entry.email else ""
     
     # 파싱 로직
-    year, month, day = "", "", ""
+    join_date_formatted = ""
     if entry.join_date:
         try:
             dt = datetime.strptime(entry.join_date, "%Y-%m-%d")
-            year, month, day = dt.year, dt.month, dt.day
+            join_date_formatted = dt.strftime("%Y/%m/%d")
         except:
-            pass
+            join_date_formatted = entry.join_date
             
     new_row = {
-        "년": year,
-        "월": month,
-        "날짜": day,
+        "입사일자": join_date_formatted,
         "NAME": entry.NAME,
         "이름": entry.korean_name,
         "email": email,
