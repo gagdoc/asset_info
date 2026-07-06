@@ -1214,15 +1214,15 @@ def set_toner_stock_direct(item_name: str, new_stock: int) -> bool:
 # ──────────────────────────────────────────────────────────────────────────
 
 INDIVIDUAL_INBOUND_SHEET = "개별입고내역"
-INDIVIDUAL_INBOUND_HEADERS = ["날짜", "품목명", "수량", "비고"]
+INDIVIDUAL_INBOUND_HEADERS = ["날짜", "품목명", "수량", "비고", "출처"]
 
 
 def _ensure_individual_inbound_sheet(ss_master):
     """개별입고내역 시트가 없으면 자동 생성 후 반환"""
     ws = _get_worksheet_safe(ss_master, INDIVIDUAL_INBOUND_SHEET)
     if not ws:
-        ws = ss_master.add_worksheet(title=INDIVIDUAL_INBOUND_SHEET, rows=2000, cols=4)
-        ws.update("A1:D1", [INDIVIDUAL_INBOUND_HEADERS])
+        ws = ss_master.add_worksheet(title=INDIVIDUAL_INBOUND_SHEET, rows=2000, cols=5)
+        ws.update("A1:E1", [INDIVIDUAL_INBOUND_HEADERS])
         logger.info(f"'{INDIVIDUAL_INBOUND_SHEET}' 시트 자동 생성")
     return ws
 
@@ -1241,7 +1241,7 @@ def _get_individual_inbound_impl(month: str = None):
         ws = _get_worksheet_safe(ss_master, INDIVIDUAL_INBOUND_SHEET)
         if not ws:
             return []
-        records = _retry_sheets_op(lambda: ws.get_values("A2:D"))
+        records = _retry_sheets_op(lambda: ws.get_values("A2:E"))
         history = []
         for i, r in enumerate(records):
             if not r or not str(r[0]).strip():
@@ -1251,6 +1251,7 @@ def _get_individual_inbound_impl(month: str = None):
             qty_str    = str(r[2]).strip().replace(',', '') if len(r) > 2 else "0"
             qty        = int(float(qty_str)) if qty_str.replace('.', '', 1).isdigit() else 0
             note       = str(r[3]).strip() if len(r) > 3 else ""
+            source     = str(r[4]).strip() if len(r) > 4 else ""
 
             # 날짜 → 월 파싱 (YYYY-MM-DD 형태 기준)
             record_month = ""
@@ -1269,6 +1270,7 @@ def _get_individual_inbound_impl(month: str = None):
                 "item_name":  item_name,
                 "quantity":   qty,
                 "note":       note,
+                "source":     source,
                 "month":      record_month,
             })
         return history
@@ -1319,10 +1321,11 @@ def add_individual_inbound(data: dict) -> bool:
         qty_raw   = str(data.get('quantity', '0')).replace(',', '')
         qty       = int(float(qty_raw)) if qty_raw.replace('.', '', 1).isdigit() else 0
         note      = data.get('note', '')
+        source    = data.get('source', '')
 
         col_A    = _retry_sheets_op(lambda: ws.col_values(1))
         next_row = len(col_A) + 1
-        ws.update(f"A{next_row}:D{next_row}", [[date, item_name, str(qty), note]])
+        ws.update(f"A{next_row}:E{next_row}", [[date, item_name, str(qty), note, source]])
         invalidate_cache("individual_inbound_")
 
         # 실재고에 수량 추가
@@ -1402,6 +1405,7 @@ def update_individual_inbound(row_index: int, new_data: dict) -> dict:
         old_qty_s  = str(row_data[2]).strip().replace(',', '') if len(row_data) > 2 else "0"
         old_qty    = int(float(old_qty_s)) if old_qty_s.replace('.', '', 1).isdigit() else 0
         old_note   = str(row_data[3]).strip() if len(row_data) > 3 else ""
+        old_source = str(row_data[4]).strip() if len(row_data) > 4 else ""
         old_date   = str(row_data[0]).strip() if row_data else ""
 
         # 새 값 (없으면 기존 값 유지)
@@ -1410,9 +1414,10 @@ def update_individual_inbound(row_index: int, new_data: dict) -> dict:
         qty_raw   = str(new_data.get('quantity', old_qty)).replace(',', '')
         new_qty   = int(float(qty_raw)) if qty_raw.replace('.', '', 1).isdigit() else old_qty
         note      = new_data.get('note', old_note)
+        source    = new_data.get('source', old_source)
 
         # 시트 행 업데이트
-        ws.update(f"A{row_index}:D{row_index}", [[date, item_name, str(new_qty), note]])
+        ws.update(f"A{row_index}:E{row_index}", [[date, item_name, str(new_qty), note, source]])
         invalidate_cache("individual_inbound_")
 
         # 실재고 차액 조정 (수량 변경 시만)

@@ -167,3 +167,14 @@ FastAPI (backend/main.py)
 ## Imported Claude Cowork project instructions
 
 방금전까지 클로드 코드로 작업은 하던 자산 관리 앱입니다. 이 프로젝트에 첨부 되어 있는 지침을 면밀히 검토하고 진행해주시고 항상 최신 기술로 적용해 주세요
+
+---
+
+## 10. Harness 100 적용 안내
+
+이 프로젝트에는 **Harness 100의 16-fullstack-webapp** 하네스가 새로운 `.agents/` 시스템 구조에 맞게 통합되어 있습니다.
+- **Skills**: `.agents/skills/fullstack-webapp`, `.agents/skills/component-patterns`, `.agents/skills/api-security-checklist`
+- **Agents**: `.agents/agents/` 하위에 5종의 에이전트(`architect.md`, `frontend-dev.md`, `backend-dev.md`, `qa-engineer.md`, `devops-engineer.md`)가 배치되어 있습니다.
+
+**에이전트 활용 지침**:
+풀스택 앱 전체 워크플로우 진행, 기능 일괄 추가, 배포 설정 등 여러 분야의 협력이 필요한 작업을 수행할 때 `fullstack-webapp` 스킬의 파이프라인을 참고하여 다중 에이전트를 적재적소에 소환(`invoke_subagent` 등)해 협력 체계를 구성하세요.

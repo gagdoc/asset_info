@@ -54,3 +54,4 @@ data/local/
 # SQLite databases (if handled locally)
 *.db
 *.sqlite3
+.harness-100/

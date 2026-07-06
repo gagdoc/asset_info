@@ -1284,10 +1284,10 @@ const ItemsTab = ({ month, months }) => {
     // 개별 추가 모달
     const [indivModal, setIndivModal] = useState(null)  // null | { item_name, item }
     const today = new Date().toISOString().slice(0, 10)
-    const [indivForm, setIndivForm] = useState({ date: today, quantity: '', note: '' })
+    const [indivForm, setIndivForm] = useState({ date: today, quantity: '', source: '한누리', note: '' })
     // 개별 입고 인라인 수정
     const [indivEditRow, setIndivEditRow] = useState(null)  // null | { row_index, date, quantity, note, item_name }
-    const [indivEditForm, setIndivEditForm] = useState({ date: '', quantity: '', note: '' })
+    const [indivEditForm, setIndivEditForm] = useState({ date: '', quantity: '', source: '한누리', note: '' })
 
     // 부모에서 month가 바뀌면 dispatchMonth도 동기화
     useEffect(() => {
@@ -1450,7 +1450,7 @@ const ItemsTab = ({ month, months }) => {
             queryClient.invalidateQueries(['individual-inbound-modal'])
             queryClient.invalidateQueries(['toner-inventory'])
             queryClient.invalidateQueries(['consumables-items'])
-            setIndivForm({ date: today, quantity: '', note: '' })
+            setIndivForm({ date: today, quantity: '', source: '한누리', note: '' })
             refetchIndivAll()
             alert('개별 추가가 등록되었습니다.')
         },
@@ -1758,7 +1758,7 @@ const ItemsTab = ({ month, months }) => {
                                     <button
                                         className="btn btn-primary"
                                         style={{ padding: '2px 8px', fontSize: '0.8em', backgroundColor: '#16a34a', borderColor: '#16a34a' }}
-                                        onClick={() => { setIndivModal({ item_name: item.item_name, item }); setIndivForm({ date: today, quantity: '', note: '' }) }}
+                                        onClick={() => { setIndivModal({ item_name: item.item_name, item }); setIndivForm({ date: today, quantity: '', source: '한누리', note: '' }) }}
                                     >+ 개별추가</button>
                                     <button
                                         className="btn btn-danger"
@@ -1794,7 +1794,7 @@ const ItemsTab = ({ month, months }) => {
                         {/* 새 입고 추가 폼 */}
                         <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '1rem', marginBottom: '1.2rem', border: '1px solid #bbf7d0' }}>
                             <p style={{ margin: '0 0 10px', fontWeight: 'bold', fontSize: '0.9em', color: '#15803d' }}>➕ 새 입고 추가</p>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '3px', fontWeight: 'bold' }}>날짜</label>
                                     <input type="date" value={indivForm.date} onChange={e => setIndivForm(f => ({ ...f, date: e.target.value }))} style={{ width: '100%', padding: '7px', boxSizing: 'border-box', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9em' }} />
@@ -1802,6 +1802,14 @@ const ItemsTab = ({ month, months }) => {
                                 <div>
                                     <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '3px', fontWeight: 'bold' }}>추가 수량</label>
                                     <input type="number" min="1" placeholder="수량" value={indivForm.quantity} onChange={e => setIndivForm(f => ({ ...f, quantity: e.target.value }))} style={{ width: '100%', padding: '7px', boxSizing: 'border-box', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9em' }} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '3px', fontWeight: 'bold' }}>출처</label>
+                                    <select value={indivForm.source} onChange={e => setIndivForm(f => ({ ...f, source: e.target.value }))} style={{ width: '100%', padding: '7px', boxSizing: 'border-box', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9em' }}>
+                                        <option value="한누리">한누리</option>
+                                        <option value="사용자 반납">사용자 반납</option>
+                                        <option value="기타">기타</option>
+                                    </select>
                                 </div>
                             </div>
                             <div style={{ marginTop: '8px' }}>
@@ -1813,7 +1821,7 @@ const ItemsTab = ({ month, months }) => {
                                     className="btn btn-primary"
                                     style={{ backgroundColor: '#16a34a', borderColor: '#16a34a', fontSize: '0.9em' }}
                                     disabled={indivAddMutation.isPending || !indivForm.quantity || parseInt(indivForm.quantity) <= 0}
-                                    onClick={() => indivAddMutation.mutate({ item_name: indivModal.item_name, date: indivForm.date, quantity: parseInt(indivForm.quantity) || 0, note: indivForm.note })}
+                                    onClick={() => indivAddMutation.mutate({ item_name: indivModal.item_name, date: indivForm.date, quantity: parseInt(indivForm.quantity) || 0, source: indivForm.source, note: indivForm.note })}
                                 >
                                     {indivAddMutation.isPending ? '등록 중...' : '등록'}
                                 </button>
@@ -1832,6 +1840,7 @@ const ItemsTab = ({ month, months }) => {
                                         <tr style={{ background: '#f8fafc' }}>
                                             <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>날짜</th>
                                             <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>수량</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>출처</th>
                                             <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'left' }}>비고</th>
                                             <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>관리</th>
                                         </tr>
@@ -1847,6 +1856,13 @@ const ItemsTab = ({ month, months }) => {
                                                         <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0' }}>
                                                             <input type="number" min="1" value={indivEditForm.quantity} onChange={e => setIndivEditForm(f => ({ ...f, quantity: e.target.value }))} style={{ width: '70px', padding: '4px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.85em', textAlign: 'center' }} />
                                                         </td>
+                                                        <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                                                            <select value={indivEditForm.source} onChange={e => setIndivEditForm(f => ({ ...f, source: e.target.value }))} style={{ width: '80px', padding: '4px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.85em' }}>
+                                                                <option value="한누리">한누리</option>
+                                                                <option value="사용자 반납">사용자 반납</option>
+                                                                <option value="기타">기타</option>
+                                                            </select>
+                                                        </td>
                                                         <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0' }}>
                                                             <input type="text" value={indivEditForm.note} onChange={e => setIndivEditForm(f => ({ ...f, note: e.target.value }))} style={{ width: '100%', padding: '4px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.85em' }} />
                                                         </td>
@@ -1860,6 +1876,7 @@ const ItemsTab = ({ month, months }) => {
                                                                     item_name: rec.item_name,
                                                                     date: indivEditForm.date,
                                                                     quantity: parseInt(indivEditForm.quantity) || rec.quantity,
+                                                                    source: indivEditForm.source,
                                                                     note: indivEditForm.note,
                                                                 })}
                                                             >저장</button>
@@ -1870,12 +1887,13 @@ const ItemsTab = ({ month, months }) => {
                                                     <>
                                                         <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{rec.date}</td>
                                                         <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 'bold', color: '#15803d' }}>+{rec.quantity}</td>
+                                                        <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', color: '#475569', fontSize: '0.9em' }}>{rec.source || '-'}</td>
                                                         <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', color: '#64748b' }}>{rec.note || '-'}</td>
                                                         <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', whiteSpace: 'nowrap' }}>
                                                             <button
                                                                 className="btn btn-secondary"
                                                                 style={{ padding: '2px 7px', fontSize: '0.78em', marginRight: '4px' }}
-                                                                onClick={() => { setIndivEditRow(rec); setIndivEditForm({ date: rec.date, quantity: String(rec.quantity), note: rec.note || '' }) }}
+                                                                onClick={() => { setIndivEditRow(rec); setIndivEditForm({ date: rec.date, quantity: String(rec.quantity), source: rec.source || '한누리', note: rec.note || '' }) }}
                                                             >✏️ 수정</button>
                                                             <button
                                                                 className="btn btn-danger"
@@ -2158,6 +2176,7 @@ const TrackedItemsTab = ({ month, months }) => {
                                         <tr style={{ background: '#f8fafc' }}>
                                             <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>날짜</th>
                                             <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>수량</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>출처</th>
                                             <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'left' }}>비고</th>
                                         </tr>
                                     </thead>
@@ -2166,6 +2185,7 @@ const TrackedItemsTab = ({ month, months }) => {
                                             <tr key={rIdx}>
                                                 <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{rec.date}</td>
                                                 <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 'bold', color: '#15803d' }}>+{rec.quantity}</td>
+                                                <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', color: '#475569', fontSize: '0.9em' }}>{rec.source || '-'}</td>
                                                 <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', color: '#64748b' }}>{rec.note || '-'}</td>
                                             </tr>
                                         ))}
