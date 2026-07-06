@@ -36,9 +36,15 @@ const NewHire = () => {
 
     // 컬럼 우선순위 정렬 (Google Sheets 컬럼 기준)
     const rawCols = newhires?.length > 0 ? Object.keys(newhires[0]) : []
-    const ordered = PRIORITY_COLS.filter(c => rawCols.includes(c))
-    const others  = rawCols.filter(c => !PRIORITY_COLS.includes(c))
+    const hiddenCols = ['년', '월', '날짜']
+    const displayCols = rawCols.filter(c => !hiddenCols.includes(c) && !c.startsWith('_IS_'))
+    
+    const ordered = PRIORITY_COLS.filter(c => c === '입사일자' || displayCols.includes(c))
+    const others  = displayCols.filter(c => !PRIORITY_COLS.includes(c))
     const columns = [...ordered, ...others]
+    if (!columns.includes('입사일자') && newhires?.length > 0) {
+        columns.unshift('입사일자')
+    }
 
     const lastUpdated = dataUpdatedAt
         ? new Date(dataUpdatedAt).toLocaleTimeString('ko-KR')
@@ -237,15 +243,21 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
     // 정렬된 신규 입사자 목록 계산
     const sortedNewHires = useMemo(() => {
         if (!newhires) return []
-        const list = [...newhires]
+        const list = newhires.map(row => {
+            let y = String(row['년'] || '').trim()
+            let m = String(row['월'] || '').trim().padStart(2, '0')
+            let d = String(row['날짜'] || '').trim().padStart(2, '0')
+            let joinStr = (y && y !== '0' && y !== '0000') ? `${y}/${m}/${d}` : ''
+            return { ...row, '입사일자': joinStr }
+        })
         
         if (!sortCol) return list
 
         list.sort((a, b) => {
             // 날짜 정렬 처리
             if (sortCol === '입사일자' || sortCol === '날짜') {
-                const valA = a[sortCol] || ''
-                const valB = b[sortCol] || ''
+                const valA = a['입사일자'] || ''
+                const valB = b['입사일자'] || ''
                 return sortDir === 'asc' 
                     ? valA.localeCompare(valB) 
                     : valB.localeCompare(valA)
@@ -399,8 +411,8 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                                             }}
                                         />
                                     </th>
-                                    {columns.map(col => {
-                                        const sortable = ['입사일자', '년', '월', '날짜', '이름', 'NAME', 'email', 'BU', 'ROLE'].includes(col)
+                                     {columns.map(col => {
+                                         const sortable = ['입사일자', '년', '월', '날짜', '이름', 'NAME', 'email', 'BU', 'ROLE'].includes(col)
                                         return (
                                             <th 
                                                 key={col} 
