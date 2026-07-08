@@ -1191,7 +1191,7 @@ const MonthlyTonerReport = ({ month }) => {
     const statusMeta = STATUS_META[report.status] || STATUS_META.open
 
     const StockTable = ({ items, emptyMsg }) => (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+        <table className="data-table" style={{ fontSize: '0.9rem' }}>
             <thead>
                 <tr style={{ background: '#f1f5f9' }}>
                     {['품목명', '시작 재고', '출고 수량', '잔여 재고'].map(h => (
@@ -1835,7 +1835,7 @@ const ItemsTab = ({ month, months }) => {
                             {indivModalHistory.length === 0 ? (
                                 <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.88em', padding: '1rem 0' }}>등록된 개별 입고 내역이 없습니다.</p>
                             ) : (
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88em' }}>
+                                <table className="data-table" style={{ fontSize: '0.88em' }}>
                                     <thead>
                                         <tr style={{ background: '#f8fafc' }}>
                                             <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>날짜</th>
@@ -2171,7 +2171,7 @@ const TrackedItemsTab = ({ month, months }) => {
                             {indivModalHistory.length === 0 ? (
                                 <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.88em', padding: '1rem 0' }}>등록된 개별 입고 내역이 없습니다.</p>
                             ) : (
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88em' }}>
+                                <table className="data-table" style={{ fontSize: '0.88em' }}>
                                     <thead>
                                         <tr style={{ background: '#f8fafc' }}>
                                             <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>날짜</th>

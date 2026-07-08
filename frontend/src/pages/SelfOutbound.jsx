@@ -202,7 +202,7 @@ const SelfOutbound = () => {
                 {isTonner(formData.item_name, selectedItemCategory) && (
                     <div style={{ padding: '12px 16px', background: '#fff7ed', border: '2px solid #f97316', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <span style={{ fontWeight: 'bold', color: '#c2410c', fontSize: '0.95em' }}>🖨️ Tonner 출고 유형 선택</span>
-                        <div style={{ display: 'flex', gap: '10px' }}>
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                             {['일반', '위탁'].map(type => (
                                 <label key={type} style={{
                                     flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
@@ -280,7 +280,7 @@ const SelfOutbound = () => {
                 {/* 지급 담당 */}
                 <div>
                     <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.3rem', color: '#4a5568', fontSize: '0.88rem' }}>지급 담당 <span style={{ color: '#e53e3e' }}>*</span></label>
-                    <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                         {STAFF_OPTIONS.map(opt => (
                             <label key={opt} style={{
                                 flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
@@ -307,7 +307,7 @@ const SelfOutbound = () => {
                 {/* 수령 방법 */}
                 <div>
                     <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.3rem', color: '#4a5568', fontSize: '0.88rem' }}>수령 방법 <span style={{ color: '#e53e3e' }}>*</span></label>
-                    <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                         {DELIVERY_OPTIONS.map(opt => (
                             <label key={opt} style={{
                                 flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
