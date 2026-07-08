@@ -144,6 +144,16 @@ h3 {
   font-size: 0.8rem;
   background: white;
   color: var(--text-main);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }
 
 .btn:hover {

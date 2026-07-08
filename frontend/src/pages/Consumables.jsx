@@ -111,7 +111,7 @@ const Consumables = () => {
                 )}
             </div>
 
-            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div className="hide-scrollbar" style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', overflowX: 'auto', paddingBottom: '0.5rem', WebkitOverflowScrolling: 'touch' }}>
                 <button
                     className={`btn ${activeTab === 'estimate' ? 'btn-primary' : ''}`}
                     onClick={() => setActiveTab('estimate')}
