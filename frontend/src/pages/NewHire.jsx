@@ -281,6 +281,22 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
         return list
     }, [newhires, sortCol, sortDir])
 
+    const handleModalSave = async () => {
+        try {
+            await axios.put('/api/assets/newhire/update', {
+                row_index: editingRowIdx,
+                updates: modalData
+            })
+            queryClient.invalidateQueries(['newhireData'])
+            addToast('✅ 수정 완료', 'success')
+            alert('상세 수정이 완료되었습니다.')
+            setIsModalOpen(false)
+        } catch (err) {
+            addToast('수정 실패', 'error')
+            alert('수정 실패: ' + err.message)
+        }
+    }
+
     const handleCellEdit = async (actualIndex, col, value) => {
         try {
             await axios.put('/api/assets/row/update', {

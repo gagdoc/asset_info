@@ -281,9 +281,11 @@ const AssetList = () => {
             })
             queryClient.invalidateQueries(['assets', type])
             addToast('상세 수정 완료', 'success')
+            alert('상세 수정이 완료되었습니다.')
             setIsModalOpen(false)
         } catch (err) {
             addToast('수정 실패: ' + err.message, 'error')
+            alert('수정 실패: ' + err.message)
         }
     }
 
