@@ -35,6 +35,7 @@ const AssetList = () => {
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [editingRowIdx, setEditingRowIdx] = useState(null)
     const [modalData, setModalData] = useState({})
+    const [isSaving, setIsSaving] = useState(false)
 
     // type(경로 파라미터)가 변경될 때 필터 상태 초기화
     useEffect(() => {
@@ -273,6 +274,7 @@ const AssetList = () => {
     }
 
     const handleModalSave = async () => {
+        setIsSaving(true)
         try {
             await axios.put('/api/assets/row/update', {
                 asset_type: type,
@@ -286,6 +288,8 @@ const AssetList = () => {
         } catch (err) {
             addToast('수정 실패: ' + err.message, 'error')
             alert('수정 실패: ' + err.message)
+        } finally {
+            setIsSaving(false)
         }
     }
 
@@ -774,8 +778,10 @@ const AssetList = () => {
                             </div>
                         </div>
                         <div style={{ padding: '1rem', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                            <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>취소</button>
-                            <button className="btn btn-primary" onClick={handleModalSave}>💾 모든 변경사항 저장</button>
+                            <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)} disabled={isSaving}>취소</button>
+                            <button className="btn btn-primary" onClick={handleModalSave} disabled={isSaving}>
+                                {isSaving ? '⏳ 저장 중...' : '💾 모든 변경사항 저장'}
+                            </button>
                         </div>
                     </div>
                 </div>
