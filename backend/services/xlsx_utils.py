@@ -84,8 +84,9 @@ def _write_sheet(
     for r in range(2, ws.max_row + 1):
         ws.row_dimensions[r].height = 18
 
-    # 5. 틀 고정 (헤더 행 아래)
+    # 5. 틀 고정 (헤더 행 아래) 및 필터 적용
     ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
 
 
 def _fmt(value: Any) -> str | int | float:

@@ -47,12 +47,13 @@ const Dashboard = () => {
             const url = URL.createObjectURL(new Blob([res.data]))
             const a = document.createElement('a')
             const today = new Date().toISOString().slice(0,10).replace(/-/g,'')
+            const yymmdd = new Date().toISOString().slice(2,10).replace(/-/g,'')
 
             // 파일명 결정
             let filename
             if (selectedSheets.length === EXPORT_ITEMS.length) {
                 // 전체 선택
-                filename = `ASSET_INFO_${today}.xlsx`
+                filename = `001_ASSET_INFO_${yymmdd}.xlsx`
             } else if (selectedSheets.length === 1 && selectedSheets[0] === 'Dashboard') {
                 // 자산 통합 상세 조회만 선택
                 filename = `자산_통합_정보_${today}.xlsx`

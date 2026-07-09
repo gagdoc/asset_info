@@ -461,6 +461,10 @@ def export_sheets_to_excel(sheet_keys: List[str]) -> io.BytesIO:
         # 헤더 행 높이
         ws.row_dimensions[1].height = 22
 
+        # 1행(헤더) 고정 및 필터 적용
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
