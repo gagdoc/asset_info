@@ -400,7 +400,7 @@ const AssetList = () => {
                             <input
                                 className="form-input"
                                 style={{ padding: '4px 10px 4px 30px', width: '130px', borderColor: '#fca5a5' }}
-                                placeholder="제외 검색..."
+                                placeholder="제외 검색 (쉼표로 여러 개 가능)"
                                 value={excludeQuery}
                                 onChange={e => setExcludeQuery(e.target.value)}
                             />
