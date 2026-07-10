@@ -289,7 +289,7 @@ h3 {
   font-size: 0.8rem;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1200px) {
   .data-table {
     display: block;
     overflow-x: auto;
@@ -656,7 +656,7 @@ select.form-input {
   display: none;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1200px) {
   .mobile-header {
     display: flex;
     align-items: center;
