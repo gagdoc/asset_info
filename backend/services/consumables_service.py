@@ -1261,7 +1261,7 @@ def _get_individual_inbound_impl(month: str = None):
             except Exception:
                 pass
 
-            if month and record_month != month:
+            if month and record_month.replace(" ", "") != month.replace(" ", ""):
                 continue
 
             history.append({
