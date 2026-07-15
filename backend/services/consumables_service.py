@@ -1368,7 +1368,17 @@ def delete_individual_inbound(row_index: int, item_name: str = "", quantity: int
             except Exception as _e:
                 logger.warning(f"개별 입고 삭제 행 읽기 실패: {_e}")
 
-        ws.delete_rows(row_index)
+        # 소프트 삭제: 수량 0, 비고 [삭제됨] 추가
+        try:
+            row_data = ws.row_values(row_index)
+            old_note = str(row_data[3]).strip() if len(row_data) > 3 else ""
+            if "[삭제됨]" not in old_note:
+                new_note = f"[삭제됨] {old_note}".strip()
+                ws.update_cell(row_index, 3, "0")
+                ws.update_cell(row_index, 4, new_note)
+        except Exception as _e:
+            logger.warning(f"소프트 삭제 업데이트 실패: {_e}")
+
         invalidate_cache("individual_inbound_")
 
         # 개별 입고 취소 → 실재고 차감

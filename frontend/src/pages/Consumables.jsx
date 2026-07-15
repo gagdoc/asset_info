@@ -1846,9 +1846,11 @@ const ItemsTab = ({ month, months }) => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {indivModalHistory.map((rec) => (
-                                            <tr key={rec.row_index} style={{ background: indivEditRow?.row_index === rec.row_index ? '#fefce8' : 'white' }}>
-                                                {indivEditRow?.row_index === rec.row_index ? (
+                                        {indivModalHistory.map((rec) => {
+                                            const isDeleted = rec.note?.includes('[삭제됨]')
+                                            return (
+                                            <tr key={rec.row_index} style={{ background: indivEditRow?.row_index === rec.row_index ? '#fefce8' : (isDeleted ? '#f8fafc' : 'white') }}>
+                                                {indivEditRow?.row_index === rec.row_index && !isDeleted ? (
                                                     <>
                                                         <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0' }}>
                                                             <input type="date" value={indivEditForm.date} onChange={e => setIndivEditForm(f => ({ ...f, date: e.target.value }))} style={{ width: '100%', padding: '4px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.85em' }} />
@@ -1885,20 +1887,21 @@ const ItemsTab = ({ month, months }) => {
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{rec.date}</td>
-                                                        <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 'bold', color: '#15803d' }}>+{rec.quantity}</td>
-                                                        <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', color: '#475569', fontSize: '0.9em' }}>{rec.source || '-'}</td>
-                                                        <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', color: '#64748b' }}>{rec.note || '-'}</td>
+                                                        <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', textDecoration: isDeleted ? 'line-through' : 'none', color: isDeleted ? '#94a3b8' : 'inherit' }}>{rec.date}</td>
+                                                        <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: isDeleted ? 'normal' : 'bold', color: isDeleted ? '#94a3b8' : '#15803d' }}>{isDeleted ? '0' : `+${rec.quantity}`}</td>
+                                                        <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', color: '#475569', fontSize: '0.9em', textDecoration: isDeleted ? 'line-through' : 'none' }}>{rec.source || '-'}</td>
+                                                        <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', color: isDeleted ? '#ef4444' : '#64748b', fontWeight: isDeleted ? 'bold' : 'normal' }}>{rec.note || '-'}</td>
                                                         <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', whiteSpace: 'nowrap' }}>
                                                             <button
                                                                 className="btn btn-secondary"
-                                                                style={{ padding: '2px 7px', fontSize: '0.78em', marginRight: '4px' }}
+                                                                style={{ padding: '2px 7px', fontSize: '0.78em', marginRight: '4px', opacity: isDeleted ? 0.5 : 1 }}
+                                                                disabled={isDeleted}
                                                                 onClick={() => { setIndivEditRow(rec); setIndivEditForm({ date: rec.date, quantity: String(rec.quantity), source: rec.source || '한누리', note: rec.note || '' }) }}
                                                             >✏️ 수정</button>
                                                             <button
                                                                 className="btn btn-danger"
-                                                                style={{ padding: '2px 7px', fontSize: '0.78em' }}
-                                                                disabled={indivDeleteModalMutation.isPending}
+                                                                style={{ padding: '2px 7px', fontSize: '0.78em', opacity: isDeleted ? 0.5 : 1 }}
+                                                                disabled={indivDeleteModalMutation.isPending || isDeleted}
                                                                 onClick={() => {
                                                                     if (window.confirm(`[${rec.date}] 수량 ${rec.quantity}개 입고 내역을 삭제하시겠습니까?\n실재고에서 ${rec.quantity}개가 차감됩니다.`)) {
                                                                         indivDeleteModalMutation.mutate({ row_index: rec.row_index, item_name: rec.item_name, quantity: rec.quantity })
@@ -1909,7 +1912,8 @@ const ItemsTab = ({ month, months }) => {
                                                     </>
                                                 )}
                                             </tr>
-                                        ))}
+                                            )
+                                        })}
                                     </tbody>
                                 </table>
                             )}
