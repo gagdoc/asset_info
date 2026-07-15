@@ -1699,7 +1699,7 @@ const ItemsTab = ({ month, months }) => {
                         <th>{'소모품명 (Item Name)'}</th>
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
                         <th style={{ textAlign: 'center', background: '#fdf4ff', color: '#86198f' }}>출고<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
-                        <th style={{ textAlign: 'center', background: '#f0fdf4', color: '#15803d' }}>개별추가<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMode === 'monthly' ? (dispatchMonth || '전체') : '전체'}</small></th>
+                        <th style={{ textAlign: 'center', background: '#f0fdf4', color: '#15803d' }}>추가 (조정)<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
                         <th style={{ textAlign: 'center', background: '#fff1f2', color: '#9f1239' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>구매+추가-출고</small></th>
                         <th style={{ textAlign: 'center' }}>관리</th>
                     </tr>
@@ -1745,10 +1745,10 @@ const ItemsTab = ({ month, months }) => {
                                         ? dispatched.toLocaleString()
                                         : <span style={{ color: '#aaa' }}>0</span>}
                                 </td>
-                                {/* 개별추가 수량 */}
+                                {/* 추가 수량 (order_qty) */}
                                 <td style={{ textAlign: 'center' }}>
-                                    {indivQty > 0
-                                        ? <span style={{ color: '#15803d', fontWeight: 'bold' }}>+{indivQty}</span>
+                                    {(item.order_qty || 0) !== 0
+                                        ? <span style={{ color: item.order_qty > 0 ? '#15803d' : '#ef4444', fontWeight: 'bold' }}>{item.order_qty > 0 ? '+' : ''}{item.order_qty}</span>
                                         : <span style={{ color: '#aaa' }}>-</span>}
                                 </td>
                                 {/* 실재고 수량 (복합기_토너_재고_DB 기준) */}
@@ -2092,7 +2092,7 @@ const TrackedItemsTab = ({ month, months }) => {
                         <th>품목명</th>
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
                         <th style={{ textAlign: 'center', color: '#f59e0b' }}>출고량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMode === 'monthly' ? dispatchMonth || '선택월' : '누적'}</small></th>
-                        <th style={{ textAlign: 'center', color: '#2563eb' }}>개별추가<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMode === 'monthly' ? dispatchMonth || '선택월' : '전체'}</small></th>
+                        <th style={{ textAlign: 'center', color: '#2563eb' }}>추가 (조정)<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
                         <th style={{ textAlign: 'center', color: '#3b82f6', fontSize: '1.1em' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>실재고</small></th>
                         <th style={{ textAlign: 'center' }}>상태</th>
                         <th style={{ textAlign: 'center' }}>상세 내역</th>
@@ -2116,8 +2116,8 @@ const TrackedItemsTab = ({ month, months }) => {
                                 <EditableCell value={item.price} onSave={(val) => handleInlineUpdate('price', val)} align="right" />
                                 <td style={{ textAlign: 'center', color: '#f59e0b', fontWeight: 'bold' }}>{dispatched.toLocaleString()}</td>
                                 <td style={{ textAlign: 'center' }}>
-                                    {indivQty > 0
-                                        ? <span style={{ color: '#2563eb', fontWeight: 'bold' }}>+{indivQty}</span>
+                                    {(item.order_qty || 0) !== 0
+                                        ? <span style={{ color: item.order_qty > 0 ? '#2563eb' : '#ef4444', fontWeight: 'bold' }}>{item.order_qty > 0 ? '+' : ''}{item.order_qty}</span>
                                         : <span style={{ color: '#94a3b8' }}>-</span>}
                                 </td>
                                 <td style={{ textAlign: 'center', color: current !== null && !isLow ? '#3b82f6' : '#ef4444', fontWeight: 'bold', fontSize: '1.2em' }}>
