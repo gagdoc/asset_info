@@ -281,11 +281,37 @@ const EstimateTab = ({ month }) => {
         return acc + (isNaN(cost) ? 0 : cost)
     }, 0) || 0;
 
+    const handleCopyText = async () => {
+        if (!estimateData || estimateData.length === 0) return;
+        
+        let text = "순번. 품명 (총수) : 사용자(상세)\n";
+        estimateData.forEach((row, idx) => {
+            const users = Array.isArray(row.users) ? row.users.join(', ') : (row.users || '');
+            text += `${idx + 1}. ${row.item_name} (${row.total_qty}EA) : ${users}\n`;
+        });
+        
+        try {
+            await navigator.clipboard.writeText(text);
+            alert("텍스트가 클립보드에 복사되었습니다.");
+        } catch (err) {
+            console.error('Failed to copy!', err);
+            alert("복사에 실패했습니다.");
+        }
+    }
+
     return (
         <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
                 <h3>{month} 견적서 산출 내역</h3>
                 <div style={{ display: 'flex', gap: '8px' }}>
+                    <button 
+                        className="btn btn-secondary" 
+                        onClick={handleCopyText} 
+                        disabled={!estimateData || estimateData.length === 0}
+                        style={{ backgroundColor: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1' }}
+                    >
+                        📋 텍스트 복사
+                    </button>
                     <ExportButton
                         onClick={async () => {
                         const rows = (estimateData || []).map(r => ({
