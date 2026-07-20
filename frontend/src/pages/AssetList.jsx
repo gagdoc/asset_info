@@ -37,6 +37,10 @@ const AssetList = () => {
     const [modalData, setModalData] = useState({})
     const [isSaving, setIsSaving] = useState(false)
 
+    // 기존 사용자 검색 상태
+    const [isUserSearchOpen, setIsUserSearchOpen] = useState(false)
+    const [userSearchQuery, setUserSearchQuery] = useState('')
+
     // type(경로 파라미터)가 변경될 때 필터 상태 초기화
     useEffect(() => {
         setFilterYears([])
@@ -53,6 +57,8 @@ const AssetList = () => {
         setShowDuplicateSummary(false)
         setYearDropdownOpen(false)
         setMonthDropdownOpen(false)
+        setIsUserSearchOpen(false)
+        setUserSearchQuery('')
     }, [type])
 
     // 연도 및 월 드롭다운 외부 클릭 시 닫기
@@ -76,6 +82,15 @@ const AssetList = () => {
             return data
         },
         enabled: !!type
+    })
+
+    const { data: dashboardData, isLoading: isDashboardLoading } = useQuery({
+        queryKey: ['dashboard_integrated'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/assets/dashboard')
+            return data
+        },
+        enabled: isUserSearchOpen
     })
 
     const assetsWithIdx = assets?.map((row, idx) => ({ ...row, _originalIdx: idx })) || []
@@ -354,6 +369,51 @@ const AssetList = () => {
             <button className="btn btn-sm mt-2" onClick={() => queryClient.invalidateQueries(['assets', type])}>다시 시도</button>
         </div>
     )
+
+    // ── 기존 사용자 정보 복사 로직 ──
+    const filteredSearchUsers = (dashboardData || []).filter(u => {
+        if (!userSearchQuery.trim()) return false
+        const q = userSearchQuery.toLowerCase().trim()
+        const name = String(u['이름'] || u['NAME'] || '').toLowerCase()
+        const email = String(u['email'] || u['EMAIL'] || '').toLowerCase()
+        const leaseList = String(u['Lease_List'] || '').toLowerCase()
+        const ipadList = String(u['Ipad_List'] || '').toLowerCase()
+        return name.includes(q) || email.includes(q) || leaseList.includes(q) || ipadList.includes(q)
+    }).slice(0, 50) // 성능을 위해 최대 50개까지만 표시
+
+    const handleCopyUserInfo = (user) => {
+        const userName = user['이름'] || user['NAME'] || user['email']
+        if (!confirm(`'${userName}' 님의 정보를 현재 입력 폼에 덮어씌우시겠습니까?`)) return
+        
+        const newModalData = { ...modalData }
+        const colNames = Object.keys(newModalData)
+        
+        const mapping = {
+            name: ['User', 'USER', '이름', 'NAME', '사용자'],
+            email: ['email', 'EMAIL', '이메일'],
+            bu: ['BU', '소속', '부서', '본부'],
+            role: ['직급', '직함', 'ROLE', 'Role']
+        }
+        
+        for (const targetField of ['name', 'email', 'bu', 'role']) {
+            // 대소문자 무시하고 완벽 일치 찾기 위한 로직 (옵션)
+            const matchedCol = colNames.find(c => mapping[targetField].some(m => m.toLowerCase() === c.toLowerCase()))
+            if (matchedCol) {
+                let val = ''
+                if (targetField === 'name') val = user['이름'] || user['NAME'] || user['USER'] || ''
+                if (targetField === 'email') val = user['email'] || user['EMAIL'] || user['이메일'] || ''
+                if (targetField === 'bu') val = user['BU'] || user['소속'] || user['부서'] || ''
+                if (targetField === 'role') val = user['ROLE'] || user['직함'] || user['직급'] || ''
+                
+                newModalData[matchedCol] = val
+            }
+        }
+        
+        setModalData(newModalData)
+        addToast('사용자 정보가 폼에 복사되었습니다.', 'success')
+        setIsUserSearchOpen(false)
+        setUserSearchQuery('')
+    }
 
     const titleMap = {
         'Lease': '💻 PC/노트북 (Lease) 관리',
@@ -760,9 +820,59 @@ const AssetList = () => {
                 <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
                     <div className="card modal" style={{ width: '90%', maxWidth: '800px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: '#fff' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '1rem', borderBottom: '1px solid #eee' }}>
-                            <h3 style={{ margin: 0 }}>📍 상세 정보 수정</h3>
-                            <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>✖</button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <h3 style={{ margin: 0 }}>📍 상세 정보 수정</h3>
+                                <button className="btn btn-sm" onClick={() => setIsUserSearchOpen(!isUserSearchOpen)} style={{ backgroundColor: isUserSearchOpen ? '#eff6ff' : '#f3f4f6', color: isUserSearchOpen ? '#1d4ed8' : '#374151', border: `1px solid ${isUserSearchOpen ? '#bfdbfe' : '#d1d5db'}` }}>
+                                    🔍 {isUserSearchOpen ? '사용자/기기 검색 닫기' : '기존 사용자 정보 불러오기'}
+                                </button>
+                            </div>
+                            <button className="btn btn-secondary" onClick={() => { setIsModalOpen(false); setIsUserSearchOpen(false); }}>✖</button>
                         </div>
+                        
+                        {isUserSearchOpen && (
+                            <div style={{ padding: '0 1.5rem 1rem 1.5rem', borderBottom: '1px solid #eee', backgroundColor: '#f8fafc' }}>
+                                <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'center' }}>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="이름, 이메일, 기존 기기 S/N 등을 검색하세요..."
+                                        value={userSearchQuery}
+                                        onChange={(e) => setUserSearchQuery(e.target.value)}
+                                        style={{ flex: 1 }}
+                                    />
+                                </div>
+                                {isDashboardLoading ? (
+                                    <div style={{ fontSize: '0.85rem', color: '#64748b' }}>데이터를 불러오는 중입니다...</div>
+                                ) : filteredSearchUsers.length > 0 ? (
+                                    <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#fff' }}>
+                                        {filteredSearchUsers.map((u, idx) => (
+                                            <div 
+                                                key={idx}
+                                                style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                onClick={() => handleCopyUserInfo(u)}
+                                            >
+                                                <div>
+                                                    <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{u['이름'] || u['NAME'] || u['USER'] || '-'} <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 'normal' }}>({u['email'] || u['EMAIL'] || '-'})</span></div>
+                                                    <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+                                                        {u['BU'] || u['소속'] || '-'} | 노트북: {u['Lease_List'] || '-'} | 아이패드: {u['Ipad_List'] || '-'}
+                                                    </div>
+                                                </div>
+                                                <button className="btn btn-sm" style={{ backgroundColor: '#e0e7ff', color: '#4338ca', border: 'none', padding: '4px 10px', fontSize: '0.8rem', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); handleCopyUserInfo(u); }}>
+                                                    복사
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : userSearchQuery.trim() ? (
+                                    <div style={{ fontSize: '0.85rem', color: '#64748b' }}>검색 결과가 없습니다.</div>
+                                ) : (
+                                    <div style={{ fontSize: '0.85rem', color: '#64748b' }}>검색어를 입력하시면 기존 등록된 사용자와 기기 목록이 표시됩니다.</div>
+                                )}
+                            </div>
+                        )}
+
                         <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
                                 {columns.map(col => (
