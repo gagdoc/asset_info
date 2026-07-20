@@ -87,7 +87,7 @@ const AssetList = () => {
     const { data: dashboardData, isLoading: isDashboardLoading } = useQuery({
         queryKey: ['dashboard_integrated'],
         queryFn: async () => {
-            const { data } = await axios.get('/api/assets/dashboard')
+            const { data } = await axios.get('/api/assets/dashboard/integrated')
             return data
         },
         enabled: isUserSearchOpen
