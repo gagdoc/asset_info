@@ -431,6 +431,7 @@ const OutboundTab = ({ month, isDev = false }) => {
     })
 
     const [editingRow, setEditingRow] = useState(null)
+    const [originalRow, setOriginalRow] = useState(null)
     const [editForm, setEditForm] = useState({})
     const [isEditModalOpen, setIsEditModalOpen] = useState(false)
 
@@ -440,6 +441,7 @@ const OutboundTab = ({ month, isDev = false }) => {
             queryClient.invalidateQueries(['consumables-outbound', month])
             queryClient.invalidateQueries(['consumables-items'])
             setEditingRow(null)
+            setOriginalRow(null)
             setIsEditModalOpen(false)
             alert("출고 내역이 수정되었습니다.")
         },
@@ -465,6 +467,7 @@ const OutboundTab = ({ month, isDev = false }) => {
 
     const handleEditStart = (row) => {
         setEditingRow(row.row_index)
+        setOriginalRow(row)
         setEditForm({ ...row })
         setIsEditModalOpen(true)
     }
@@ -478,8 +481,9 @@ const OutboundTab = ({ month, isDev = false }) => {
         updateMutation.mutate({
             month,
             row_index: editForm.row_index,
-            verify_date: editForm.date,
-            verify_item: editForm.item_name,
+            verify_date: originalRow?.date,
+            verify_item: originalRow?.item_name,
+            verify_user: originalRow?.user_name,
             ...editForm
         })
     }
