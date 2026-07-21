@@ -379,20 +379,24 @@ const AssetList = () => {
         // 검색 대상 필드 추출
         const name = String(u['이름'] || u['NAME'] || u['USER'] || '').toLowerCase()
         const email = String(u['email'] || u['EMAIL'] || '').toLowerCase()
+        
         const leaseList = String(u['Lease_List'] || '').toLowerCase()
         const ipadList = String(u['Ipad_List'] || '').toLowerCase()
         const printer = String(u['Printer'] || '').toLowerCase()
         const monitor = String(u['Monitor'] || '').toLowerCase()
         const teams = String(u['TeamsNum'] || '').toLowerCase()
         
-        // 검색어 포함 여부 확인
-        return name.includes(q) || 
-               email.includes(q) || 
-               leaseList.includes(q) || 
-               ipadList.includes(q) || 
-               printer.includes(q) || 
-               monitor.includes(q) || 
-               teams.includes(q)
+        // 이름과 이메일은 공통 검색
+        if (name.includes(q) || email.includes(q)) return true
+        
+        // 현재 선택된 자산(type)에 해당하는 기기 정보만 추가 검색 허용
+        if (type === 'Lease' && leaseList.includes(q)) return true
+        if (type === 'iPad' && ipadList.includes(q)) return true
+        if (type === 'Monitor' && monitor.includes(q)) return true
+        if (type === 'Printer' && printer.includes(q)) return true
+        if (type === 'TeamsNum' && teams.includes(q)) return true
+        
+        return false
     }).slice(0, 50) // 성능을 위해 최대 50개까지만 표시
 
     const handleCopyUserInfo = (user) => {
@@ -869,8 +873,13 @@ const AssetList = () => {
                                             >
                                                 <div>
                                                     <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{u['이름'] || u['NAME'] || u['USER'] || '-'} <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 'normal' }}>({u['email'] || u['EMAIL'] || '-'})</span></div>
-                                                    <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
-                                                        {u['BU'] || u['소속'] || '-'} | 노트북: {u['Lease_List'] || '-'} | 아이패드: {u['Ipad_List'] || '-'}
+                                                    <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px', wordBreak: 'break-all' }}>
+                                                        {u['BU'] || u['소속'] || '-'}
+                                                        {type === 'Lease' && u['Lease_List'] && u['Lease_List'] !== '-' && ` | 노트북: ${u['Lease_List']}`}
+                                                        {type === 'iPad' && u['Ipad_List'] && u['Ipad_List'] !== '-' && ` | 아이패드: ${u['Ipad_List']}`}
+                                                        {type === 'Monitor' && u['Monitor'] && u['Monitor'] !== '-' && ` | 모니터: ${u['Monitor']}`}
+                                                        {type === 'Printer' && u['Printer'] && u['Printer'] !== '-' && ` | 프린터: ${u['Printer']}`}
+                                                        {type === 'TeamsNum' && u['TeamsNum'] && u['TeamsNum'] !== '-' && ` | Teams: ${u['TeamsNum']}`}
                                                     </div>
                                                 </div>
                                                 <button className="btn btn-sm" style={{ backgroundColor: '#e0e7ff', color: '#4338ca', border: 'none', padding: '4px 10px', fontSize: '0.8rem', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); handleCopyUserInfo(u); }}>
