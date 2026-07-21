@@ -85,12 +85,13 @@ const AssetList = () => {
     })
 
     const { data: dashboardData, isLoading: isDashboardLoading } = useQuery({
-        queryKey: ['dashboard_integrated'],
+        queryKey: ['dashboard_search_candidates'],
         queryFn: async () => {
-            const { data } = await axios.get('/api/assets/dashboard/integrated')
+            const { data } = await axios.get('/api/assets/dashboard/search-candidates')
             return data
         },
-        enabled: isUserSearchOpen
+        enabled: isUserSearchOpen,
+        staleTime: 60000 // Cache for 1 minute
     })
 
     const assetsWithIdx = assets?.map((row, idx) => ({ ...row, _originalIdx: idx })) || []
