@@ -374,11 +374,24 @@ const AssetList = () => {
     const filteredSearchUsers = (dashboardData || []).filter(u => {
         if (!userSearchQuery.trim()) return false
         const q = userSearchQuery.toLowerCase().trim()
-        const name = String(u['이름'] || u['NAME'] || '').toLowerCase()
+        
+        // 검색 대상 필드 추출
+        const name = String(u['이름'] || u['NAME'] || u['USER'] || '').toLowerCase()
         const email = String(u['email'] || u['EMAIL'] || '').toLowerCase()
         const leaseList = String(u['Lease_List'] || '').toLowerCase()
         const ipadList = String(u['Ipad_List'] || '').toLowerCase()
-        return name.includes(q) || email.includes(q) || leaseList.includes(q) || ipadList.includes(q)
+        const printer = String(u['Printer'] || '').toLowerCase()
+        const monitor = String(u['Monitor'] || '').toLowerCase()
+        const teams = String(u['TeamsNum'] || '').toLowerCase()
+        
+        // 검색어 포함 여부 확인
+        return name.includes(q) || 
+               email.includes(q) || 
+               leaseList.includes(q) || 
+               ipadList.includes(q) || 
+               printer.includes(q) || 
+               monitor.includes(q) || 
+               teams.includes(q)
     }).slice(0, 50) // 성능을 위해 최대 50개까지만 표시
 
     const handleCopyUserInfo = (user) => {
