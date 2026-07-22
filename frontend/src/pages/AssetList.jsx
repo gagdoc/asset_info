@@ -309,6 +309,43 @@ const AssetList = () => {
         }
     }
 
+    const handleReturnAsset = () => {
+        if (!confirm('반납 처리하시겠습니까? (BU/Role이 IT로, 사용자 이름이 STOCK으로 변경되며, Additional Information에 반납 기록이 남습니다.)')) return;
+
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        const todayStr = `${yyyy}${mm}${dd}`;
+
+        const email = modalData.email || modalData.EMAIL || '';
+        let name = "Unknown";
+        if (email) {
+            name = email.split('@')[0].split('.').map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(' ');
+        } else if (modalData.USER || modalData.NAME || modalData['이름']) {
+            name = modalData.USER || modalData.NAME || modalData['이름'];
+        }
+
+        const updates = { ...modalData };
+        if (updates.hasOwnProperty('BU')) updates['BU'] = 'IT';
+        if (updates.hasOwnProperty('Role')) updates['Role'] = 'IT';
+        if (updates.hasOwnProperty('ROLE')) updates['ROLE'] = 'IT';
+        
+        if (updates.hasOwnProperty('USER')) updates['USER'] = 'STOCK';
+        if (updates.hasOwnProperty('User')) updates['User'] = 'STOCK';
+        if (updates.hasOwnProperty('NAME')) updates['NAME'] = 'STOCK';
+        if (updates.hasOwnProperty('이름')) updates['이름'] = 'STOCK';
+        
+        const returnText = `${todayStr} / ${name} 반납`;
+        if (updates.hasOwnProperty('Additional Information')) {
+            updates['Additional Information'] = updates['Additional Information'] ? `${updates['Additional Information']} | ${returnText}` : returnText;
+        } else if (updates.hasOwnProperty('참고')) {
+            updates['참고'] = updates['참고'] ? `${updates['참고']} | ${returnText}` : returnText;
+        }
+
+        setModalData(updates);
+    }
+
     // ── Row delete ──
     const handleDeleteSelected = async () => {
         if (selectedRows.size === 0) return
@@ -842,6 +879,9 @@ const AssetList = () => {
                                 <h3 style={{ margin: 0 }}>📍 상세 정보 수정</h3>
                                 <button className="btn btn-sm" onClick={() => setIsUserSearchOpen(!isUserSearchOpen)} style={{ backgroundColor: isUserSearchOpen ? '#eff6ff' : '#f3f4f6', color: isUserSearchOpen ? '#1d4ed8' : '#374151', border: `1px solid ${isUserSearchOpen ? '#bfdbfe' : '#d1d5db'}` }}>
                                     🔍 {isUserSearchOpen ? '사용자/기기 검색 닫기' : '기존 사용자 정보 불러오기'}
+                                </button>
+                                <button className="btn btn-sm" onClick={handleReturnAsset} style={{ backgroundColor: '#fff1f2', color: '#be123c', border: '1px solid #fecdd3' }}>
+                                    🔄 반납 처리 (IT/STOCK)
                                 </button>
                             </div>
                             <button className="btn btn-secondary" onClick={() => { setIsModalOpen(false); setIsUserSearchOpen(false); }}>✖</button>
