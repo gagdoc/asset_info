@@ -336,6 +336,9 @@ const AssetList = () => {
         if (updates.hasOwnProperty('NAME')) updates['NAME'] = 'STOCK';
         if (updates.hasOwnProperty('이름')) updates['이름'] = 'STOCK';
         
+        if (updates.hasOwnProperty('email')) updates['email'] = '';
+        if (updates.hasOwnProperty('EMAIL')) updates['EMAIL'] = '';
+        
         const returnText = `${todayStr} / ${name} 반납`;
         if (updates.hasOwnProperty('Additional Information')) {
             updates['Additional Information'] = updates['Additional Information'] ? `${updates['Additional Information']} | ${returnText}` : returnText;
