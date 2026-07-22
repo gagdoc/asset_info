@@ -341,9 +341,9 @@ const AssetList = () => {
         
         const returnText = `${todayStr} / ${name} 반납`;
         if (updates.hasOwnProperty('Additional Information')) {
-            updates['Additional Information'] = updates['Additional Information'] ? `${updates['Additional Information']} | ${returnText}` : returnText;
+            updates['Additional Information'] = returnText;
         } else if (updates.hasOwnProperty('참고')) {
-            updates['참고'] = updates['참고'] ? `${updates['참고']} | ${returnText}` : returnText;
+            updates['참고'] = returnText;
         }
 
         setModalData(updates);
