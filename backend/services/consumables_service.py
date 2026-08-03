@@ -168,6 +168,10 @@ def get_available_months():
 
 def create_month_sheet(month_name: str, start_date: str) -> bool:
     try:
+        # 1. 롤오버(이월)를 위해 새 시트 개설 전의 전체 실재고 스냅샷 확보
+        # 이 시점에서 get_items_list는 최신 출고월 데이터까지 모두 반영된 실재고를 계산해 줍니다.
+        items_snapshot = _get_items_list_impl(dispatch_mode="cumulative")
+
         _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
         if not ss: return False
         
@@ -176,7 +180,27 @@ def create_month_sheet(month_name: str, start_date: str) -> bool:
         if month_name in existing:
             return False
             
-        # 새 시트 추가
+        # 2. 마스터 시트(품목리스트) 이월 업데이트
+        # 구매수량(E) = 기존 현재고, 추가수량(F) = 0 으로 일괄 갱신
+        _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+        if ss_master:
+            ws_master = _get_worksheet_safe(ss_master, "품목리스트")
+            if ws_master:
+                update_data = []
+                for item in items_snapshot:
+                    row_idx = item.get("row_index")
+                    if row_idx:
+                        new_base = item.get("current_stock", 0)
+                        # E열(5번째), F열(6번째)
+                        update_data.append({
+                            'range': f'E{row_idx}:F{row_idx}',
+                            'values': [[new_base, 0]]
+                        })
+                if update_data:
+                    _retry_sheets_op(lambda: ws_master.batch_update(update_data))
+                    logger.info(f"[{month_name} 개설] {len(update_data)}개 품목의 재고가 이월되었으며 추가 수량이 초기화되었습니다.")
+
+        # 3. 새 시트 추가
         ws = ss.add_worksheet(title=month_name, rows=1000, cols=20)
         
         # 헤더 기록
@@ -190,7 +214,7 @@ def create_month_sheet(month_name: str, start_date: str) -> bool:
         invalidate_cache()
         return True
     except Exception as e:
-        print(f"Error creating month sheet: {e}")
+        logger.error(f"Error creating month sheet: {e}")
         return False
 
 def _get_available_months_impl():
@@ -296,7 +320,11 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
             if dispatch_mode == "monthly" and month:
                 target_months = [m for m in all_month_titles if m == month]
             else:
-                target_months = all_month_titles
+                # 롤오버(Rollover) 방식 적용: 
+                # 마스터 시트의 구매수량에는 이미 과거 출고가 반영된 이월 재고가 들어가 있으므로,
+                # 중복 차감을 방지하기 위해 '가장 최신(최근 개설된) 1개의 월' 시트만 대상(target)으로 삼습니다.
+                available = get_available_months()
+                target_months = [available[0]] if available else []
 
             if target_months:
                 ranges = [f"{m}!A2:E" for m in target_months]
