@@ -325,9 +325,7 @@ const PublicInventoryTab = () => {
                         <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
                             <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem' }}>분류</th>
                             <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem' }}>품목명</th>
-                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem', textAlign: 'right' }}>총 입고</th>
-                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem', textAlign: 'right' }}>총 출고</th>
-                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem', textAlign: 'right' }}>현재 재고</th>
+                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem', textAlign: 'right' }}>실제 재고</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -335,14 +333,12 @@ const PublicInventoryTab = () => {
                             <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
                                 <td style={{ padding: '12px', fontSize: '0.9rem', color: '#64748b' }}>{row.category}</td>
                                 <td style={{ padding: '12px', fontWeight: 'bold', color: '#0f172a' }}>{row.item_name}</td>
-                                <td style={{ padding: '12px', textAlign: 'right', color: '#10b981' }}>{row.total_in}</td>
-                                <td style={{ padding: '12px', textAlign: 'right', color: '#ef4444' }}>{row.total_out}</td>
-                                <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem', color: row.current_stock > 0 ? '#3b82f6' : '#94a3b8' }}>
+                                <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem', color: row.current_stock > 0 ? '#3b82f6' : '#ef4444' }}>
                                     {row.current_stock}
                                 </td>
                             </tr>
                         )) : (
-                            <tr><td colSpan="5" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>재고 데이터가 없습니다.</td></tr>
+                            <tr><td colSpan="3" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>재고 데이터가 없습니다.</td></tr>
                         )}
                     </tbody>
                 </table>
