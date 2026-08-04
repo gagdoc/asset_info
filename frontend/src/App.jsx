@@ -99,11 +99,13 @@ function DevEnvBanner() {
 function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const location = useLocation()
-  const isStandalonePage = location.pathname === '/register' || location.pathname === '/public-consumables'
+  const isRegisterPage = location.pathname === '/register'
+  const isPublicConsumables = location.pathname === '/public-consumables'
+  const isStandalonePage = isRegisterPage || isPublicConsumables
 
   return (
     <ToastProvider>
-      <div className={`app-container ${isStandalonePage ? 'centered-layout' : ''}`}>
+      <div className={`app-container ${isRegisterPage ? 'centered-layout' : ''}`}>
         {!isStandalonePage && (
           <Sidebar isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
         )}

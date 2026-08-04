@@ -19,7 +19,7 @@ const PublicConsumables = () => {
             fontFamily: "'Inter', sans-serif",
             backgroundColor: '#f8fafc'
         }}>
-            <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+            <div style={{ maxWidth: '100%', margin: '0 auto' }}>
                 <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
                     <h1 style={{ fontSize: '1.5rem', color: '#1e293b', margin: 0 }}>📦 소모품 관리</h1>
                     <div style={{ display: 'flex', gap: '8px' }}>
