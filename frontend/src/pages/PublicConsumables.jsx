@@ -281,16 +281,8 @@ const PublicOutboundTab = () => {
 }
 
 const PublicInventoryTab = () => {
-    const { data: report, isLoading } = useQuery({
-        queryKey: ['inventory-report'],
-        queryFn: async () => {
-            const { data } = await axios.get('/api/consumables/inventory-report')
-            return data
-        }
-    })
-
-    // 품목 리스트 가져오기 (category 매핑을 위함)
-    const { data: itemsList } = useQuery({
+    // 마스터 품목 리스트 가져오기 (실재고 파악)
+    const { data: itemsList, isLoading } = useQuery({
         queryKey: ['consumables-items'],
         queryFn: async () => {
             const { data } = await axios.get('/api/consumables/items')
@@ -298,26 +290,23 @@ const PublicInventoryTab = () => {
         }
     })
 
-    const categoryMap = useMemo(() => {
-        const map = {}
-        ;(itemsList || []).forEach(it => { map[it.item_name] = it.category || '' })
-        return map
+    const items = useMemo(() => {
+        if (!itemsList) return []
+        return [...itemsList]
+            .filter(item => item.is_tracked !== false) // 추적 관리되는 항목만 보여주거나 전부 보여줌
+            .map(item => ({
+                item_name: item.item_name,
+                category: item.category || '미분류',
+                current_stock: item.current_stock ?? 0
+            }))
+            .sort((a, b) => a.category.localeCompare(b.category))
     }, [itemsList])
-
-    const byItem = report?.by_item || {}
-    const items = Object.entries(byItem).map(([itemName, data]) => ({
-        item_name: itemName,
-        category: categoryMap[itemName] || '미분류',
-        total_in: data.total_in || 0,
-        total_out: data.total_out || 0,
-        current_stock: data.balance || 0
-    })).sort((a, b) => a.category.localeCompare(b.category))
 
     return (
         <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
             <h2 style={{ margin: '0 0 20px 0', fontSize: '1.25rem', color: '#334155' }}>📊 품목별 재고 현황</h2>
             
-            <LoadingModal isOpen={isLoading} message="재고 데이터를 계산 중입니다..." />
+            <LoadingModal isOpen={isLoading} message="재고 데이터를 불러오는 중입니다..." />
 
             <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
