@@ -15,6 +15,7 @@ import DeptConfig from './pages/DeptConfig'
 import ExcelUpload from './pages/ExcelUpload'
 import SelfOutbound from './pages/SelfOutbound'
 import BulkSearch from './pages/BulkSearch'
+import PublicConsumables from './pages/PublicConsumables'
 
 // ── 전역 개발 환경 배너 ──────────────────────────────────────────
 function DevEnvBanner() {
@@ -98,20 +99,20 @@ function DevEnvBanner() {
 function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const location = useLocation()
-  const isRegisterPage = location.pathname === '/register'
+  const isStandalonePage = location.pathname === '/register' || location.pathname === '/public-consumables'
 
   return (
     <ToastProvider>
-      <div className={`app-container ${isRegisterPage ? 'centered-layout' : ''}`}>
-        {!isRegisterPage && (
+      <div className={`app-container ${isStandalonePage ? 'centered-layout' : ''}`}>
+        {!isStandalonePage && (
           <Sidebar isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
         )}
 
         <div className="main-wrapper">
           {/* 전역 개발 환경 배너 (운영에서는 자동 숨김) */}
-          {!isRegisterPage && <DevEnvBanner />}
+          {!isStandalonePage && <DevEnvBanner />}
 
-          {!isRegisterPage && (
+          {!isStandalonePage && (
             <div className="mobile-header">
               <button className="btn-icon" onClick={() => setIsMobileMenuOpen(true)}>
                 <FaBars size={20} />
@@ -133,6 +134,7 @@ function App() {
               <Route path="/upload" element={<ExcelUpload />} />
               <Route path="/register" element={<SelfOutbound />} />
               <Route path="/bulk-search" element={<BulkSearch />} />
+              <Route path="/public-consumables" element={<PublicConsumables />} />
             </Routes>
             </ErrorBoundary>
           </main>
