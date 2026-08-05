@@ -19,7 +19,7 @@ class RentalEntry(BaseModel):
     expected_return_date: str
     notes: Optional[str] = ""
 
-@router.get("/")
+@router.get("")
 def get_rentals():
     dfs = load_from_db()
     if "Rental" not in dfs:
@@ -45,7 +45,7 @@ def get_rentals():
     df = df.where(pd.notnull(df), None)
     return df.to_dict(orient="records")
 
-@router.post("/")
+@router.post("")
 def add_rental(entry: RentalEntry):
     dfs = load_from_db()
     

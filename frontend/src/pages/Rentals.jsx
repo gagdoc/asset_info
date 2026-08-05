@@ -29,7 +29,7 @@ const Rentals = () => {
         }
     });
 
-    let displayedRentals = rentals || [];
+    let displayedRentals = Array.isArray(rentals) ? rentals : [];
 
     if (statusFilter) {
         displayedRentals = displayedRentals.filter(r => r['상태'] === statusFilter);
