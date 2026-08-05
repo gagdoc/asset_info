@@ -5,6 +5,9 @@ import { useToast } from '../components/Toast';
 import { todayStr } from '../utils/exportUtils';
 import SearchableSelect from '../components/SearchableSelect';
 
+const STAFF_OPTIONS = ['Kale', 'Daniel', '기타'];
+const DELIVERY_OPTIONS = ['직접', '택배', '기타'];
+
 const Rentals = () => {
     const queryClient = useQueryClient();
     const { addToast } = useToast();
@@ -14,12 +17,18 @@ const Rentals = () => {
     const [isSaving, setIsSaving] = useState(false);
 
     const [newRental, setNewRental] = useState({
+        type: '대여',
         name: '',
         email: '',
         item_name: '',
+        quantity: '1',
         rent_date: new Date().toISOString().split('T')[0],
         expected_return_date: '',
-        notes: ''
+        notes: '',
+        staff: '',
+        staff_custom: '',
+        delivery: '',
+        delivery_custom: ''
     });
 
     const { data: rentals, isLoading } = useQuery({
@@ -89,16 +98,33 @@ const Rentals = () => {
 
     const handleAddSubmit = async (e) => {
         e.preventDefault();
+        
+        const effectiveStaff = newRental.staff === '기타' ? newRental.staff_custom : newRental.staff;
+        const effectiveDelivery = newRental.delivery === '기타' ? newRental.delivery_custom : newRental.delivery;
+
+        if (!effectiveStaff || !effectiveDelivery) {
+            addToast('지급 담당과 수령 방법을 입력해주세요.', 'error');
+            return;
+        }
+        
         setIsSaving(true);
         try {
-            await axios.post('/api/rentals', newRental);
+            await axios.post('/api/rentals', {
+                ...newRental,
+                staff: effectiveStaff,
+                delivery: effectiveDelivery
+            });
             queryClient.invalidateQueries(['rentals']);
-            addToast('대여 등록 완료', 'success');
+            queryClient.invalidateQueries(['consumables-outbound']);
+            queryClient.invalidateQueries(['tonner-consignment']);
+            queryClient.invalidateQueries(['toner-inventory']);
+            addToast('등록 완료', 'success');
             setIsAddModalOpen(false);
             setNewRental({
-                name: '', email: '', item_name: '',
+                type: '대여', name: '', email: '', item_name: '', quantity: '1',
                 rent_date: new Date().toISOString().split('T')[0],
-                expected_return_date: '', notes: ''
+                expected_return_date: '', notes: '',
+                staff: '', staff_custom: '', delivery: '', delivery_custom: ''
             });
         } catch (err) {
             addToast('등록 실패: ' + (err.response?.data?.detail || err.message), 'error');
@@ -230,6 +256,24 @@ const Rentals = () => {
                         </div>
                         <form onSubmit={handleAddSubmit}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+                                {/* 구분 (대여 vs 지급) */}
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.88em', fontWeight: 'bold', marginBottom: '6px', color: '#374151' }}>유형 선택 <span style={{ color: '#ef4444' }}>*</span></label>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        {['대여', '지급'].map(opt => (
+                                            <label key={opt} style={{
+                                                padding: '5px 14px', borderRadius: '16px', cursor: 'pointer', fontSize: '0.9em',
+                                                border: `1.5px solid ${newRental.type === opt ? '#4f46e5' : '#d1d5db'}`,
+                                                backgroundColor: newRental.type === opt ? '#e0e7ff' : '#fff',
+                                                fontWeight: newRental.type === opt ? 'bold' : 'normal',
+                                                color: newRental.type === opt ? '#4338ca' : '#6b7280',
+                                            }}>
+                                                <input type="radio" value={opt} checked={newRental.type === opt} onChange={() => setNewRental({...newRental, type: opt})} style={{ display: 'none' }} />
+                                                {opt === '대여' ? '🔄 대여 (반납 필요)' : '📦 영구 지급 (반납 불필요)'}
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>대여자 이름 *</label>
@@ -255,28 +299,82 @@ const Rentals = () => {
                                         <input className="form-input" type="email" value={newRental.email} onChange={e => setNewRental({...newRental, email: e.target.value})} />
                                     </div>
                                 </div>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>품목명 *</label>
-                                    <SearchableSelect 
-                                        options={itemOptions} 
-                                        value={newRental.item_name}
-                                        onChange={val => setNewRental({...newRental, item_name: val})}
-                                        placeholder="품목 검색 또는 직접 입력"
-                                        searchFields={["label", "subLabel"]}
-                                        width="100%"
-                                        allowCustom={true}
-                                    />
+                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>품목명 *</label>
+                                        <SearchableSelect 
+                                            options={itemOptions} 
+                                            value={newRental.item_name}
+                                            onChange={val => setNewRental({...newRental, item_name: val})}
+                                            placeholder="품목 검색 또는 직접 입력"
+                                            searchFields={["label", "subLabel"]}
+                                            width="100%"
+                                            allowCustom={true}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>수량 *</label>
+                                        <input className="form-input" type="number" min="1" required value={newRental.quantity} onChange={e => setNewRental({...newRental, quantity: e.target.value})} />
+                                    </div>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>대여 일자 *</label>
+                                        <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>{newRental.type === '대여' ? '대여 일자 *' : '지급 일자 *'}</label>
                                         <input className="form-input" type="date" required value={newRental.rent_date} onChange={e => setNewRental({...newRental, rent_date: e.target.value})} />
                                     </div>
+                                    {newRental.type === '대여' && (
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>반납 예정일 *</label>
+                                            <input className="form-input" type="date" required value={newRental.expected_return_date} onChange={e => setNewRental({...newRental, expected_return_date: e.target.value})} />
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 지급 담당 + 수령 방법 */}
+                                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>반납 예정일 *</label>
-                                        <input className="form-input" type="date" required value={newRental.expected_return_date} onChange={e => setNewRental({...newRental, expected_return_date: e.target.value})} />
+                                        <label style={{ display: 'block', fontSize: '0.88em', fontWeight: 'bold', marginBottom: '6px', color: '#374151' }}>지급 담당 <span style={{ color: '#ef4444' }}>*</span></label>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            {STAFF_OPTIONS.map(opt => (
+                                                <label key={opt} style={{
+                                                    padding: '5px 14px', borderRadius: '16px', cursor: 'pointer', fontSize: '0.9em',
+                                                    border: `1.5px solid ${newRental.staff === opt ? '#4f46e5' : '#d1d5db'}`,
+                                                    backgroundColor: newRental.staff === opt ? '#e0e7ff' : '#fff',
+                                                    fontWeight: newRental.staff === opt ? 'bold' : 'normal',
+                                                    color: newRental.staff === opt ? '#4338ca' : '#6b7280',
+                                                }}>
+                                                    <input type="radio" value={opt} checked={newRental.staff === opt} onChange={() => setNewRental({...newRental, staff: opt, staff_custom: ''})} style={{ display: 'none' }} />
+                                                    {opt}
+                                                </label>
+                                            ))}
+                                        </div>
+                                        {newRental.staff === '기타' && (
+                                            <input type="text" className="form-input" style={{ marginTop: '8px', padding: '6px 10px' }} placeholder="직접 입력" value={newRental.staff_custom} onChange={e => setNewRental({...newRental, staff_custom: e.target.value})} required />
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.88em', fontWeight: 'bold', marginBottom: '6px', color: '#374151' }}>수령 방법 <span style={{ color: '#ef4444' }}>*</span></label>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            {DELIVERY_OPTIONS.map(opt => (
+                                                <label key={opt} style={{
+                                                    padding: '5px 14px', borderRadius: '16px', cursor: 'pointer', fontSize: '0.9em',
+                                                    border: `1.5px solid ${newRental.delivery === opt ? '#4f46e5' : '#d1d5db'}`,
+                                                    backgroundColor: newRental.delivery === opt ? '#e0e7ff' : '#fff',
+                                                    fontWeight: newRental.delivery === opt ? 'bold' : 'normal',
+                                                    color: newRental.delivery === opt ? '#4338ca' : '#6b7280',
+                                                }}>
+                                                    <input type="radio" value={opt} checked={newRental.delivery === opt} onChange={() => setNewRental({...newRental, delivery: opt, delivery_custom: ''})} style={{ display: 'none' }} />
+                                                    {opt}
+                                                </label>
+                                            ))}
+                                        </div>
+                                        {newRental.delivery === '기타' && (
+                                            <input type="text" className="form-input" style={{ marginTop: '8px', padding: '6px 10px' }} placeholder="직접 입력" value={newRental.delivery_custom} onChange={e => setNewRental({...newRental, delivery_custom: e.target.value})} required />
+                                        )}
                                     </div>
                                 </div>
+
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>비고</label>
                                     <textarea className="form-input" rows="2" value={newRental.notes} onChange={e => setNewRental({...newRental, notes: e.target.value})}></textarea>

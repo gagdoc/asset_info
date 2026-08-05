@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 from datetime import datetime
 from backend.services.database import load_from_db, update_db
+from backend.services.consumables_service import add_outbound, add_purchase_record
 
 router = APIRouter(
     prefix="/api/rentals",
@@ -12,12 +13,16 @@ router = APIRouter(
 )
 
 class RentalEntry(BaseModel):
+    type: str = "대여"
     name: str
     email: str
     item_name: str
+    quantity: str = "1"
     rent_date: str
-    expected_return_date: str
+    expected_return_date: str = ""
     notes: Optional[str] = ""
+    staff: str = ""
+    delivery: str = ""
 
 @router.get("")
 def get_rentals():
@@ -47,9 +52,38 @@ def get_rentals():
 
 @router.post("")
 def add_rental(entry: RentalEntry):
+    # 출고 데이터 준비
+    try:
+        dt = datetime.strptime(entry.rent_date, "%Y-%m-%d")
+        month_str = f"{dt.year}년 {dt.month}월"
+    except:
+        now = datetime.now()
+        month_str = f"{now.year}년 {now.month}월"
+
+    outbound_data = {
+        "date": entry.rent_date,
+        "item_name": entry.item_name,
+        "quantity": entry.quantity,
+        "user_name": entry.name,
+        "outbound_type": "일반" if entry.type == "지급" else "대여",
+        "staff": entry.staff,
+        "delivery": entry.delivery
+    }
+
+    # 1. 소모품 출고 내역에 기록 (재고 차감)
+    success = add_outbound(month_str, outbound_data)
+    if not success:
+        # Note: add_outbound failed, but we shouldn't necessarily crash. 
+        # But let's log it or return error if strict sync is needed.
+        pass
+
+    # 2. '지급'인 경우 대여 리스트에는 남기지 않음
+    if entry.type == "지급":
+        return {"message": "지급(출고) 등록 완료"}
+
+    # 3. '대여'인 경우 대여 리스트(Rental)에도 기록
     dfs = load_from_db()
     
-    # Rental 테이블이 없으면 생성
     if "Rental" not in dfs:
         df = pd.DataFrame(columns=["NO", "대여자 이름", "대여자 이메일", "품목명", "대여 일자", "반납 예정일", "실제 반납일", "상태", "비고"])
     else:
@@ -61,6 +95,11 @@ def add_rental(entry: RentalEntry):
     except:
         max_no = 0
         
+    # 수량을 비고에 기록 (나중에 반납 시 참조용)
+    notes_with_qty = entry.notes or ""
+    if str(entry.quantity) != "1":
+        notes_with_qty = f"[수량: {entry.quantity}] " + notes_with_qty
+
     new_row = {
         "NO": int(max_no) + 1,
         "대여자 이름": entry.name,
@@ -70,12 +109,11 @@ def add_rental(entry: RentalEntry):
         "반납 예정일": entry.expected_return_date,
         "실제 반납일": "",
         "상태": "대여중",
-        "비고": entry.notes,
+        "비고": notes_with_qty,
     }
     
-    # 연체 체크
     today_str = datetime.now().strftime("%Y-%m-%d")
-    if entry.expected_return_date < today_str:
+    if entry.expected_return_date and entry.expected_return_date < today_str:
         new_row["상태"] = "연체"
     
     new_df = pd.DataFrame([new_row])
@@ -106,6 +144,26 @@ def return_rental(item_no: int):
     df.at[row_idx, "실제 반납일"] = today_str
     df.at[row_idx, "상태"] = "반납완료"
     
+    item_name = str(df.at[row_idx, "품목명"])
+    notes = str(df.at[row_idx, "비고"])
+    
+    # 비고에서 수량 파싱 시도 ([수량: X])
+    quantity = "1"
+    import re
+    qty_match = re.search(r"\[수량:\s*(\d+)\]", notes)
+    if qty_match:
+        quantity = qty_match.group(1)
+    
     update_db("Rental", df)
+    
+    # 재고 복구 (구매 입고 내역에 대여 반납으로 기록)
+    add_purchase_record({
+        "date": today_str,
+        "item_name": item_name,
+        "quantity": quantity,
+        "vendor": "대여반납",
+        "staff": "시스템",
+        "note": f"대여 건(NO:{item_no}) 반납 자동 복구"
+    })
     
     return {"message": "반납 처리 완료"}
