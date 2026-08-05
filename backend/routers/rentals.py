@@ -145,9 +145,25 @@ def return_rental(item_no: int):
     if qty_match:
         quantity = qty_match.group(1)
     
-    update_db("Rental", df)
+    # 1. 상태 및 반납일 갱신
+    df.at[row_idx, "상태"] = "반납완료"
+    df.at[row_idx, "실제 반납일"] = today_str
     
-    # 재고 복구 (구매 입고 내역에 대여 반납으로 기록)
+    update_db("Rental", df)
+
+    # 2. 반납 시 소모품 출고 내역에 음수(-) 수량으로 기록하여 실재고 복구
+    month_str = datetime.now().strftime("%Y년 %-m월")
+    add_outbound(month_str, {
+        "date": today_str,
+        "item_name": item_name,
+        "quantity": -int(quantity),
+        "user_name": df.at[row_idx, "대여자 이름"],
+        "outbound_type": "대여반납",
+        "staff": "기타(대여반납)",
+        "delivery": "직접"
+    })
+    
+    # 3. 구매 입고 내역에도 참조용으로 기록 남기기 (재고 차감에는 영향 없음)
     add_purchase_record({
         "date": today_str,
         "item_name": item_name,
