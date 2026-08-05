@@ -169,9 +169,9 @@ const Rentals = () => {
                 </div>
             </div>
 
-            <div className="card" style={{ padding: 0 }}>
-                <div className="table-responsive">
-                    <table className="table table-striped table-hover mb-0">
+            <div className="card">
+                <div className="table-wrapper">
+                    <table className="data-table">
                         <thead>
                             <tr>
                                 <th>NO</th>
@@ -223,13 +223,13 @@ const Rentals = () => {
             {/* 신규 대여 등록 모달 */}
             {isAddModalOpen && (
                 <div className="modal-overlay">
-                    <div className="modal-content" style={{ maxWidth: '600px' }}>
-                        <div className="modal-header">
-                            <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#1e293b' }}>신규 대여 등록</h2>
-                            <button className="modal-close" onClick={() => setIsAddModalOpen(false)}>×</button>
+                    <div className="modal" style={{ maxWidth: '600px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#1e293b' }}>신규 대여 등록</h2>
+                            <button className="btn-icon" onClick={() => setIsAddModalOpen(false)}>✕</button>
                         </div>
                         <form onSubmit={handleAddSubmit}>
-                            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>대여자 이름 *</label>
@@ -282,8 +282,8 @@ const Rentals = () => {
                                     <textarea className="form-input" rows="2" value={newRental.notes} onChange={e => setNewRental({...newRental, notes: e.target.value})}></textarea>
                                 </div>
                             </div>
-                            <div className="modal-footer" style={{ borderTop: '1px solid #e2e8f0', padding: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', backgroundColor: '#f8fafc' }}>
-                                <button type="button" className="btn btn-secondary" onClick={() => setIsAddModalOpen(false)}>취소</button>
+                            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                                <button type="button" className="btn" onClick={() => setIsAddModalOpen(false)}>취소</button>
                                 <button type="submit" className="btn btn-primary" disabled={isSaving}>
                                     {isSaving ? '저장중...' : '등록하기'}
                                 </button>
