@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useToast } from '../components/Toast';
 import { todayStr } from '../utils/exportUtils';
+import SearchableSelect from '../components/SearchableSelect';
 
 const Rentals = () => {
     const queryClient = useQueryClient();
@@ -28,6 +29,48 @@ const Rentals = () => {
             return data;
         }
     });
+
+    const { data: usersList } = useQuery({
+        queryKey: ['integrated-users'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/assets/dashboard/integrated');
+            return data;
+        }
+    });
+
+    const { data: itemsList } = useQuery({
+        queryKey: ['consumables-items'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/consumables/items');
+            return data;
+        }
+    });
+
+    const userOptions = useMemo(() =>
+        (usersList || []).map(u => {
+            const englishName = (u.NAME || '').trim().replace(/\./g, ' ');
+            const nameOnly = englishName
+                || (u.email || '').split('@')[0].replace(/\./g, ' ')
+                || (u.이름 || '').replace(/\./g, ' ');
+            const fullNameWithBU = `${nameOnly}${u.BU ? ` (${u.BU})` : ''}`;
+            return {
+                label: nameOnly,
+                value: fullNameWithBU,
+                subLabel: `${u.email}${u.BU ? ` (${u.BU})` : ''}`,
+                name: nameOnly,
+                email: u.email,
+                bu: u.BU
+            };
+        }).sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+    [usersList]);
+
+    const itemOptions = useMemo(() => {
+        return (itemsList || []).map(it => ({ 
+            label: it.item_name, 
+            value: it.item_name, 
+            subLabel: it.category 
+        }));
+    }, [itemsList]);
 
     let displayedRentals = Array.isArray(rentals) ? rentals : [];
 
@@ -190,7 +233,22 @@ const Rentals = () => {
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>대여자 이름 *</label>
-                                        <input className="form-input" required value={newRental.name} onChange={e => setNewRental({...newRental, name: e.target.value})} />
+                                        <SearchableSelect 
+                                            options={userOptions} 
+                                            value={newRental.name}
+                                            onChange={val => {
+                                                const selected = userOptions.find(u => u.value === val);
+                                                if (selected) {
+                                                    setNewRental({...newRental, name: selected.name, email: selected.email || ''});
+                                                } else {
+                                                    setNewRental({...newRental, name: val});
+                                                }
+                                            }}
+                                            placeholder="이름/이메일 검색"
+                                            searchFields={["name", "email", "bu"]}
+                                            width="100%"
+                                            allowCustom={true}
+                                        />
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>대여자 이메일</label>
@@ -199,7 +257,15 @@ const Rentals = () => {
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>품목명 *</label>
-                                    <input className="form-input" required placeholder="예: 여분 마우스, 테스트용 안드로이드 폰" value={newRental.item_name} onChange={e => setNewRental({...newRental, item_name: e.target.value})} />
+                                    <SearchableSelect 
+                                        options={itemOptions} 
+                                        value={newRental.item_name}
+                                        onChange={val => setNewRental({...newRental, item_name: val})}
+                                        placeholder="품목 검색 또는 직접 입력"
+                                        searchFields={["label", "subLabel"]}
+                                        width="100%"
+                                        allowCustom={true}
+                                    />
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                     <div>
