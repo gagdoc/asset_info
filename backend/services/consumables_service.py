@@ -304,10 +304,32 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
                 "total_stock": total_stock,  # 총 재고 = 구매 + 추가 (읽기전용 계산값)
                 "current_stock": total_stock,  # 2단계에서 출고량 차감하여 갱신
                 "row_index": i + 2,
-                "dispatched_qty": 0,         # 모든 품목 기본값 0, 2단계에서 실제값으로 갱신
+                "dispatched_qty": 0,
+                "rented_qty": 0,
                 "dispatch_mode": dispatch_mode,
                 "dispatch_month": month,
             })
+
+        # 1.5단계: 대여 장부(Rental)에서 '대여중', '연체'인 품목 수량 합산
+        rented_agg = {name: 0 for name in all_item_names}
+        try:
+            from backend.services.database import load_from_db
+            dfs = load_from_db()
+            if "Rental" in dfs:
+                df_rental = dfs["Rental"]
+                import pandas as pd
+                # '대여중' 또는 '연체'인 항목만 필터링
+                active_rentals = df_rental[df_rental["상태"].isin(["대여중", "연체"])]
+                for _, row in active_rentals.iterrows():
+                    i_name = str(row.get("품목명", "")).strip()
+                    if i_name in rented_agg:
+                        qty_str = str(row.get("수량", "0")).strip().replace(',', '')
+                        try:
+                            rented_agg[i_name] += int(float(qty_str))
+                        except (ValueError, TypeError):
+                            pass
+        except Exception as _e:
+            logger.warning(f"대여 데이터 합산 중 오류: {_e}")
 
         # 2단계: 모든 품목에 대해 출고 데이터 합산 (is_tracked 무관)
         if all_item_names:
@@ -350,12 +372,14 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
                                 if i_name and i_name not in ("==출고 내역 시작==", "품목 명", "날짜"):
                                     logger.warning(f"[출고-마스터 불일치] 출고시트에만 존재하는 품목: '{i_name}' — 마스터리스트에 추가 필요")
 
-                # 모든 품목의 출고량 및 현재고 갱신
+                # 모든 품목의 출고량, 대여량 및 현재고 갱신
                 for item in items:
                     i_name = item["item_name"]
                     d_qty = dispatched_agg.get(i_name, 0)
+                    r_qty = rented_agg.get(i_name, 0)
                     item["dispatched_qty"] = d_qty
-                    item["current_stock"] = item["total_stock"] - d_qty  # 현재고 = 총재고 - 출고
+                    item["rented_qty"] = r_qty
+                    item["current_stock"] = item["total_stock"] - d_qty - r_qty  # 현재고 = 총재고 - 출고 - 대여
 
         # 3단계: 복합기_토너_재고_DB 실재고를 해당 품목의 current_stock에 덮어쓰기
         try:
@@ -372,7 +396,9 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
                 for item in items:
                     key = item["item_name"].lower()
                     if key in toner_stock_map:
-                        item["current_stock"] = toner_stock_map[key]
+                        r_qty = item.get("rented_qty", 0)
+                        # 토너의 static sheet 수량에서 현재 대여중인 수량 차감
+                        item["current_stock"] = toner_stock_map[key] - r_qty
         except Exception as _e:
             logger.warning(f"토너 실재고 적용 오류 (계산값 유지): {_e}")
 
