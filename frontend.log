@@ -1,0 +1,28 @@
+
+> frontend@0.0.0 dev
+> vite --host
+
+
+  VITE v7.3.1  ready in 161 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.0.66:5173/
+11:01:25 AM [vite] (client) hmr update /src/pages/PublicConsumables.jsx
+1:14:34 PM [vite] http proxy error: /api/consumables/months
+Error: connect ECONNREFUSED 127.0.0.1:8000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+1:14:34 PM [vite] http proxy error: /api/consumables/outbound?month=2026-08
+Error: connect ECONNREFUSED 127.0.0.1:8000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+1:14:34 PM [vite] http proxy error: /api/consumables/items
+Error: connect ECONNREFUSED 127.0.0.1:8000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+1:14:34 PM [vite] http proxy error: /api/assets/dashboard/integrated
+Error: connect ECONNREFUSED 127.0.0.1:8000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+4:30:05 PM [vite] (client) hmr update /src/App.jsx
+4:30:14 PM [vite] (client) hmr update /src/pages/PublicConsumables.jsx
+4:36:27 PM [vite] (client) hmr update /src/pages/PublicConsumables.jsx
+4:49:55 PM [vite] (client) hmr update /src/pages/PublicConsumables.jsx
+10:54:09 AM [vite] (client) hmr update /src/App.jsx
+10:54:09 AM [vite] (client) hmr update /src/components/Sidebar.jsx

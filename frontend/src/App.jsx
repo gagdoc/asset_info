@@ -12,6 +12,7 @@ import Consumables from './pages/Consumables'
 import NewHire from './pages/NewHire'
 import Resign from './pages/Resign'
 import DeptConfig from './pages/DeptConfig'
+import Rentals from './pages/Rentals'
 import ExcelUpload from './pages/ExcelUpload'
 import SelfOutbound from './pages/SelfOutbound'
 import BulkSearch from './pages/BulkSearch'
@@ -134,6 +135,7 @@ function App() {
               <Route path="/resign" element={<Resign />} />
               <Route path="/config" element={<DeptConfig />} />
               <Route path="/upload" element={<ExcelUpload />} />
+              <Route path="/rentals" element={<Rentals />} />
               <Route path="/register" element={<SelfOutbound />} />
               <Route path="/bulk-search" element={<BulkSearch />} />
               <Route path="/public-consumables" element={<PublicConsumables />} />

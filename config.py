@@ -88,6 +88,7 @@ SHEET_MAPPING = {
     "Resign": "퇴사자",
     "NewHire": "신규입사자",
     "Dept_Config": "Dept_Config",
+    "Rental": "Rental_List",
 }
 
 # 자산 테이블별 주요 컬럼 매핑
@@ -151,6 +152,7 @@ DEFAULT_SCHEMAS = {
     "Resign": ["F", "월", "날짜", "NAME", "email", "설명", "BU", "노트북", "아이패드", "모니터", "복합기", "Teams", "추가사항"],
     "NewHire": ["NO", "이름", "NAME", "email", "BU", "ROLE", "노트북", "아이패드", "모니터", "Teams", "복합기"],
     "Dept_Config": ["BU", "ROLE"],
+    "Rental": ["NO", "대여자 이름", "대여자 이메일", "품목명", "대여 일자", "반납 예정일", "실제 반납일", "상태", "비고"],
 }
 
 # Streamlit 페이지 설정

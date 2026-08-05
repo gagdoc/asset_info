@@ -1,0 +1,25 @@
+INFO:     Started server process [80561]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+로컬 클라이언트 초기화 실패, Google Sheets로 전환: Expecting value: line 1 column 1 (char 0)
+INFO:     127.0.0.1:59654 - "GET /api/consumables/outbound?month=2026-08 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59656 - "GET /api/assets/dashboard/integrated HTTP/1.1" 200 OK
+Error reading items list: APIError: [400]: Unable to parse range: 11월!A2:E
+INFO:     127.0.0.1:59655 - "GET /api/consumables/items HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59660 - "GET /api/consumables/inventory-report HTTP/1.1" 200 OK
+[출고-마스터 불일치] 출고시트에만 존재하는 품목: 'Dell E2422H' — 마스터리스트에 추가 필요
+INFO:     127.0.0.1:59724 - "GET /api/consumables/outbound?month=2026-08 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59725 - "GET /api/consumables/items HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59726 - "GET /api/assets/dashboard/integrated HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59727 - "GET /api/consumables/inventory-report HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59764 - "GET /api/consumables/inventory-report HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59773 - "GET /api/consumables/months HTTP/1.1" 200 OK
+[출고-마스터 불일치] 출고시트에만 존재하는 품목: 'Dell E2422H' — 마스터리스트에 추가 필요
+INFO:     127.0.0.1:59774 - "GET /api/consumables/outbound?month=2026-08 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59775 - "GET /api/consumables/items HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59778 - "GET /api/consumables/outbound?month=11%EC%9B%94 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59776 - "GET /api/assets/dashboard/integrated HTTP/1.1" 200 OK
+[출고-마스터 불일치] 출고시트에만 존재하는 품목: 'Dell E2422H' — 마스터리스트에 추가 필요
+INFO:     127.0.0.1:60348 - "GET /api/consumables/inventory-report HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60349 - "GET /api/consumables/items HTTP/1.1" 200 OK
