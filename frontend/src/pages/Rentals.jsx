@@ -5,9 +5,6 @@ import { useToast } from '../components/Toast';
 import { todayStr } from '../utils/exportUtils';
 import SearchableSelect from '../components/SearchableSelect';
 
-const STAFF_OPTIONS = ['Kale', 'Daniel', '기타'];
-const DELIVERY_OPTIONS = ['직접', '택배', '기타'];
-
 const Rentals = () => {
     const queryClient = useQueryClient();
     const { addToast } = useToast();
@@ -17,18 +14,13 @@ const Rentals = () => {
     const [isSaving, setIsSaving] = useState(false);
 
     const [newRental, setNewRental] = useState({
-        type: '대여',
         name: '',
         email: '',
         item_name: '',
         quantity: '1',
         rent_date: new Date().toISOString().split('T')[0],
         expected_return_date: '',
-        notes: '',
-        staff: '',
-        staff_custom: '',
-        delivery: '',
-        delivery_custom: ''
+        notes: ''
     });
 
     const { data: rentals, isLoading } = useQuery({
@@ -99,21 +91,9 @@ const Rentals = () => {
     const handleAddSubmit = async (e) => {
         e.preventDefault();
         
-        const effectiveStaff = newRental.staff === '기타' ? newRental.staff_custom : newRental.staff;
-        const effectiveDelivery = newRental.delivery === '기타' ? newRental.delivery_custom : newRental.delivery;
-
-        if (!effectiveStaff || !effectiveDelivery) {
-            addToast('지급 담당과 수령 방법을 입력해주세요.', 'error');
-            return;
-        }
-        
         setIsSaving(true);
         try {
-            await axios.post('/api/rentals', {
-                ...newRental,
-                staff: effectiveStaff,
-                delivery: effectiveDelivery
-            });
+            await axios.post('/api/rentals', newRental);
             queryClient.invalidateQueries(['rentals']);
             queryClient.invalidateQueries(['consumables-outbound']);
             queryClient.invalidateQueries(['tonner-consignment']);
@@ -121,10 +101,9 @@ const Rentals = () => {
             addToast('등록 완료', 'success');
             setIsAddModalOpen(false);
             setNewRental({
-                type: '대여', name: '', email: '', item_name: '', quantity: '1',
+                name: '', email: '', item_name: '', quantity: '1',
                 rent_date: new Date().toISOString().split('T')[0],
-                expected_return_date: '', notes: '',
-                staff: '', staff_custom: '', delivery: '', delivery_custom: ''
+                expected_return_date: '', notes: ''
             });
         } catch (err) {
             addToast('등록 실패: ' + (err.response?.data?.detail || err.message), 'error');
@@ -141,6 +120,17 @@ const Rentals = () => {
             addToast('반납 처리 완료', 'success');
         } catch (err) {
             addToast('반납 처리 실패: ' + (err.response?.data?.detail || err.message), 'error');
+        }
+    };
+
+    const handleConvertToOutbound = async (no) => {
+        if (!confirm('이 대여 물품을 영구 출고로 전환하시겠습니까? (반납 대상에서 제외됩니다)')) return;
+        try {
+            await axios.put(`/api/rentals/${no}/convert-to-outbound`);
+            queryClient.invalidateQueries(['rentals']);
+            addToast('영구 출고로 전환되었습니다.', 'success');
+        } catch (err) {
+            addToast('출고 전환 실패: ' + (err.response?.data?.detail || err.message), 'error');
         }
     };
 
@@ -228,15 +218,26 @@ const Rentals = () => {
                                         <td>{getStatusBadge(r['상태'])}</td>
                                         <td>{r['비고'] || '-'}</td>
                                         <td>
-                                            {r['상태'] !== '반납완료' && (
-                                                <button 
-                                                    className="btn btn-sm" 
-                                                    style={{ backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #86efac' }}
-                                                    onClick={() => handleReturn(r['NO'])}
-                                                >
-                                                    반납 확인
-                                                </button>
-                                            )}
+                                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                                {(r["상태"] === "대여중" || r["상태"] === "연체") && (
+                                                    <>
+                                                        <button 
+                                                            onClick={() => handleReturn(r.NO)}
+                                                            className="btn-secondary"
+                                                            style={{ fontSize: '0.85em', padding: '4px 10px', minWidth: '60px' }}
+                                                        >
+                                                            반납
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleConvertToOutbound(r.NO)}
+                                                            className="btn-danger"
+                                                            style={{ fontSize: '0.85em', padding: '4px 10px', minWidth: '80px', backgroundColor: '#f97316', borderColor: '#f97316' }}
+                                                        >
+                                                            출고 전환
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))
@@ -256,24 +257,6 @@ const Rentals = () => {
                         </div>
                         <form onSubmit={handleAddSubmit}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-                                {/* 구분 (대여 vs 지급) */}
-                                <div>
-                                    <label style={{ display: 'block', fontSize: '0.88em', fontWeight: 'bold', marginBottom: '6px', color: '#374151' }}>유형 선택 <span style={{ color: '#ef4444' }}>*</span></label>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                        {['대여', '지급'].map(opt => (
-                                            <label key={opt} style={{
-                                                padding: '5px 14px', borderRadius: '16px', cursor: 'pointer', fontSize: '0.9em',
-                                                border: `1.5px solid ${newRental.type === opt ? '#4f46e5' : '#d1d5db'}`,
-                                                backgroundColor: newRental.type === opt ? '#e0e7ff' : '#fff',
-                                                fontWeight: newRental.type === opt ? 'bold' : 'normal',
-                                                color: newRental.type === opt ? '#4338ca' : '#6b7280',
-                                            }}>
-                                                <input type="radio" value={opt} checked={newRental.type === opt} onChange={() => setNewRental({...newRental, type: opt})} style={{ display: 'none' }} />
-                                                {opt === '대여' ? '🔄 대여 (반납 필요)' : '📦 영구 지급 (반납 불필요)'}
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                     <div>
                                         <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>대여자 이름 *</label>
@@ -319,62 +302,14 @@ const Rentals = () => {
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>{newRental.type === '대여' ? '대여 일자 *' : '지급 일자 *'}</label>
+                                        <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>대여 일자 *</label>
                                         <input className="form-input" type="date" required value={newRental.rent_date} onChange={e => setNewRental({...newRental, rent_date: e.target.value})} />
                                     </div>
-                                    {newRental.type === '대여' && (
-                                        <div>
-                                            <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>반납 예정일 *</label>
-                                            <input className="form-input" type="date" required value={newRental.expected_return_date} onChange={e => setNewRental({...newRental, expected_return_date: e.target.value})} />
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* 지급 담당 + 수령 방법 */}
-                                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
                                     <div>
-                                        <label style={{ display: 'block', fontSize: '0.88em', fontWeight: 'bold', marginBottom: '6px', color: '#374151' }}>지급 담당 <span style={{ color: '#ef4444' }}>*</span></label>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            {STAFF_OPTIONS.map(opt => (
-                                                <label key={opt} style={{
-                                                    padding: '5px 14px', borderRadius: '16px', cursor: 'pointer', fontSize: '0.9em',
-                                                    border: `1.5px solid ${newRental.staff === opt ? '#4f46e5' : '#d1d5db'}`,
-                                                    backgroundColor: newRental.staff === opt ? '#e0e7ff' : '#fff',
-                                                    fontWeight: newRental.staff === opt ? 'bold' : 'normal',
-                                                    color: newRental.staff === opt ? '#4338ca' : '#6b7280',
-                                                }}>
-                                                    <input type="radio" value={opt} checked={newRental.staff === opt} onChange={() => setNewRental({...newRental, staff: opt, staff_custom: ''})} style={{ display: 'none' }} />
-                                                    {opt}
-                                                </label>
-                                            ))}
-                                        </div>
-                                        {newRental.staff === '기타' && (
-                                            <input type="text" className="form-input" style={{ marginTop: '8px', padding: '6px 10px' }} placeholder="직접 입력" value={newRental.staff_custom} onChange={e => setNewRental({...newRental, staff_custom: e.target.value})} required />
-                                        )}
-                                    </div>
-
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '0.88em', fontWeight: 'bold', marginBottom: '6px', color: '#374151' }}>수령 방법 <span style={{ color: '#ef4444' }}>*</span></label>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            {DELIVERY_OPTIONS.map(opt => (
-                                                <label key={opt} style={{
-                                                    padding: '5px 14px', borderRadius: '16px', cursor: 'pointer', fontSize: '0.9em',
-                                                    border: `1.5px solid ${newRental.delivery === opt ? '#4f46e5' : '#d1d5db'}`,
-                                                    backgroundColor: newRental.delivery === opt ? '#e0e7ff' : '#fff',
-                                                    fontWeight: newRental.delivery === opt ? 'bold' : 'normal',
-                                                    color: newRental.delivery === opt ? '#4338ca' : '#6b7280',
-                                                }}>
-                                                    <input type="radio" value={opt} checked={newRental.delivery === opt} onChange={() => setNewRental({...newRental, delivery: opt, delivery_custom: ''})} style={{ display: 'none' }} />
-                                                    {opt}
-                                                </label>
-                                            ))}
-                                        </div>
-                                        {newRental.delivery === '기타' && (
-                                            <input type="text" className="form-input" style={{ marginTop: '8px', padding: '6px 10px' }} placeholder="직접 입력" value={newRental.delivery_custom} onChange={e => setNewRental({...newRental, delivery_custom: e.target.value})} required />
-                                        )}
+                                        <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>반납 예정일 *</label>
+                                        <input className="form-input" type="date" required value={newRental.expected_return_date} onChange={e => setNewRental({...newRental, expected_return_date: e.target.value})} />
                                     </div>
                                 </div>
-
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.9rem', fontWeight: 'bold' }}>비고</label>
                                     <textarea className="form-input" rows="2" value={newRental.notes} onChange={e => setNewRental({...newRental, notes: e.target.value})}></textarea>

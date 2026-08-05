@@ -13,7 +13,6 @@ router = APIRouter(
 )
 
 class RentalEntry(BaseModel):
-    type: str = "대여"
     name: str
     email: str
     item_name: str
@@ -21,8 +20,6 @@ class RentalEntry(BaseModel):
     rent_date: str
     expected_return_date: str = ""
     notes: Optional[str] = ""
-    staff: str = ""
-    delivery: str = ""
 
 @router.get("")
 def get_rentals():
@@ -65,23 +62,17 @@ def add_rental(entry: RentalEntry):
         "item_name": entry.item_name,
         "quantity": entry.quantity,
         "user_name": entry.name,
-        "outbound_type": "일반" if entry.type == "지급" else "대여",
-        "staff": entry.staff,
-        "delivery": entry.delivery
+        "outbound_type": "대여",
+        "staff": "기타(대여)",
+        "delivery": "직접"
     }
 
     # 1. 소모품 출고 내역에 기록 (재고 차감)
     success = add_outbound(month_str, outbound_data)
     if not success:
-        # Note: add_outbound failed, but we shouldn't necessarily crash. 
-        # But let's log it or return error if strict sync is needed.
         pass
 
-    # 2. '지급'인 경우 대여 리스트에는 남기지 않음
-    if entry.type == "지급":
-        return {"message": "지급(출고) 등록 완료"}
-
-    # 3. '대여'인 경우 대여 리스트(Rental)에도 기록
+    # 2. 대여 리스트(Rental)에 기록
     dfs = load_from_db()
     
     if "Rental" not in dfs:
@@ -167,3 +158,28 @@ def return_rental(item_no: int):
     })
     
     return {"message": "반납 처리 완료"}
+
+@router.put("/{item_no}/convert-to-outbound")
+def convert_to_outbound(item_no: int):
+    dfs = load_from_db()
+    if "Rental" not in dfs:
+        raise HTTPException(status_code=404, detail="Rental table not found")
+        
+    df = dfs["Rental"]
+    
+    # Find row with NO == item_no
+    mask = pd.to_numeric(df["NO"], errors="coerce") == item_no
+    if not mask.any():
+        raise HTTPException(status_code=404, detail="Item not found")
+        
+    row_idx = df[mask].index[0]
+    
+    current_status = df.at[row_idx, "상태"]
+    if current_status in ["반납완료", "출고전환"]:
+        raise HTTPException(status_code=400, detail="이미 처리된 항목입니다.")
+        
+    df.at[row_idx, "상태"] = "출고전환"
+    
+    update_db("Rental", df)
+    
+    return {"message": "영구 출고 전환 완료"}
