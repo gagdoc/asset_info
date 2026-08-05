@@ -198,6 +198,7 @@ const Rentals = () => {
                                 <th>반납 예정일</th>
                                 <th>실제 반납일</th>
                                 <th>상태</th>
+                                <th>수량</th>
                                 <th>비고</th>
                                 <th>작업</th>
                             </tr>
@@ -216,6 +217,7 @@ const Rentals = () => {
                                         <td>{r['반납 예정일'] || '-'}</td>
                                         <td>{r['실제 반납일'] || '-'}</td>
                                         <td>{getStatusBadge(r['상태'])}</td>
+                                        <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#1d4ed8' }}>{r['수량'] || '1'}</td>
                                         <td>{r['비고'] || '-'}</td>
                                         <td>
                                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>

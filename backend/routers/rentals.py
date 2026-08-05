@@ -41,6 +41,26 @@ def get_rentals():
                     df.at[idx, "상태"] = "연체"
                     updated = True
                     
+    # "수량" 컬럼 마이그레이션 및 파싱
+    if "수량" not in df.columns:
+        df["수량"] = 1
+        updated = True
+
+    import re
+    for idx, row in df.iterrows():
+        notes = str(row.get("비고", ""))
+        qty_match = re.search(r"\[수량:\s*(\d+)\]", notes)
+        if qty_match:
+            # 수량 추출 및 비고에서 텍스트 제거
+            df.at[idx, "수량"] = int(qty_match.group(1))
+            df.at[idx, "비고"] = re.sub(r"\[수량:\s*\d+\]\s*", "", notes)
+            updated = True
+        
+        # 기본 수량이 없는 경우 1로 설정
+        if pd.isna(row.get("수량")) or str(row.get("수량")).strip() == "":
+            df.at[idx, "수량"] = 1
+            updated = True
+
     if updated:
         update_db("Rental", df)
 
@@ -71,10 +91,11 @@ def add_rental(entry: RentalEntry):
     except:
         max_no = 0
         
-    # 수량을 비고에 기록 (나중에 반납 시 참조용)
-    notes_with_qty = entry.notes or ""
-    if str(entry.quantity) != "1":
-        notes_with_qty = f"[수량: {entry.quantity}] " + notes_with_qty
+    # 수량 컬럼 초기화 및 값 설정
+    if "수량" not in df.columns:
+        df["수량"] = 1
+    
+    qty = int(entry.quantity) if entry.quantity else 1
 
     new_row = {
         "NO": int(max_no) + 1,
@@ -85,7 +106,8 @@ def add_rental(entry: RentalEntry):
         "반납 예정일": entry.expected_return_date,
         "실제 반납일": "",
         "상태": "대여중",
-        "비고": notes_with_qty,
+        "비고": entry.notes or "",
+        "수량": qty,
     }
     
     today_str = datetime.now().strftime("%Y-%m-%d")
@@ -121,14 +143,9 @@ def return_rental(item_no: int):
     df.at[row_idx, "상태"] = "반납완료"
     
     item_name = str(df.at[row_idx, "품목명"])
-    notes = str(df.at[row_idx, "비고"])
     
-    # 비고에서 수량 파싱 시도 ([수량: X])
-    quantity = "1"
-    import re
-    qty_match = re.search(r"\[수량:\s*(\d+)\]", notes)
-    if qty_match:
-        quantity = qty_match.group(1)
+    # 더 이상 비고에서 수량을 파싱하지 않아도 됨 (수량 컬럼 사용)
+    quantity = df.at[row_idx, "수량"]
     
     # 1. 상태 및 반납일 갱신 (재고는 동적 계산에 의해 자동 복구됨)
     df.at[row_idx, "상태"] = "반납완료"
