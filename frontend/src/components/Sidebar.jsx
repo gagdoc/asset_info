@@ -9,7 +9,6 @@ const Sidebar = ({ isOpen, onClose }) => {
         { name: '모니터 (Monitor)', path: '/assets/Monitor', icon: <FaDesktop /> },
         { name: '프린터 (Printer)', path: '/assets/Printer', icon: <FaPrint /> },
         { name: 'Teams 번호', path: '/assets/Teams', icon: <FaPhone /> },
-        { name: '대여 관리 (Rentals)', path: '/rentals', icon: <FaExchangeAlt /> },
     ]
 
     const personItems = [
@@ -19,6 +18,7 @@ const Sidebar = ({ isOpen, onClose }) => {
 
     const systemItems = [
         { name: '소모품 관리', path: '/consumables', icon: <FaBoxOpen /> },
+        { name: '대여 관리 (Rentals)', path: '/rentals', icon: <FaExchangeAlt /> },
         { name: 'BU/ROLE 설정', path: '/config', icon: <FaCog /> },
         { name: '엑셀 업로드', path: '/upload', icon: <FaUpload /> },
     ]
