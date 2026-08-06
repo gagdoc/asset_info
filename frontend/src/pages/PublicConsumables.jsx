@@ -8,7 +8,7 @@ const STAFF_OPTIONS = ['Kale', 'Daniel', '기타']
 const DELIVERY_OPTIONS = ['직접', '택배', '기타']
 
 const PublicConsumables = () => {
-    const [activeTab, setActiveTab] = useState('outbound') // 'outbound' | 'inventory'
+    const [activeTab, setActiveTab] = useState('outbound') // 'outbound' | 'inventory' | 'rental'
     
     return (
         <div style={{
@@ -21,7 +21,7 @@ const PublicConsumables = () => {
         }}>
             <div style={{ maxWidth: '100%', margin: '0 auto' }}>
                 <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
-                    <h1 style={{ fontSize: '1.5rem', color: '#1e293b', margin: 0 }}>📦 소모품 관리</h1>
+                    <h1 style={{ fontSize: '1.5rem', color: '#1e293b', margin: 0 }}>📦 소모품 & 대여 관리</h1>
                     <div style={{ display: 'flex', gap: '8px' }}>
                         <button 
                             onClick={() => setActiveTab('outbound')}
@@ -31,6 +31,15 @@ const PublicConsumables = () => {
                                 color: activeTab === 'outbound' ? '#ffffff' : '#4338ca'
                             }}>
                             출고 등록 및 내역
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('rental')}
+                            style={{ 
+                                padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', border: 'none', cursor: 'pointer',
+                                backgroundColor: activeTab === 'rental' ? '#8b5cf6' : '#ede9fe',
+                                color: activeTab === 'rental' ? '#ffffff' : '#6d28d9'
+                            }}>
+                            대여 등록 및 현황
                         </button>
                         <button 
                             onClick={() => setActiveTab('inventory')}
@@ -45,6 +54,7 @@ const PublicConsumables = () => {
                 </header>
 
                 {activeTab === 'outbound' && <PublicOutboundTab />}
+                {activeTab === 'rental' && <PublicRentalTab />}
                 {activeTab === 'inventory' && <PublicInventoryTab />}
             </div>
         </div>
@@ -279,6 +289,233 @@ const PublicOutboundTab = () => {
         </div>
     )
 }
+
+const PublicRentalTab = () => {
+    const queryClient = useQueryClient()
+    const [showForm, setShowForm] = useState(false)
+    const [formData, setFormData] = useState({ 
+        name: '', 
+        email: '', 
+        item_name: '', 
+        quantity: '1', 
+        rent_date: new Date().toISOString().split('T')[0], 
+        expected_return_date: '', 
+        notes: '' 
+    })
+
+    const { data: rentalsList, isLoading } = useQuery({
+        queryKey: ['rentals-list-public'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/rentals')
+            // 현재 대여중/연체 인 항목들만 모아서 표시
+            return (data || []).filter(r => r['상태'] === '대여중' || r['상태'] === '연체')
+        }
+    })
+
+    const { data: itemsList } = useQuery({
+        queryKey: ['consumables-items'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/consumables/items')
+            return data
+        }
+    })
+
+    const { data: usersList } = useQuery({
+        queryKey: ['integrated-users'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/assets/dashboard/integrated')
+            return data
+        }
+    })
+
+    const itemOptions = useMemo(() => {
+        return (itemsList || []).map(it => ({ label: it.item_name, value: it.item_name }))
+    }, [itemsList])
+
+    const userOptions = useMemo(() =>
+        (usersList || []).map(u => {
+            const englishName = (u.NAME || '').trim().replace(/\./g, ' ')
+            const nameOnly = englishName || (u.email || '').split('@')[0].replace(/\./g, ' ') || (u.이름 || '').replace(/\./g, ' ')
+            return { label: nameOnly, value: nameOnly, email: u.email, searchStr: `${nameOnly} ${u.email} ${u.BU}` }
+        }).sort((a, b) => a.label.localeCompare(b.label)),
+    [usersList])
+
+    const mutation = useMutation({
+        mutationFn: async (newData) => axios.post('/api/rentals', newData),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['rentals-list-public'] })
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            setShowForm(false)
+            setFormData({ name: '', email: '', item_name: '', quantity: '1', rent_date: new Date().toISOString().split('T')[0], expected_return_date: '', notes: '' })
+            alert("대여 내역이 성공적으로 등록되었습니다.")
+        },
+        onError: (err) => {
+            const msg = err?.response?.data?.detail || err.message
+            alert("대여 등록 중 오류가 발생했습니다: " + msg)
+        }
+    })
+
+    const handleUserSelect = (val) => {
+        const u = userOptions.find(o => o.value === val)
+        setFormData(prev => ({
+            ...prev,
+            name: val,
+            email: u?.email || prev.email
+        }))
+    }
+
+    const handleSubmit = async (e) => {
+        e.preventDefault()
+        if (!formData.name || !formData.item_name || !formData.quantity || !formData.rent_date) {
+            alert("필수 항목(*)을 모두 입력해주세요.")
+            return
+        }
+        mutation.mutate(formData)
+    }
+
+    return (
+        <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#334155' }}>
+                    대여 중인 품목 현황
+                </h2>
+                <button 
+                    onClick={() => setShowForm(!showForm)}
+                    style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#8b5cf6', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+                    {showForm ? '닫기' : '+ 신규 대여 등록'}
+                </button>
+            </div>
+
+            {showForm && (
+                <form onSubmit={handleSubmit} style={{ background: '#f8fafc', padding: '20px', borderRadius: '8px', marginBottom: '24px', border: '1px solid #e2e8f0' }}>
+                    <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '1.1rem', color: '#475569' }}>대여 등록 폼</h3>
+                    
+                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                        <div style={{ flex: '1 1 200px' }}>
+                            <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '6px', fontWeight: 'bold' }}>대여자 이름 *</label>
+                            <SearchableSelect 
+                                options={userOptions} 
+                                value={formData.name} 
+                                onChange={handleUserSelect} 
+                                placeholder="이름 검색" 
+                                width="100%" 
+                                allowCustom={true} 
+                            />
+                        </div>
+                        <div style={{ flex: '1 1 200px' }}>
+                            <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '6px', fontWeight: 'bold' }}>대여자 이메일</label>
+                            <input 
+                                type="email" 
+                                value={formData.email} 
+                                onChange={e => setFormData({...formData, email: e.target.value})} 
+                                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} 
+                            />
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                        <div style={{ flex: '2 1 250px' }}>
+                            <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '6px', fontWeight: 'bold' }}>품목명 *</label>
+                            <SearchableSelect 
+                                options={itemOptions} 
+                                value={formData.item_name} 
+                                onChange={val => setFormData(f => ({ ...f, item_name: val }))} 
+                                placeholder="품목을 검색하세요" 
+                                width="100%" 
+                            />
+                        </div>
+                        <div style={{ flex: '0 1 100px' }}>
+                            <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '6px', fontWeight: 'bold' }}>수량 *</label>
+                            <input 
+                                type="number" 
+                                min="1" 
+                                value={formData.quantity} 
+                                onChange={e => setFormData({...formData, quantity: e.target.value})} 
+                                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} 
+                                required 
+                            />
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                        <div style={{ flex: '1 1 200px' }}>
+                            <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '6px', fontWeight: 'bold' }}>대여 일자 *</label>
+                            <input 
+                                type="date" 
+                                value={formData.rent_date} 
+                                onChange={e => setFormData({...formData, rent_date: e.target.value})} 
+                                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} 
+                                required 
+                            />
+                        </div>
+                        <div style={{ flex: '1 1 200px' }}>
+                            <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '6px', fontWeight: 'bold' }}>반납 예정일</label>
+                            <input 
+                                type="date" 
+                                value={formData.expected_return_date} 
+                                onChange={e => setFormData({...formData, expected_return_date: e.target.value})} 
+                                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} 
+                            />
+                        </div>
+                    </div>
+
+                    <div style={{ marginBottom: '24px' }}>
+                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '6px', fontWeight: 'bold' }}>비고</label>
+                        <input 
+                            type="text" 
+                            placeholder="기타 참고사항" 
+                            value={formData.notes} 
+                            onChange={e => setFormData({...formData, notes: e.target.value})} 
+                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} 
+                        />
+                    </div>
+
+                    <button type="submit" disabled={mutation.isPending} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', backgroundColor: '#8b5cf6', color: '#fff', fontSize: '1rem', fontWeight: 'bold', cursor: mutation.isPending ? 'not-allowed' : 'pointer' }}>
+                        {mutation.isPending ? '등록 중...' : '대여 완료하기'}
+                    </button>
+                </form>
+            )}
+
+            <LoadingModal isOpen={isLoading} message="데이터를 불러오는 중입니다..." />
+            
+            <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead>
+                        <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
+                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem' }}>대여자</th>
+                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem' }}>품목명</th>
+                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem' }}>수량</th>
+                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem' }}>대여일</th>
+                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem' }}>상태</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rentalsList && rentalsList.length > 0 ? rentalsList.map((row, idx) => (
+                            <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0', transition: 'background 0.2s' }}>
+                                <td style={{ padding: '12px', fontWeight: 'bold' }}>{row['대여자 이름']}</td>
+                                <td style={{ padding: '12px' }}>{row['품목명']}</td>
+                                <td style={{ padding: '12px' }}>{row['수량']}</td>
+                                <td style={{ padding: '12px', fontSize: '0.9rem' }}>{row['대여 일자']}</td>
+                                <td style={{ padding: '12px' }}>
+                                    <span style={{
+                                        padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold',
+                                        backgroundColor: row['상태'] === '연체' ? '#fee2e2' : '#e0e7ff',
+                                        color: row['상태'] === '연체' ? '#ef4444' : '#4f46e5'
+                                    }}>
+                                        {row['상태']}
+                                    </span>
+                                </td>
+                            </tr>
+                        )) : (
+                            <tr><td colSpan="5" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>대여 중인 품목이 없습니다.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    )
+}
+
 
 const PublicInventoryTab = () => {
     // 마스터 품목 리스트 가져오기 (실재고 파악)
