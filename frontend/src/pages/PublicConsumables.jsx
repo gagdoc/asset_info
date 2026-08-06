@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import SearchableSelect from '../components/SearchableSelect'
 import LoadingModal from '../components/LoadingModal'
+import Rentals from './Rentals'
 
 const STAFF_OPTIONS = ['Kale', 'Daniel', '기타']
 const DELIVERY_OPTIONS = ['직접', '택배', '기타']
