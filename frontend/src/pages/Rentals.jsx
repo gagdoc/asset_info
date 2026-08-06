@@ -5,7 +5,7 @@ import { useToast } from '../components/Toast';
 import { todayStr } from '../utils/exportUtils';
 import SearchableSelect from '../components/SearchableSelect';
 
-const Rentals = () => {
+const Rentals = ({ isEmbedded = false }) => {
     const queryClient = useQueryClient();
     const { addToast } = useToast();
     const [searchQuery, setSearchQuery] = useState('');
@@ -168,7 +168,7 @@ const Rentals = () => {
         <div>
             <div className="flex items-center justify-between mb-4 dashboard-header-action">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    <h1 style={{ margin: 0 }}>📦 전산품목 대여 관리</h1>
+                    {!isEmbedded && <h1 style={{ margin: 0 }}>📦 전산품목 대여 관리</h1>}
                     <div style={{ backgroundColor: '#eff6ff', color: '#1e3a8a', padding: '4px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.9rem', border: '1px solid #bfdbfe' }}>
                         총 {displayedRentals.length}건
                     </div>
