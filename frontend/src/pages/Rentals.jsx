@@ -11,7 +11,9 @@ const Rentals = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState(''); // '', '대여중', '연체', '반납완료'
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [editingRental, setEditingRental] = useState(null);
 
     const [newRental, setNewRental] = useState({
         name: '',
@@ -112,11 +114,29 @@ const Rentals = () => {
         }
     };
 
+    const handleEditSubmit = async (e) => {
+        e.preventDefault();
+        setIsSaving(true);
+        try {
+            await axios.put(`/api/rentals/${editingRental.item_no}`, editingRental);
+            queryClient.invalidateQueries(['rentals']);
+            queryClient.invalidateQueries(['consumables-items']);
+            addToast('수정 완료', 'success');
+            setIsEditModalOpen(false);
+            setEditingRental(null);
+        } catch (err) {
+            addToast('수정 실패: ' + (err.response?.data?.detail || err.message), 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const handleReturn = async (no) => {
         if (!confirm('해당 항목을 반납 처리하시겠습니까?')) return;
         try {
             await axios.put(`/api/rentals/${no}/return`);
             queryClient.invalidateQueries(['rentals']);
+            queryClient.invalidateQueries(['consumables-items']);
             addToast('반납 처리 완료', 'success');
         } catch (err) {
             addToast('반납 처리 실패: ' + (err.response?.data?.detail || err.message), 'error');
@@ -128,6 +148,7 @@ const Rentals = () => {
         try {
             await axios.put(`/api/rentals/${no}/convert-to-outbound`);
             queryClient.invalidateQueries(['rentals']);
+            queryClient.invalidateQueries(['consumables-items']);
             addToast('영구 출고로 전환되었습니다.', 'success');
         } catch (err) {
             addToast('출고 전환 실패: ' + (err.response?.data?.detail || err.message), 'error');
@@ -224,6 +245,25 @@ const Rentals = () => {
                                                 {(r["상태"] === "대여중" || r["상태"] === "연체") && (
                                                     <>
                                                         <button 
+                                                            onClick={() => {
+                                                                setEditingRental({
+                                                                    item_no: r.NO,
+                                                                    name: r['대여자 이름'] || '',
+                                                                    email: r['대여자 이메일'] || '',
+                                                                    item_name: r['품목명'] || '',
+                                                                    quantity: r['수량'] || '1',
+                                                                    rent_date: r['대여 일자'] || '',
+                                                                    expected_return_date: r['반납 예정일'] || '',
+                                                                    notes: r['비고'] || ''
+                                                                });
+                                                                setIsEditModalOpen(true);
+                                                            }}
+                                                            className="btn-secondary"
+                                                            style={{ fontSize: '0.85em', padding: '4px 10px', minWidth: '50px' }}
+                                                        >
+                                                            ✏️ 수정
+                                                        </button>
+                                                        <button 
                                                             onClick={() => handleReturn(r.NO)}
                                                             className="btn-secondary"
                                                             style={{ fontSize: '0.85em', padding: '4px 10px', minWidth: '60px' }}
@@ -248,6 +288,116 @@ const Rentals = () => {
                     </table>
                 </div>
             </div>
+
+            {/* 수정 모달 */}
+            {isEditModalOpen && editingRental && (
+                <div className="modal-overlay" onClick={() => !isSaving && setIsEditModalOpen(false)}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '10px' }}>
+                            <h2 style={{ margin: 0, color: '#1e3a8a' }}>✏️ 대여 내역 수정</h2>
+                            <button className="btn-secondary" onClick={() => setIsEditModalOpen(false)} style={{ border: 'none', background: 'transparent', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
+                        </div>
+                        <form onSubmit={handleEditSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                            
+                            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                <label style={{ fontWeight: 'bold' }}>대여자 이름</label>
+                                <SearchableSelect
+                                    options={userOptions}
+                                    value={editingRental.name}
+                                    onChange={(selectedName, selectedOpt) => {
+                                        if (selectedOpt) {
+                                            setEditingRental(prev => ({
+                                                ...prev,
+                                                name: selectedOpt.name,
+                                                email: selectedOpt.email
+                                            }));
+                                        } else {
+                                            setEditingRental(prev => ({ ...prev, name: selectedName }));
+                                        }
+                                    }}
+                                    placeholder="사용자 선택 (직접 입력 가능)"
+                                />
+                            </div>
+                            
+                            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                <label style={{ fontWeight: 'bold' }}>대여자 이메일</label>
+                                <input
+                                    className="form-input"
+                                    type="email"
+                                    value={editingRental.email}
+                                    onChange={e => setEditingRental(prev => ({...prev, email: e.target.value}))}
+                                    placeholder="이메일 입력"
+                                />
+                            </div>
+
+                            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                <label style={{ fontWeight: 'bold' }}>품목명 (필수)</label>
+                                <SearchableSelect
+                                    options={itemOptions}
+                                    value={editingRental.item_name}
+                                    onChange={(val) => setEditingRental(prev => ({...prev, item_name: val}))}
+                                    placeholder="품목명 입력 또는 선택"
+                                />
+                            </div>
+
+                            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                <label style={{ fontWeight: 'bold' }}>대여 수량 (필수)</label>
+                                <input
+                                    className="form-input"
+                                    type="number"
+                                    min="1"
+                                    required
+                                    value={editingRental.quantity}
+                                    onChange={e => setEditingRental(prev => ({...prev, quantity: e.target.value}))}
+                                    placeholder="예: 1"
+                                />
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                                <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                    <label style={{ fontWeight: 'bold' }}>대여 일자 (필수)</label>
+                                    <input
+                                        className="form-input"
+                                        type="date"
+                                        required
+                                        value={editingRental.rent_date}
+                                        onChange={e => setEditingRental(prev => ({...prev, rent_date: e.target.value}))}
+                                    />
+                                </div>
+                                <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                    <label style={{ fontWeight: 'bold' }}>반납 예정일</label>
+                                    <input
+                                        className="form-input"
+                                        type="date"
+                                        value={editingRental.expected_return_date}
+                                        onChange={e => setEditingRental(prev => ({...prev, expected_return_date: e.target.value}))}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                <label style={{ fontWeight: 'bold' }}>비고</label>
+                                <textarea
+                                    className="form-input"
+                                    rows="2"
+                                    value={editingRental.notes}
+                                    onChange={e => setEditingRental(prev => ({...prev, notes: e.target.value}))}
+                                    placeholder="기타 참고사항"
+                                />
+                            </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                                <button type="button" className="btn-secondary" onClick={() => setIsEditModalOpen(false)} disabled={isSaving}>
+                                    취소
+                                </button>
+                                <button type="submit" className="btn-primary" disabled={isSaving}>
+                                    {isSaving ? '저장중...' : '변경 저장'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* 신규 대여 등록 모달 */}
             {isAddModalOpen && (

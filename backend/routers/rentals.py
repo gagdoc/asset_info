@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 from datetime import datetime
 from backend.services.database import load_from_db, update_db
-from backend.services.consumables_service import add_outbound, add_purchase_record
+from backend.services.consumables_service import add_outbound, add_purchase_record, invalidate_cache
 
 router = APIRouter(
     prefix="/api/rentals",
@@ -114,11 +114,53 @@ def add_rental(entry: RentalEntry):
     if entry.expected_return_date and entry.expected_return_date < today_str:
         new_row["상태"] = "연체"
     
+    
     new_df = pd.DataFrame([new_row])
     df = pd.concat([df, new_df], ignore_index=True)
     update_db("Rental", df)
     
+    # 대여로 인한 재고 변동을 즉각 반영하기 위해 캐시 초기화
+    invalidate_cache("items_")
+    
     return {"message": "대여 등록 완료"}
+
+@router.put("/{item_no}")
+def edit_rental(item_no: int, entry: RentalEntry):
+    dfs = load_from_db()
+    if "Rental" not in dfs:
+        raise HTTPException(status_code=404, detail="Rental table not found")
+        
+    df = dfs["Rental"]
+    
+    mask = pd.to_numeric(df["NO"], errors="coerce") == item_no
+    if not mask.any():
+        raise HTTPException(status_code=404, detail="Item not found")
+        
+    row_idx = df[mask].index[0]
+    
+    qty = int(entry.quantity) if entry.quantity else 1
+    
+    df.at[row_idx, "대여자 이름"] = entry.name
+    df.at[row_idx, "대여자 이메일"] = entry.email
+    df.at[row_idx, "품목명"] = entry.item_name
+    df.at[row_idx, "대여 일자"] = entry.rent_date
+    df.at[row_idx, "반납 예정일"] = entry.expected_return_date
+    df.at[row_idx, "비고"] = entry.notes or ""
+    df.at[row_idx, "수량"] = qty
+    
+    # 만약 기존 상태가 '대여중'이거나 '연체'인 경우에만 예정일 비교로 연체 상태 재평가
+    current_status = df.at[row_idx, "상태"]
+    if current_status in ["대여중", "연체"]:
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        if entry.expected_return_date and entry.expected_return_date < today_str:
+            df.at[row_idx, "상태"] = "연체"
+        else:
+            df.at[row_idx, "상태"] = "대여중"
+            
+    update_db("Rental", df)
+    invalidate_cache("items_")
+    
+    return {"message": "대여 수정 완료"}
 
 @router.put("/{item_no}/return")
 def return_rental(item_no: int):
@@ -152,6 +194,9 @@ def return_rental(item_no: int):
     df.at[row_idx, "실제 반납일"] = today_str
     
     update_db("Rental", df)
+    
+    # 반납으로 인한 재고 복구를 즉각 반영하기 위해 캐시 초기화
+    invalidate_cache("items_")
 
     return {"message": "반납 처리 완료"}
 
@@ -190,5 +235,8 @@ def convert_to_outbound(item_no: int):
         "staff": "시스템",
         "delivery": "직접"
     })
+    
+    # 상태 변경으로 인한 재고 변동(Rental 동적 차감 해제 -> 정식 출고 차감)을 반영하기 위해 캐시 초기화
+    invalidate_cache("items_")
     
     return {"message": "영구 출고 전환 완료"}
