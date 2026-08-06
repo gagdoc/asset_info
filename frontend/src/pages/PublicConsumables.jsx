@@ -51,12 +51,22 @@ const PublicConsumables = () => {
                             }}>
                             재고 현황 파악
                         </button>
+                        <button 
+                            onClick={() => setActiveTab('estimate')}
+                            style={{ 
+                                padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', border: 'none', cursor: 'pointer',
+                                backgroundColor: activeTab === 'estimate' ? '#f59e0b' : '#fef3c7',
+                                color: activeTab === 'estimate' ? '#ffffff' : '#d97706'
+                            }}>
+                            월별 견적 (합산)
+                        </button>
                     </div>
                 </header>
 
                 {activeTab === 'outbound' && <PublicOutboundTab />}
                 {activeTab === 'rental' && <div style={{ background: "#fff", padding: "24px", borderRadius: "12px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}><Rentals isEmbedded={true} /></div>}
                 {activeTab === 'inventory' && <PublicInventoryTab />}
+                {activeTab === 'estimate' && <PublicEstimateTab />}
             </div>
         </div>
     )
@@ -349,3 +359,121 @@ const PublicInventoryTab = () => {
 }
 
 export default PublicConsumables
+
+const formatUserNames = (str) => {
+    if (!str) return ''
+    return str.split('. ')
+        .map(group => group.split(',').map(n => n.trim().replace(/\s*\([^)]*\)$/, '')).filter(Boolean).join(', '))
+        .filter(Boolean)
+        .join(' / ')
+}
+
+const PublicEstimateTab = () => {
+    const { data: monthsData } = useQuery({
+        queryKey: ['consumables-months'],
+        queryFn: async () => {
+            const { data } = await axios.get('/api/consumables/months')
+            return data.months || []
+        }
+    })
+    
+    const [selectedMonth, setSelectedMonth] = useState('')
+    
+    useEffect(() => {
+        if (monthsData && monthsData.length > 0 && !selectedMonth) {
+            setSelectedMonth(monthsData[0])
+        }
+    }, [monthsData, selectedMonth])
+
+    const { data: estimateData, isLoading, refetch, isFetching } = useQuery({
+        queryKey: ['consumables-estimate-public', selectedMonth],
+        queryFn: async () => {
+            if (!selectedMonth) return []
+            const { data } = await axios.get(`/api/consumables/estimate?month=${selectedMonth}`)
+            return data
+        },
+        enabled: !!selectedMonth
+    })
+
+    const totalQty = estimateData?.reduce((acc, row) => {
+        const qty = parseInt(row.total_qty?.toString().replace(/,/g, ''), 10)
+        return acc + (isNaN(qty) ? 0 : qty)
+    }, 0) || 0;
+
+    const totalCost = estimateData?.reduce((acc, row) => {
+        const cost = parseInt(row.total_price?.toString().replace(/,/g, ''), 10)
+        return acc + (isNaN(cost) ? 0 : cost)
+    }, 0) || 0;
+
+    return (
+        <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+                <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#334155' }}>
+                    {selectedMonth} 견적서 산출 내역
+                </h2>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>조회 월:</label>
+                    <select 
+                        value={selectedMonth} 
+                        onChange={(e) => setSelectedMonth(e.target.value)}
+                        style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ddd', minWidth: '120px' }}
+                    >
+                        {monthsData?.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                        ))}
+                    </select>
+                    <button 
+                        onClick={() => refetch()} 
+                        disabled={isFetching}
+                        style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', cursor: 'pointer' }}
+                    >
+                        🔄 새로고침
+                    </button>
+                </div>
+            </div>
+
+            <LoadingModal isOpen={isLoading || isFetching} message="데이터를 불러오는 중입니다..." />
+
+            <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead>
+                        <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
+                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem', textAlign: 'center' }}>NO</th>
+                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem' }}>분류</th>
+                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem' }}>품목명</th>
+                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem', textAlign: 'center' }}>총수</th>
+                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem' }}>사용자 (상세)</th>
+                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem', textAlign: 'right' }}>단가(₩)</th>
+                            <th style={{ padding: '12px', color: '#475569', fontSize: '0.9rem', textAlign: 'right' }}>견적비용(₩)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {estimateData && estimateData.length > 0 ? estimateData.map((row, idx) => (
+                            <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                <td style={{ padding: '12px', textAlign: 'center' }}>{row.no}</td>
+                                <td style={{ padding: '12px', fontSize: '0.9rem' }}>{row.category}</td>
+                                <td style={{ padding: '12px', fontWeight: 'bold' }}>{row.item_name}</td>
+                                <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>{row.total_qty}</td>
+                                <td style={{ padding: '12px', fontSize: '0.85rem', color: '#64748b' }}>{formatUserNames(row.users)}</td>
+                                <td style={{ padding: '12px', textAlign: 'right' }}>{row.unit_price?.toLocaleString()}</td>
+                                <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: '#ef4444' }}>{row.total_price?.toLocaleString()}</td>
+                            </tr>
+                        )) : (
+                            <tr><td colSpan="7" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>해당 월에 데이터가 없습니다.</td></tr>
+                        )}
+                    </tbody>
+                    {estimateData && estimateData.length > 0 && (
+                        <tfoot>
+                            <tr style={{ backgroundColor: '#f8fafc', fontWeight: 'bold' }}>
+                                <td colSpan="3" style={{ padding: '12px', textAlign: 'center' }}>총 합계</td>
+                                <td style={{ padding: '12px', textAlign: 'center', color: '#3b82f6', fontSize: '1.1rem' }}>{totalQty.toLocaleString()}</td>
+                                <td colSpan="2"></td>
+                                <td style={{ padding: '12px', textAlign: 'right', color: '#ef4444', fontSize: '1.2rem' }}>{totalCost.toLocaleString()} ₩</td>
+                            </tr>
+                        </tfoot>
+                    )}
+                </table>
+            </div>
+        </div>
+    )
+}

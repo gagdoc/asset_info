@@ -29,3 +29,5 @@ Error: connect ECONNREFUSED 127.0.0.1:8000
 11:20:27 AM [vite] (client) hmr update /src/components/Sidebar.jsx
 4:31:50 PM [vite] (client) hmr update /src/pages/PublicConsumables.jsx
 4:37:33 PM [vite] (client) hmr update /src/pages/PublicConsumables.jsx
+4:44:25 PM [vite] (client) hmr update /src/pages/PublicConsumables.jsx
+4:54:02 PM [vite] (client) hmr update /src/pages/PublicConsumables.jsx
