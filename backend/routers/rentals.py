@@ -140,22 +140,26 @@ def edit_rental(item_no: int, entry: RentalEntry):
     
     qty = int(entry.quantity) if entry.quantity else 1
     
-    df.at[row_idx, "대여자 이름"] = entry.name
-    df.at[row_idx, "대여자 이메일"] = entry.email
-    df.at[row_idx, "품목명"] = entry.item_name
-    df.at[row_idx, "대여 일자"] = entry.rent_date
-    df.at[row_idx, "반납 예정일"] = entry.expected_return_date
-    df.at[row_idx, "비고"] = entry.notes or ""
-    df.at[row_idx, "수량"] = qty
+    # Ensure 수량 column exists before modifying
+    if "수량" not in df.columns:
+        df["수량"] = 1
+        
+    df.loc[row_idx, "대여자 이름"] = entry.name
+    df.loc[row_idx, "대여자 이메일"] = entry.email
+    df.loc[row_idx, "품목명"] = entry.item_name
+    df.loc[row_idx, "대여 일자"] = entry.rent_date
+    df.loc[row_idx, "반납 예정일"] = entry.expected_return_date
+    df.loc[row_idx, "비고"] = entry.notes or ""
+    df.loc[row_idx, "수량"] = qty
     
     # 만약 기존 상태가 '대여중'이거나 '연체'인 경우에만 예정일 비교로 연체 상태 재평가
-    current_status = df.at[row_idx, "상태"]
+    current_status = df.loc[row_idx, "상태"]
     if current_status in ["대여중", "연체"]:
         today_str = datetime.now().strftime("%Y-%m-%d")
         if entry.expected_return_date and entry.expected_return_date < today_str:
-            df.at[row_idx, "상태"] = "연체"
+            df.loc[row_idx, "상태"] = "연체"
         else:
-            df.at[row_idx, "상태"] = "대여중"
+            df.loc[row_idx, "상태"] = "대여중"
             
     update_db("Rental", df)
     invalidate_cache("items_")
