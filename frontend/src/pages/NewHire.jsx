@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
+import { FaSort, FaSortUp, FaSortDown } from 'react-icons/fa'
 import { exportToXLSX, todayStr } from '../utils/exportUtils'
 import { useToast } from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
@@ -10,6 +11,9 @@ const PRIORITY_COLS = [
     '입사일자', '이름', 'NAME', 'email', 'BU', 'ROLE',
     'FTE/Cont.', '노트북', '아이패드', '모니터', '복합기', 'Teams', '추가사항'
 ]
+
+// 수정 가능한 필드 목록
+const EDITABLE_FIELDS = ['이름', 'NAME', 'email', 'BU', 'ROLE', 'FTE/Cont.', '추가사항']
 
 const NewHire = () => {
     const queryClient = useQueryClient()
@@ -22,7 +26,7 @@ const NewHire = () => {
             const { data } = await axios.get('/api/assets/NewHire')
             return data
         },
-        staleTime: 0,               // 항상 최신 데이터 확인
+        staleTime: 0,
         refetchOnWindowFocus: false,
     })
 
@@ -38,7 +42,7 @@ const NewHire = () => {
     const rawCols = newhires?.length > 0 ? Object.keys(newhires[0]) : []
     const hiddenCols = ['년', '월', '날짜']
     const displayCols = rawCols.filter(c => !hiddenCols.includes(c) && !c.startsWith('_IS_'))
-    
+
     const ordered = PRIORITY_COLS.filter(c => c === '입사일자' || displayCols.includes(c))
     const others  = displayCols.filter(c => !PRIORITY_COLS.includes(c))
     const columns = [...ordered, ...others]
@@ -85,6 +89,7 @@ const NewHire = () => {
                     lastUpdated={lastUpdated}
                     queryClient={queryClient}
                     addToast={addToast}
+                    deptConfig={deptConfig}
                 />
             )}
         </div>
@@ -211,18 +216,194 @@ const RegisterForm = ({ deptConfig, queryClient, addToast }) => {
     )
 }
 
-// ── 리스트 탭 ────────────────────────────────────────────
-import { FaSort, FaSortUp, FaSortDown } from 'react-icons/fa'
+// ── 수정 모달 ────────────────────────────────────────────
+const EditModal = ({ row, actualIndex, deptConfig, onSave, onClose }) => {
+    const [form, setForm] = useState({
+        이름:    row?.['이름']    || '',
+        NAME:    row?.['NAME']    || '',
+        email:   row?.['email']   || '',
+        BU:      row?.['BU']      || '',
+        ROLE:    row?.['ROLE']    || '',
+        'FTE/Cont.': row?.['FTE/Cont.'] || '',
+        추가사항: row?.['추가사항'] || '',
+    })
+    const [saving, setSaving] = useState(false)
 
-const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryClient, addToast }) => {
+    const buList = deptConfig?.bu_list || []
+    const roleList = deptConfig?.data
+        ?.filter(d => d.BU === form.BU && d.ROLE)
+        ?.map(d => d.ROLE) || []
+
+    const handleSubmit = async (e) => {
+        e.preventDefault()
+        setSaving(true)
+        try {
+            // 변경된 필드만 추출
+            const updates = {}
+            EDITABLE_FIELDS.forEach(field => {
+                const original = row?.[field] != null ? String(row[field]) : ''
+                const current  = form[field] != null ? String(form[field]) : ''
+                if (current !== original) updates[field] = current
+            })
+            if (Object.keys(updates).length === 0) {
+                onClose()
+                return
+            }
+            await onSave(actualIndex, updates)
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    return (
+        <div
+            style={{
+                position: 'fixed', inset: 0,
+                background: 'rgba(0,0,0,0.45)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                zIndex: 1000,
+                backdropFilter: 'blur(2px)',
+            }}
+            onClick={e => { if (e.target === e.currentTarget) onClose() }}
+        >
+            <div style={{
+                background: 'var(--card-background, #fff)',
+                borderRadius: '14px',
+                padding: '2rem',
+                width: '100%',
+                maxWidth: '520px',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                    <h3 style={{ margin: 0 }}>✏️ 입사자 정보 수정</h3>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            background: 'none', border: 'none', fontSize: '1.4rem',
+                            cursor: 'pointer', color: '#6b7280', lineHeight: 1,
+                        }}
+                    >×</button>
+                </div>
+
+                {/* 읽기 전용 입사일자 */}
+                {row?.['입사일자'] && (
+                    <div style={{
+                        background: 'rgba(99,102,241,0.07)',
+                        borderRadius: '8px',
+                        padding: '0.5rem 0.9rem',
+                        marginBottom: '1rem',
+                        fontSize: '0.875rem',
+                        color: '#4b5563',
+                    }}>
+                        📅 입사일자: <strong>{row['입사일자']}</strong>
+                    </div>
+                )}
+
+                <form onSubmit={handleSubmit}>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label className="form-label">한글 이름</label>
+                            <input
+                                className="form-input"
+                                value={form['이름']}
+                                onChange={e => setForm({ ...form, '이름': e.target.value })}
+                                placeholder="홍길동"
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">영문 이름 (NAME)</label>
+                            <input
+                                className="form-input"
+                                value={form.NAME}
+                                onChange={e => setForm({ ...form, NAME: e.target.value })}
+                                placeholder="John Doe"
+                            />
+                        </div>
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">이메일</label>
+                        <input
+                            className="form-input"
+                            type="email"
+                            value={form.email}
+                            onChange={e => setForm({ ...form, email: e.target.value })}
+                            placeholder="user@example.com"
+                        />
+                    </div>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label className="form-label">BU</label>
+                            <select
+                                className="form-input"
+                                value={form.BU}
+                                onChange={e => setForm({ ...form, BU: e.target.value, ROLE: '' })}
+                            >
+                                <option value="">선택...</option>
+                                {buList.map(bu => <option key={bu} value={bu}>{bu}</option>)}
+                            </select>
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">ROLE</label>
+                            <select
+                                className="form-input"
+                                value={form.ROLE}
+                                onChange={e => setForm({ ...form, ROLE: e.target.value })}
+                            >
+                                <option value="">선택...</option>
+                                {roleList.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label className="form-label">FTE/Cont.</label>
+                            <input
+                                className="form-input"
+                                value={form['FTE/Cont.']}
+                                onChange={e => setForm({ ...form, 'FTE/Cont.': e.target.value })}
+                                placeholder="FTE / Contractor"
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">추가사항</label>
+                            <input
+                                className="form-input"
+                                value={form['추가사항']}
+                                onChange={e => setForm({ ...form, '추가사항': e.target.value })}
+                                placeholder="메모..."
+                            />
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+                        <button
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={onClose}
+                            disabled={saving}
+                        >취소</button>
+                        <button
+                            type="submit"
+                            className="btn btn-primary btn-sm"
+                            disabled={saving}
+                        >{saving ? '저장 중...' : '💾 저장'}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    )
+}
+
+// ── 리스트 탭 ────────────────────────────────────────────
+const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryClient, addToast, deptConfig }) => {
     const [selectedRows, setSelectedRows] = useState(new Set())
-    const [editingCell, setEditingCell] = useState(null) // { idx, col }
-    const [editValue, setEditValue] = useState('')
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+    const [editTarget, setEditTarget] = useState(null) // { row, actualIndex }
 
     // 정렬 상태
-    const [sortCol, setSortCol] = useState('입사일자') // 기본값 '입사일자'
-    const [sortDir, setSortDir] = useState('desc') // 기본값 최신 날짜 우선
+    const [sortCol, setSortCol] = useState('입사일자')
+    const [sortDir, setSortDir] = useState('desc')
 
     const handleSort = (col) => {
         if (sortCol === col) {
@@ -250,27 +431,22 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
             let joinStr = (y && y !== '0' && y !== '0000') ? `${y}/${m}/${d}` : ''
             return { ...row, '입사일자': joinStr }
         })
-        
+
         if (!sortCol) return list
 
         list.sort((a, b) => {
-            // 날짜 정렬 처리
             if (sortCol === '입사일자' || sortCol === '날짜') {
                 const valA = a['입사일자'] || ''
                 const valB = b['입사일자'] || ''
-                return sortDir === 'asc' 
-                    ? valA.localeCompare(valB) 
+                return sortDir === 'asc'
+                    ? valA.localeCompare(valB)
                     : valB.localeCompare(valA)
             }
-            
-            // 년, 월 정렬 처리
             if (sortCol === '년' || sortCol === '월') {
                 const valA = Number(a[sortCol]) || 0
                 const valB = Number(b[sortCol]) || 0
                 return sortDir === 'asc' ? valA - valB : valB - valA
             }
-
-            // 일반 문자열 정렬
             const valA = String(a[sortCol] || '').toLowerCase()
             const valB = String(b[sortCol] || '').toLowerCase()
             return sortDir === 'asc'
@@ -281,35 +457,20 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
         return list
     }, [newhires, sortCol, sortDir])
 
-    const handleModalSave = async () => {
-        try {
-            await axios.put('/api/assets/newhire/update', {
-                row_index: editingRowIdx,
-                updates: modalData
-            })
-            queryClient.invalidateQueries(['newhireData'])
-            addToast('✅ 수정 완료', 'success')
-            alert('상세 수정이 완료되었습니다.')
-            setIsModalOpen(false)
-        } catch (err) {
-            addToast('수정 실패', 'error')
-            alert('수정 실패: ' + err.message)
-        }
-    }
-
-    const handleCellEdit = async (actualIndex, col, value) => {
+    // 행 수정 저장
+    const handleSaveEdit = async (actualIndex, updates) => {
         try {
             await axios.put('/api/assets/row/update', {
                 asset_type: 'NewHire',
                 row_index: actualIndex,
-                updates: { [col]: value }
+                updates,
             })
             addToast('✅ 수정 완료', 'success')
             queryClient.invalidateQueries(['assets', 'NewHire'])
+            setEditTarget(null)
         } catch (err) {
-            addToast('수정 실패', 'error')
+            addToast('수정 실패: ' + (err.response?.data?.detail || err.message), 'error')
         }
-        setEditingCell(null)
     }
 
     // Google Sheets 새로고침
@@ -330,15 +491,13 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
         }
     }
 
-    // 선택 행 삭제 (Google Sheets에도 반영)
+    // 선택 행 삭제
     const handleDeleteSelected = async () => {
         if (selectedRows.size === 0) return
         setIsDeleteModalOpen(true)
     }
 
     const confirmDelete = async () => {
-        // 실제 newhires 배열 기준 필터링 (선택된 row는 정렬 기준 map index 이므로 mapping 객체 또는 filter 활용 필요)
-        // selectedRows는 sortedNewHires의 index를 가지고 있으므로, 실제 원본 newhires의 index로 치환해야 함
         const selectedIndicesInOriginal = new Set(
             Array.from(selectedRows).map(sortedIdx => {
                 const item = sortedNewHires[sortedIdx]
@@ -397,7 +556,6 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                         className="btn btn-sm"
                         style={{ backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #86efac', fontWeight: '600' }}
                         onClick={async () => {
-                            // 현재 보이는 정렬 상태 기준으로 엑셀 내보내기
                             const rows = sortedNewHires || []
                             const cols = rows.length ? Object.keys(rows[0]).map(k => ({ key: k, label: k })) : []
                             await exportToXLSX({ filename: `신규입사자_${todayStr()}`, columns: cols, rows })
@@ -408,6 +566,11 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                     </button>
                 </div>
             </div>
+
+            {/* 안내 문구 */}
+            <p style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.5rem' }}>
+                💡 행을 클릭하면 정보를 수정할 수 있습니다.
+            </p>
 
             {/* 데이터 테이블 */}
             <div className="card" style={{ padding: 0 }}>
@@ -427,11 +590,12 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                                             }}
                                         />
                                     </th>
-                                     {columns.map(col => {
-                                         const sortable = ['입사일자', '년', '월', '날짜', '이름', 'NAME', 'email', 'BU', 'ROLE'].includes(col)
+                                    <th style={{ width: '56px' }}>수정</th>
+                                    {columns.map(col => {
+                                        const sortable = ['입사일자', '년', '월', '날짜', '이름', 'NAME', 'email', 'BU', 'ROLE'].includes(col)
                                         return (
-                                            <th 
-                                                key={col} 
+                                            <th
+                                                key={col}
                                                 onClick={() => sortable && handleSort(col)}
                                                 style={sortable ? { cursor: 'pointer', userSelect: 'none' } : {}}
                                             >
@@ -444,21 +608,21 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                             </thead>
                             <tbody>
                                 {sortedNewHires.map((row, idx) => {
-                                    // 원본 newhires 배열에서의 실제 인덱스 구하기
                                     const actualIndex = newhires.indexOf(row)
 
                                     return (
                                         <tr
                                             key={idx}
                                             style={
-                                                selectedRows.has(idx) 
-                                                    ? { background: 'rgba(99,102,241,0.08)' } 
-                                                    : row.is_resigned 
-                                                        ? { background: 'rgba(239, 68, 68, 0.04)', color: '#9ca3af' } 
+                                                selectedRows.has(idx)
+                                                    ? { background: 'rgba(99,102,241,0.08)' }
+                                                    : row.is_resigned
+                                                        ? { background: 'rgba(239, 68, 68, 0.04)', color: '#9ca3af' }
                                                         : {}
                                             }
                                         >
-                                            <td className="checkbox-cell">
+                                            {/* 체크박스 */}
+                                            <td className="checkbox-cell" onClick={e => e.stopPropagation()}>
                                                 <input
                                                     type="checkbox"
                                                     checked={selectedRows.has(idx)}
@@ -469,61 +633,64 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                                                     }}
                                                 />
                                             </td>
-                                            {columns.map(col => {
-                                                const isEditable = ['이름', 'NAME', 'email', 'BU', 'ROLE', '추가사항'].includes(col)
-                                                const isEditing = editingCell?.idx === actualIndex && editingCell?.col === col
-
-                                                return (
-                                                    <td 
-                                                        key={col} 
-                                                        onDoubleClick={() => {
-                                                            if (isEditable) {
-                                                                setEditingCell({ idx: actualIndex, col })
-                                                                setEditValue(row[col] || '')
-                                                            }
-                                                        }}
-                                                        style={isEditable ? { cursor: 'pointer' } : {}}
-                                                        title={isEditable ? '더블 클릭하여 수정' : ''}
-                                                    >
-                                                        {isEditing ? (
-                                                            <input
-                                                                autoFocus
-                                                                className="form-input"
-                                                                style={{ padding: '2px 4px', fontSize: '0.9em' }}
-                                                                value={editValue}
-                                                                onChange={e => setEditValue(e.target.value)}
-                                                                onBlur={() => handleCellEdit(actualIndex, col, editValue)}
-                                                                onKeyDown={e => {
-                                                                    if (e.key === 'Enter') handleCellEdit(actualIndex, col, editValue)
-                                                                    if (e.key === 'Escape') setEditingCell(null)
-                                                                }}
-                                                            />
-                                                        ) : (
-                                                            row[col] !== null && row[col] !== undefined && row[col] !== ''
-                                                                ? (
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                        <span style={col === '이름' && row.is_resigned ? { textDecoration: 'line-through' } : {}}>{String(row[col])}</span>
-                                                                        {col === '이름' && row.is_resigned && (
-                                                                            <span style={{
-                                                                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                                                                                color: 'var(--danger-color)',
-                                                                                fontSize: '0.72rem',
-                                                                                padding: '1px 5px',
-                                                                                borderRadius: '4px',
-                                                                                fontWeight: 'bold',
-                                                                                border: '1px solid rgba(239, 68, 68, 0.2)',
-                                                                                whiteSpace: 'nowrap'
-                                                                            }}>
-                                                                                퇴사자
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                )
-                                                                : '-'
-                                                        )}
-                                                    </td>
-                                                )
-                                            })}
+                                            {/* 수정 버튼 */}
+                                            <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                                                <button
+                                                    title="수정"
+                                                    onClick={() => setEditTarget({ row, actualIndex })}
+                                                    style={{
+                                                        background: 'none',
+                                                        border: '1px solid #d1d5db',
+                                                        borderRadius: '6px',
+                                                        padding: '2px 8px',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.8rem',
+                                                        color: '#374151',
+                                                        transition: 'all 0.15s',
+                                                    }}
+                                                    onMouseEnter={e => {
+                                                        e.currentTarget.style.background = 'rgba(99,102,241,0.08)'
+                                                        e.currentTarget.style.borderColor = 'var(--primary-color, #6366f1)'
+                                                        e.currentTarget.style.color = 'var(--primary-color, #6366f1)'
+                                                    }}
+                                                    onMouseLeave={e => {
+                                                        e.currentTarget.style.background = 'none'
+                                                        e.currentTarget.style.borderColor = '#d1d5db'
+                                                        e.currentTarget.style.color = '#374151'
+                                                    }}
+                                                >
+                                                    ✏️
+                                                </button>
+                                            </td>
+                                            {/* 데이터 셀 */}
+                                            {columns.map(col => (
+                                                <td key={col}>
+                                                    {row[col] !== null && row[col] !== undefined && row[col] !== ''
+                                                        ? (
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                <span style={col === '이름' && row.is_resigned ? { textDecoration: 'line-through' } : {}}>
+                                                                    {String(row[col])}
+                                                                </span>
+                                                                {col === '이름' && row.is_resigned && (
+                                                                    <span style={{
+                                                                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                                                        color: 'var(--danger-color)',
+                                                                        fontSize: '0.72rem',
+                                                                        padding: '1px 5px',
+                                                                        borderRadius: '4px',
+                                                                        fontWeight: 'bold',
+                                                                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                                                                        whiteSpace: 'nowrap'
+                                                                    }}>
+                                                                        퇴사자
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )
+                                                        : '-'
+                                                    }
+                                                </td>
+                                            ))}
                                         </tr>
                                     )
                                 })}
@@ -536,6 +703,17 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                     </p>
                 )}
             </div>
+
+            {/* 수정 모달 */}
+            {editTarget && (
+                <EditModal
+                    row={editTarget.row}
+                    actualIndex={editTarget.actualIndex}
+                    deptConfig={deptConfig}
+                    onSave={handleSaveEdit}
+                    onClose={() => setEditTarget(null)}
+                />
+            )}
 
             <ConfirmModal
                 isOpen={isDeleteModalOpen}
