@@ -78,6 +78,12 @@ class BulkSearchRequest(BaseModel):
     search_type: str = "all"
     search_target: str = "all"
 
+class NewHireUpdateRequest(BaseModel):
+    """신규 입사자 행 수정 요청 모델 (이메일 기준 탐색)"""
+    row_index: int                    # 프론트에서 전달하는 원본 newhires 배열 인덱스
+    original_email: Optional[str] = "" # 기존 이메일 (변경 전 식별용)
+    updates: Dict[str, Any]           # 변경할 필드
+
 # ── Dashboard ────────────────────────────────────────
 @router.get("/dashboard")
 def get_dashboard_data():
@@ -702,6 +708,96 @@ def register_new_hire(entry: NewHireEntry):
             update_db("All_User", df_all)
         
     return {"message": f"{email} 입사 등록 완료 (대시보드와 동기화 됨)"}
+
+# ── New Hire: Update Row (이메일 기반, All_User 동기화 포함) ──
+@router.put("/newhire/update-row")
+def update_newhire_row(req: NewHireUpdateRequest):
+    """
+    신규 입사자 정보를 수정합니다.
+    - NewHire 시트: 이메일로 먼저 탐색, 없으면 row_index 사용 (enrich 인덱스 불일치 방지)
+    - All_User 시트: 이메일 기준으로 존재하면 업데이트, 없으면 신규 추가
+    """
+    dfs = load_from_db()
+    df_nh = dfs.get("NewHire", pd.DataFrame())
+    if df_nh.empty:
+        raise HTTPException(status_code=400, detail="NewHire 데이터가 없습니다.")
+
+    # ── 1. NewHire 행 탐색: 이메일 우선 → row_index 폴백 ──
+    old_email = str(req.original_email or "").strip().lower()
+    nh_idx = None
+
+    # 이메일로 먼저 탐색 (enrich로 인한 인덱스 불일치 방지)
+    if old_email and old_email not in ("nan", "none", "null", "") and "email" in df_nh.columns:
+        email_mask = df_nh["email"].astype(str).str.strip().str.lower() == old_email
+        if email_mask.any():
+            nh_idx = df_nh[email_mask].index[0]
+
+    # 이메일 탐색 실패 시 row_index 사용
+    if nh_idx is None:
+        if req.row_index < 0 or req.row_index >= len(df_nh):
+            raise HTTPException(status_code=400, detail="유효하지 않은 행 인덱스입니다.")
+        nh_idx = req.row_index
+
+    # ── 2. NewHire 업데이트 ──
+    for col, val in req.updates.items():
+        if col in df_nh.columns:
+            df_nh.at[nh_idx, col] = val
+        else:
+            df_nh[col] = ""
+            df_nh.at[nh_idx, col] = val
+
+    update_db("NewHire", df_nh)
+
+    # ── 3. All_User 동기화 ──
+    new_email = str(req.updates.get("email", req.original_email or "")).strip().lower()
+
+    updated_row = df_nh.iloc[nh_idx]
+    name_en = str(updated_row.get("NAME",  req.updates.get("NAME",  "")) or "").strip()
+    name_ko = str(updated_row.get("이름",  req.updates.get("이름",  "")) or "").strip()
+    bu      = str(updated_row.get("BU",    req.updates.get("BU",    "")) or "").strip()
+    role    = str(updated_row.get("ROLE",  req.updates.get("ROLE",  "")) or "").strip()
+
+    if new_email and new_email not in ("nan", "none", "null", ""):
+        df_all = dfs.get("All_User", pd.DataFrame())
+        if df_all.empty:
+            df_all = pd.DataFrame(columns=["NO", "NAME", "이름", "email", "BU", "ROLE"])
+
+        df_all["_email_norm"] = df_all["email"].astype(str).str.strip().str.lower()
+        lookup_email = old_email if old_email else new_email
+        mask = df_all["_email_norm"] == lookup_email
+
+        if mask.any():
+            idx = df_all[mask].index[0]
+            if name_en:  df_all.at[idx, "NAME"] = name_en
+            if name_ko:  df_all.at[idx, "이름"] = name_ko
+            if bu:       df_all.at[idx, "BU"]   = bu
+            if role:     df_all.at[idx, "ROLE"] = role
+            if new_email != old_email:
+                df_all.at[idx, "email"] = new_email
+        else:
+            try:
+                max_no = pd.to_numeric(df_all["NO"], errors="coerce").max()
+                if pd.isna(max_no): max_no = 0
+            except:
+                max_no = 0
+            new_all_row = {
+                "NO":    int(max_no) + 1,
+                "NAME":  name_en if name_en else name_ko,
+                "이름":   name_ko,
+                "email": new_email,
+                "BU":    bu,
+                "ROLE":  role,
+            }
+            for col in df_all.columns:
+                if col not in new_all_row and col != "_email_norm":
+                    new_all_row[col] = "-"
+            df_all = pd.concat([df_all, pd.DataFrame([new_all_row])], ignore_index=True)
+
+        df_all.drop(columns=["_email_norm"], inplace=True, errors="ignore")
+        update_db("All_User", df_all)
+        _invalidate_dashboard_cache()
+
+    return {"message": "신규 입사자 정보가 수정되었습니다.", "synced_email": new_email}
 
 # ── New Hire: Sync to All_User ───────────────────────
 @router.post("/newhire/sync")

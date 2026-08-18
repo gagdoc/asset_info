@@ -228,6 +228,8 @@ const EditModal = ({ row, actualIndex, deptConfig, onSave, onClose }) => {
         추가사항: row?.['추가사항'] || '',
     })
     const [saving, setSaving] = useState(false)
+    // 수정 시작 시점의 원본 이메일 (All_User 탐색용)
+    const originalEmail = row?.['email'] || ''
 
     const buList = deptConfig?.bu_list || []
     const roleList = deptConfig?.data
@@ -249,7 +251,7 @@ const EditModal = ({ row, actualIndex, deptConfig, onSave, onClose }) => {
                 onClose()
                 return
             }
-            await onSave(actualIndex, updates)
+            await onSave(actualIndex, originalEmail, updates)
         } finally {
             setSaving(false)
         }
@@ -457,16 +459,17 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
         return list
     }, [newhires, sortCol, sortDir])
 
-    // 행 수정 저장
-    const handleSaveEdit = async (actualIndex, updates) => {
+    // 행 수정 저장 — 전용 API 사용 (이메일 변경 시 All_User 자동 동기화)
+    const handleSaveEdit = async (actualIndex, originalEmail, updates) => {
         try {
-            await axios.put('/api/assets/row/update', {
-                asset_type: 'NewHire',
+            await axios.put('/api/assets/newhire/update-row', {
                 row_index: actualIndex,
+                original_email: originalEmail,
                 updates,
             })
-            addToast('✅ 수정 완료', 'success')
+            addToast('✅ 수정 완료 (대시보드 동기화됨)', 'success')
             queryClient.invalidateQueries(['assets', 'NewHire'])
+            queryClient.invalidateQueries(['dashboardSummary'])
             setEditTarget(null)
         } catch (err) {
             addToast('수정 실패: ' + (err.response?.data?.detail || err.message), 'error')
