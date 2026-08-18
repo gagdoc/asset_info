@@ -426,12 +426,13 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
     // 정렬된 신규 입사자 목록 계산
     const sortedNewHires = useMemo(() => {
         if (!newhires) return []
-        const list = newhires.map(row => {
+        // 원본 인덱스(_orig_idx)를 함께 저장 — indexOf는 새 객체 참조로 항상 -1 반환하는 버그 방지
+        const list = newhires.map((row, origIdx) => {
             let y = String(row['년'] || '').trim()
             let m = String(row['월'] || '').trim().padStart(2, '0')
             let d = String(row['날짜'] || '').trim().padStart(2, '0')
             let joinStr = (y && y !== '0' && y !== '0000') ? `${y}/${m}/${d}` : ''
-            return { ...row, '입사일자': joinStr }
+            return { ...row, '입사일자': joinStr, _orig_idx: origIdx }
         })
 
         if (!sortCol) return list
@@ -611,7 +612,8 @@ const ListTab = ({ newhires, columns, isLoading, isFetching, lastUpdated, queryC
                             </thead>
                             <tbody>
                                 {sortedNewHires.map((row, idx) => {
-                                    const actualIndex = newhires.indexOf(row)
+                                    // _orig_idx: sortedNewHires 생성 시 저장한 원본 newhires 인덱스
+                                    const actualIndex = row._orig_idx ?? newhires.indexOf(row)
 
                                     return (
                                         <tr
