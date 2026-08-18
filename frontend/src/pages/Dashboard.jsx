@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-// exportUtils 불필요 (우측 상단 엑셀 버튼 제거됨)
+import { exportToXLSX, todayStr } from '../utils/exportUtils'
 
 // 시리얼 번호 존재 여부 판단 헬퍼
 const hasSerial = (val) => {
@@ -330,13 +330,69 @@ const Dashboard = () => {
             <div className="card">
                 <div className="flex items-center justify-between mb-2 table-header-action">
                     <h3>📋 자산 통합 상세 조회</h3>
-                    <div style={{ position: 'relative', width: '100%', maxWidth: '340px' }}>
-                        <input
-                            className="form-input"
-                            placeholder="🔍 통합 검색 (이름, 이메일, 자산번호 등)"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <div style={{ position: 'relative', width: '100%', maxWidth: '280px' }}>
+                            <input
+                                className="form-input"
+                                placeholder="🔍 통합 검색 (이름, 이메일, 자산번호 등)"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                        <button
+                            id="btn-dashboard-excel-export"
+                            onClick={async () => {
+                                const exportColumns = [
+                                    { key: 'NAME',      label: '이름(영문)' },
+                                    { key: '이름',      label: '이름(한글)' },
+                                    { key: 'email',     label: '이메일' },
+                                    { key: 'BU',        label: '부서' },
+                                    { key: 'ROLE',      label: '직책' },
+                                    { key: 'Lease_List',label: '노트북 S/N' },
+                                    { key: 'Ipad_List', label: '아이패드 S/N' },
+                                    { key: 'Monitor',   label: '모니터' },
+                                    { key: 'TeamsNum',  label: 'Teams 번호' },
+                                    { key: 'Printer',   label: '복합기' },
+                                    { key: '퇴사정보',  label: '비고' },
+                                ]
+                                const rows = filteredData.map(row => {
+                                    const mapped = {}
+                                    exportColumns.forEach(col => {
+                                        mapped[col.label] = row[col.key] || '-'
+                                    })
+                                    return mapped
+                                })
+                                await exportToXLSX({
+                                    filename: `자산_통합_상세_${todayStr()}.xlsx`,
+                                    sheets: [{
+                                        title: '자산통합현황',
+                                        columns: exportColumns.map(c => ({ key: c.label, label: c.label })),
+                                        rows,
+                                    }],
+                                })
+                            }}
+                            disabled={filteredData.length === 0}
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                padding: '7px 14px',
+                                fontSize: '0.85em',
+                                fontWeight: '600',
+                                color: filteredData.length === 0 ? '#94a3b8' : '#166534',
+                                backgroundColor: filteredData.length === 0 ? '#f1f5f9' : '#f0fdf4',
+                                border: `1px solid ${filteredData.length === 0 ? '#cbd5e1' : '#86efac'}`,
+                                borderRadius: '7px',
+                                cursor: filteredData.length === 0 ? 'not-allowed' : 'pointer',
+                                whiteSpace: 'nowrap',
+                                transition: 'all 0.15s',
+                                flexShrink: 0,
+                            }}
+                            onMouseOver={e => { if (filteredData.length > 0) e.currentTarget.style.backgroundColor = '#dcfce7' }}
+                            onMouseOut={e => { if (filteredData.length > 0) e.currentTarget.style.backgroundColor = '#f0fdf4' }}
+                        >
+                            📥 엑셀 다운로드 ({filteredData.length}명)
+                        </button>
                     </div>
                 </div>
 
