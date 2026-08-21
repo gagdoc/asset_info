@@ -1296,7 +1296,7 @@ const isTonnerItem = (name, category) => {
 const ItemsTab = ({ month, months }) => {
     const queryClient = useQueryClient()
     const [viewMode, setViewMode] = useState('general') // 'general' | 'toner-inventory'
-    const [dispatchMode, setDispatchMode] = useState('monthly') // 'monthly' | 'cumulative'
+    const dispatchMode = 'monthly' // 항상 월별 모드
     const [dispatchMonth, setDispatchMonth] = useState(month || '')
     const [showForm, setShowForm] = useState(false)
     const [formData, setFormData] = useState({
@@ -1324,12 +1324,12 @@ const ItemsTab = ({ month, months }) => {
         if (month && !dispatchMonth) setDispatchMonth(month)
     }, [month])
 
-    const itemsQueryKey = ['consumables-items', dispatchMode, dispatchMonth]
+    const itemsQueryKey = ['consumables-items', 'monthly', dispatchMonth]
     const { data: items, isLoading } = useQuery({
         queryKey: itemsQueryKey,
         queryFn: async () => {
-            const params = new URLSearchParams({ dispatch_mode: dispatchMode })
-            if (dispatchMode === 'monthly' && dispatchMonth) params.append('month', dispatchMonth)
+            const params = new URLSearchParams({ dispatch_mode: 'monthly' })
+            if (dispatchMonth) params.append('month', dispatchMonth)
             const { data } = await axios.get(`/api/consumables/items?${params}`)
             return data
         }
@@ -1557,43 +1557,22 @@ const ItemsTab = ({ month, months }) => {
                 </div>
             </div>
 
-            {/* 출고 기준 토글 */}
+            {/* 출고 월 선택 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem', padding: '10px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 'bold', fontSize: '0.88em', color: '#475569' }}>📊 출고 기준:</span>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                    <button
-                        onClick={() => setDispatchMode('monthly')}
-                        style={{
-                            padding: '4px 14px', borderRadius: '20px', border: '1px solid #4f46e5', cursor: 'pointer', fontSize: '0.85em', fontWeight: 'bold',
-                            background: dispatchMode === 'monthly' ? '#4f46e5' : 'white',
-                            color: dispatchMode === 'monthly' ? 'white' : '#4f46e5',
-                        }}
-                    >월별</button>
-                    <button
-                        onClick={() => setDispatchMode('cumulative')}
-                        style={{
-                            padding: '4px 14px', borderRadius: '20px', border: '1px solid #64748b', cursor: 'pointer', fontSize: '0.85em', fontWeight: 'bold',
-                            background: dispatchMode === 'cumulative' ? '#64748b' : 'white',
-                            color: dispatchMode === 'cumulative' ? 'white' : '#64748b',
-                        }}
-                    >누적</button>
-                </div>
-                {dispatchMode === 'monthly' && (
-                    <select
-                        value={dispatchMonth}
-                        onChange={e => setDispatchMonth(e.target.value)}
-                        style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #4f46e5', fontSize: '0.88em', color: '#4f46e5', fontWeight: 'bold' }}
-                    >
-                        <option value="">-- 월 선택 --</option>
-                        {(months || []).map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                )}
+                <span style={{ fontWeight: 'bold', fontSize: '0.88em', color: '#475569' }}>📅 출고 기준 월:</span>
+                <select
+                    value={dispatchMonth}
+                    onChange={e => setDispatchMonth(e.target.value)}
+                    style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #4f46e5', fontSize: '0.88em', color: '#4f46e5', fontWeight: 'bold' }}
+                >
+                    <option value="">-- 월 선택 --</option>
+                    {(months || []).map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
                 <span style={{ fontSize: '0.8em', color: '#94a3b8' }}>
-                    {dispatchMode === 'monthly'
-                        ? `${dispatchMonth || '월 선택 필요'} 출고량 기준`
-                        : '전체 기간 누적 출고량 기준'}
+                    {dispatchMonth ? `${dispatchMonth} 출고량 기준` : '월을 선택하면 해당 월 출고량으로 실재고를 계산합니다'}
                 </span>
             </div>
+
 
             {/* 일반 소모품 / 토너 재고 관리 서브 탭 */}
             <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0' }}>
@@ -1728,7 +1707,7 @@ const ItemsTab = ({ month, months }) => {
                         <th>대분류 (Category)</th>
                         <th>{'소모품명 (Item Name)'}</th>
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
-                        <th style={{ textAlign: 'center', background: '#fdf4ff', color: '#86198f' }}>출고<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
+                        <th style={{ textAlign: 'center', background: '#fdf4ff', color: '#86198f' }}>출고<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMonth || '선택월'}</small></th>
                         <th style={{ textAlign: 'center', background: '#f0fdf4', color: '#15803d' }}>추가 (조정)<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
                         <th style={{ textAlign: 'center', background: '#fff1f2', color: '#9f1239' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>구매+추가-출고</small></th>
                         <th style={{ textAlign: 'center' }}>관리</th>
@@ -2006,7 +1985,7 @@ const ItemHistoryModal = ({ itemName, onClose }) => {
 const TrackedItemsTab = ({ month, months }) => {
     const queryClient = useQueryClient()
     const [selectedHistoryItem, setSelectedHistoryItem] = useState(null)
-    const [dispatchMode, setDispatchMode] = useState('monthly')
+    const dispatchMode = 'monthly' // 항상 월별 모드
     const [dispatchMonth, setDispatchMonth] = useState(month || '')
 
     // 개별 추가 내역 보기 모달 상태
@@ -2016,12 +1995,12 @@ const TrackedItemsTab = ({ month, months }) => {
         if (month && !dispatchMonth) setDispatchMonth(month)
     }, [month])
 
-    const trackedQueryKey = ['consumables-items', dispatchMode, dispatchMonth, 'tracked']
+    const trackedQueryKey = ['consumables-items', 'monthly', dispatchMonth, 'tracked']
     const { data: items, isLoading } = useQuery({
         queryKey: trackedQueryKey,
         queryFn: async () => {
-            const params = new URLSearchParams({ dispatch_mode: dispatchMode })
-            if (dispatchMode === 'monthly' && dispatchMonth) params.append('month', dispatchMonth)
+            const params = new URLSearchParams({ dispatch_mode: 'monthly' })
+            if (dispatchMonth) params.append('month', dispatchMonth)
             const { data } = await axios.get(`/api/consumables/items?${params}`)
             return data
         }
@@ -2091,27 +2070,21 @@ const TrackedItemsTab = ({ month, months }) => {
     if (isLoading) return <LoadingModal isOpen={isLoading} message="재고 추적 데이터를 불러오는 중입니다..." />
 
     const trackedItems = items?.filter(item => item.is_tracked) || []
-    const dispatchLabel = dispatchMode === 'monthly' ? `${dispatchMonth || '월 선택 필요'} 출고량` : '누적 출고량'
+    const dispatchLabel = `${dispatchMonth || '월 선택 필요'} 출고량`
 
     return (
         <div className="card">
             <h3 style={{ marginBottom: '0.75rem' }}>📍 재고 추적 관리 현황</h3>
 
-            {/* 출고 기준 토글 */}
+            {/* 출고 월 선택 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem', padding: '10px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 'bold', fontSize: '0.88em', color: '#475569' }}>📊 출고 기준:</span>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => setDispatchMode('monthly')} style={{ padding: '4px 14px', borderRadius: '20px', border: '1px solid #4f46e5', cursor: 'pointer', fontSize: '0.85em', fontWeight: 'bold', background: dispatchMode === 'monthly' ? '#4f46e5' : 'white', color: dispatchMode === 'monthly' ? 'white' : '#4f46e5' }}>월별</button>
-                    <button onClick={() => setDispatchMode('cumulative')} style={{ padding: '4px 14px', borderRadius: '20px', border: '1px solid #64748b', cursor: 'pointer', fontSize: '0.85em', fontWeight: 'bold', background: dispatchMode === 'cumulative' ? '#64748b' : 'white', color: dispatchMode === 'cumulative' ? 'white' : '#64748b' }}>누적</button>
-                </div>
-                {dispatchMode === 'monthly' && (
-                    <select value={dispatchMonth} onChange={e => setDispatchMonth(e.target.value)} style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #4f46e5', fontSize: '0.88em', color: '#4f46e5', fontWeight: 'bold' }}>
-                        <option value="">-- 월 선택 --</option>
-                        {(months || []).map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                )}
+                <span style={{ fontWeight: 'bold', fontSize: '0.88em', color: '#475569' }}>📅 출고 기준 월:</span>
+                <select value={dispatchMonth} onChange={e => setDispatchMonth(e.target.value)} style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #4f46e5', fontSize: '0.88em', color: '#4f46e5', fontWeight: 'bold' }}>
+                    <option value="">-- 월 선택 --</option>
+                    {(months || []).map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
                 <span style={{ fontSize: '0.8em', color: '#94a3b8' }}>
-                    {dispatchMode === 'monthly' ? `${dispatchMonth || '월 선택 필요'} 출고량 기준` : '전체 기간 누적 출고량 기준'}
+                    {dispatchMonth ? `${dispatchMonth} 출고량 기준` : '월을 선택하면 해당 월 출고량으로 실재고를 계산합니다'}
                 </span>
             </div>
 
@@ -2125,7 +2098,7 @@ const TrackedItemsTab = ({ month, months }) => {
                     <tr>
                         <th>품목명</th>
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
-                        <th style={{ textAlign: 'center', color: '#f59e0b' }}>출고량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMode === 'monthly' ? dispatchMonth || '선택월' : '누적'}</small></th>
+                        <th style={{ textAlign: 'center', color: '#f59e0b' }}>출고량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMonth || '선택월'}</small></th>
                         <th style={{ textAlign: 'center', color: '#2563eb' }}>추가 (조정)<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
                         <th style={{ textAlign: 'center', color: '#3b82f6', fontSize: '1.1em' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>실재고</small></th>
                         <th style={{ textAlign: 'center' }}>상태</th>

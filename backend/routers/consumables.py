@@ -54,7 +54,7 @@ def add_new_month(data: Dict[str, str] = Body(...)):
 @router.get("/items")
 def list_items(
     month: str = Query(None, description="월 필터 (예: '2026년 4월')"),
-    dispatch_mode: str = Query("cumulative", description="출고 집계 모드: 'cumulative'(누적) | 'monthly'(월별)")
+    dispatch_mode: str = Query("monthly", description="출고 집계 모드: 'monthly'(월별) | 'cumulative'(누적, 레거시)")
 ):
     """품목 리스트 반환. dispatch_mode=monthly 시 지정 month의 출고만 집계."""
     items = get_items_list(month=month, dispatch_mode=dispatch_mode)
