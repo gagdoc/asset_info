@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from config import (
-    IS_PRODUCTION, APP_ENV,
+    IS_PRODUCTION, IS_STAGING, APP_ENV,
     SPREADSHEET_ID, CONSUMABLES_MASTER_SPREADSHEET_ID,
     CONSUMABLES_OUTBOUND_SPREADSHEET_ID, TONER_SPREADSHEET_ID,
 )
@@ -23,11 +23,11 @@ router = APIRouter(
 
 
 def _require_dev():
-    """운영 환경이면 403 반환"""
-    if IS_PRODUCTION:
+    """로컬 개발 환경(development)이 아니면 403 반환"""
+    if APP_ENV != "development":
         raise HTTPException(
             status_code=403,
-            detail="이 기능은 개발 환경에서만 사용할 수 있습니다."
+            detail="이 기능은 로컬 개발 환경에서만 사용할 수 있습니다."
         )
 
 
@@ -35,10 +35,10 @@ def _require_dev():
 def get_env_status():
     """
     현재 실행 환경 및 로컬 데이터 상태를 반환합니다.
-    프론트엔드 개발 배너에서 사용합니다.
+    프론트엔드 개발/테스트 배너에서 사용합니다.
     """
     local_data_ok = False
-    if not IS_PRODUCTION:
+    if APP_ENV == "development":
         try:
             from backend.services.local_sheets import local_data_exists
             local_data_ok = local_data_exists()
@@ -48,6 +48,7 @@ def get_env_status():
     return {
         "app_env": APP_ENV,
         "is_production": IS_PRODUCTION,
+        "is_staging": IS_STAGING,
         "local_data_exists": local_data_ok,
         "active_sheet_ids": {
             "assets":               SPREADSHEET_ID,

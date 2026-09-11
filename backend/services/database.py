@@ -12,6 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 try:
     from config import (
+        IS_STAGING,
         DB_FILE,
         SHEET_MAPPING,
         COLUMN_MAPPING,
@@ -19,6 +20,9 @@ try:
         RESIGNED_KEYWORD,
     )
 except ImportError:
+    if os.environ.get("APP_ENV") == "staging":
+        raise
+    IS_STAGING = False
     DB_FILE = "asset_database.db"
     SHEET_MAPPING = {
         "All_User": "All_User",
@@ -108,6 +112,15 @@ def load_from_db() -> dict:
     데이터 로드 우선순위: Google Sheets → SQLite 폴백
     반환값: dict[str, DataFrame]
     """
+    # Staging must never load legacy SQLite data when test Sheets are unavailable.
+    if IS_STAGING:
+        if not SHEETS_AVAILABLE:
+            raise RuntimeError("Staging Google Sheets service is unavailable")
+        data = load_from_sheets()
+        if data is None:
+            raise RuntimeError("Staging Google Sheets read failed")
+        return _post_process(data)
+
     # 1. Google Sheets 시도
     if SHEETS_AVAILABLE:
         try:
@@ -151,6 +164,14 @@ def update_db(key: str, df: pd.DataFrame):
     if key != "Dept_Config":
         df = normalize_email(df)
     df = deduplicate_columns(df)
+
+    # A staging save only succeeds after the configured test Sheet is updated.
+    if IS_STAGING:
+        if not SHEETS_AVAILABLE:
+            raise RuntimeError("Staging Google Sheets service is unavailable")
+        if not update_sheet(key, df):
+            raise RuntimeError("Staging Google Sheets write failed")
+        return
 
     # 1. Google Sheets 저장
     if SHEETS_AVAILABLE:

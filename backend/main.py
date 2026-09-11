@@ -1,7 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from pathlib import Path
 import sys
 import os
 from backend.routers import assets, consumables, admin, rentals
@@ -16,6 +17,8 @@ except ImportError:
     PAGE_TITLE = "Asset Management System"
 
 app = FastAPI(title=PAGE_TITLE)
+from backend.staging_auth import install_staging_auth
+install_staging_auth(app)
 
 # CORS Configuration
 origins = [
@@ -65,9 +68,11 @@ if os.path.exists(frontend_build_path):
     # Catch-all route for React SPA routing
     @app.get("/{full_path:path}")
     async def serve_react_app(full_path: str):
-        file_path = os.path.join(frontend_build_path, full_path)
-        if os.path.isfile(file_path):
+        build_root = Path(frontend_build_path).resolve()
+        file_path = (build_root / full_path).resolve()
+        if not file_path.is_relative_to(build_root):
+            raise HTTPException(status_code=404, detail="Not found")
+        if file_path.is_file():
             return FileResponse(file_path)
         # Fallback to index.html
         return FileResponse(os.path.join(frontend_build_path, "index.html"))
-

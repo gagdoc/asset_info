@@ -5,14 +5,19 @@
 import os
 
 # ── 실행 환경 ────────────────────────────────────────────────────
-# APP_ENV=development  → 테스트 시트 사용, 쓰기 안전 모드
-# APP_ENV=production   → 실제 구글 시트에 반영
+# APP_ENV=development  → 로컬 개발 모드 (테스트 시트 사용, 쓰기 안전 모드)
+# APP_ENV=staging      → 테스트 서버 환경 (테스트 시트 사용, 구글 시트 직접 반영)
+# APP_ENV=production   → 실제 운영 환경 (실제 구글 시트에 반영)
 APP_ENV = os.environ.get("APP_ENV", "development")  # 기본값: 개발 모드
 IS_PRODUCTION = APP_ENV == "production"
+IS_STAGING = APP_ENV == "staging"
+IS_DEVELOPMENT = APP_ENV == "development"
+if APP_ENV not in {"development", "staging", "production"}:
+    raise ValueError("APP_ENV must be development, staging, or production")
 
-# ── .env.development 자동 로드 (개발 모드에서만) ─────────────────
+# ── .env.development 자동 로드 (로컬 개발 모드에서만) ─────────────────
 # python-dotenv가 있으면 .env.development 파일에서 환경 변수를 불러옴
-if not IS_PRODUCTION:
+if APP_ENV == "development":
     try:
         from dotenv import load_dotenv
         _env_file = os.path.join(os.path.dirname(__file__), ".env.development")
@@ -31,6 +36,14 @@ CONSUMABLES_DB_FILE = "consumables.db"
 # 테스트(TEST) ID는 .env.development 파일에 기재
 # ══════════════════════════════════════════════════════
 
+# Known production documents remain blocked even when PROD_* env values change.
+CANONICAL_PRODUCTION_SHEET_IDS = frozenset({
+    "1__8NXfK6ruhlQtnomhIi_sjdkHgLD0C2N1Mw4P3GW7g",
+    "1A4RvrDn_I3wev6UaqEGBRoADYRYwtQty0TPo-x6ehtw",
+    "1MgYUINr7T1t80MUlv-RRaL7GkK7NSNxuKmAzvqNGe-M",
+    "19AMXwNtrF8BcA_BqXpBcy-vWKX8Wu2IkbFTYNPZORc0",
+})
+
 # ── 운영(PROD) 시트 ID ──────────────────────────────
 _PROD_SPREADSHEET_ID                  = os.environ.get("PROD_SPREADSHEET_ID", "1__8NXfK6ruhlQtnomhIi_sjdkHgLD0C2N1Mw4P3GW7g")
 _PROD_CONSUMABLES_MASTER_ID           = os.environ.get("PROD_CONSUMABLES_MASTER_ID", "1A4RvrDn_I3wev6UaqEGBRoADYRYwtQty0TPo-x6ehtw")
@@ -45,10 +58,25 @@ _TEST_CONSUMABLES_OUTBOUND_ID         = os.environ.get("TEST_CONSUMABLES_OUTBOUN
 _TEST_TONER_ID                        = os.environ.get("TEST_TONER_ID", "")
 
 # ── 활성 시트 ID (환경에 따라 자동 선택) ────────────────────────
-SPREADSHEET_ID                  = _PROD_SPREADSHEET_ID          if IS_PRODUCTION else (_TEST_SPREADSHEET_ID or _PROD_SPREADSHEET_ID)
-CONSUMABLES_MASTER_SPREADSHEET_ID     = _PROD_CONSUMABLES_MASTER_ID    if IS_PRODUCTION else (_TEST_CONSUMABLES_MASTER_ID or _PROD_CONSUMABLES_MASTER_ID)
-CONSUMABLES_OUTBOUND_SPREADSHEET_ID   = _PROD_CONSUMABLES_OUTBOUND_ID  if IS_PRODUCTION else (_TEST_CONSUMABLES_OUTBOUND_ID or _PROD_CONSUMABLES_OUTBOUND_ID)
-TONER_SPREADSHEET_ID                  = _PROD_TONER_ID                 if IS_PRODUCTION else (_TEST_TONER_ID or _PROD_TONER_ID)
+if IS_PRODUCTION:
+    SPREADSHEET_ID = _PROD_SPREADSHEET_ID
+    CONSUMABLES_MASTER_SPREADSHEET_ID = _PROD_CONSUMABLES_MASTER_ID
+    CONSUMABLES_OUTBOUND_SPREADSHEET_ID = _PROD_CONSUMABLES_OUTBOUND_ID
+    TONER_SPREADSHEET_ID = _PROD_TONER_ID
+elif IS_STAGING:
+    # Staging(테스트 서버)에서는 반드시 테스트 시트 ID가 지정되어야 하며, 운영 시트 ID로 fallback 하지 않음
+    if not (_TEST_SPREADSHEET_ID and _TEST_CONSUMABLES_MASTER_ID and _TEST_CONSUMABLES_OUTBOUND_ID and _TEST_TONER_ID):
+        raise ValueError("❌ Staging 환경 오류: 테스트용 구글 시트 ID가 모두 정의되지 않았습니다. 환경 변수를 확인하세요.")
+    SPREADSHEET_ID = _TEST_SPREADSHEET_ID
+    CONSUMABLES_MASTER_SPREADSHEET_ID = _TEST_CONSUMABLES_MASTER_ID
+    CONSUMABLES_OUTBOUND_SPREADSHEET_ID = _TEST_CONSUMABLES_OUTBOUND_ID
+    TONER_SPREADSHEET_ID = _TEST_TONER_ID
+else:
+    # 로컬 개발 환경 (development): 테스트 시트 ID가 있으면 쓰고, 없으면 운영 시트 ID로 fallback
+    SPREADSHEET_ID = _TEST_SPREADSHEET_ID or _PROD_SPREADSHEET_ID
+    CONSUMABLES_MASTER_SPREADSHEET_ID = _TEST_CONSUMABLES_MASTER_ID or _PROD_CONSUMABLES_MASTER_ID
+    CONSUMABLES_OUTBOUND_SPREADSHEET_ID = _TEST_CONSUMABLES_OUTBOUND_ID or _PROD_CONSUMABLES_OUTBOUND_ID
+    TONER_SPREADSHEET_ID = _TEST_TONER_ID or _PROD_TONER_ID
 
 # TEST ID 설정 여부 (프론트엔드 상태 표시용)
 TEST_SHEETS_CONFIGURED = bool(
@@ -72,8 +100,28 @@ TEST_SHEET_IDS = {
     "toner":                _TEST_TONER_ID,
 }
 
+# Validate before any Google client can be constructed.
+_STAGING_ALLOWED_IDS = frozenset(TEST_SHEET_IDS.values())
+_PROTECTED_PRODUCTION_IDS = CANONICAL_PRODUCTION_SHEET_IDS | frozenset(
+    value.strip() for value in PROD_SHEET_IDS.values()
+)
+if IS_STAGING:
+    if any(not value or value != value.strip() for value in TEST_SHEET_IDS.values()):
+        raise ValueError("Staging requires four non-empty TEST sheet IDs without whitespace")
+    if len(_STAGING_ALLOWED_IDS) != 4:
+        raise ValueError("Staging requires four distinct TEST sheet IDs")
+    if _STAGING_ALLOWED_IDS & _PROTECTED_PRODUCTION_IDS:
+        raise ValueError("Staging cannot use any production spreadsheet ID")
+
+
+def validate_sheet_access(spreadsheet_id):
+    """Fail closed for staging: only explicitly configured copies are accessible."""
+    if IS_STAGING and spreadsheet_id not in _STAGING_ALLOWED_IDS:
+        raise ValueError("Staging access denied: spreadsheet is not a configured test copy")
+
+
 # Service Account JSON 키 파일 (로컬용)
-GOOGLE_CREDENTIALS_FILE = "data/st-asset-project-8000c6bb9905.json"
+GOOGLE_CREDENTIALS_FILE = os.environ.get("GOOGLE_CREDENTIALS_FILE", "data/st-asset-project-8000c6bb9905.json")
 # Cloud Run 등 클라우드 배포용 환경 변수 (JSON 문자열)
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON")
 

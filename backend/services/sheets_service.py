@@ -20,8 +20,13 @@ except ImportError:
     logger.warning("gspread 미설치: pip install gspread google-auth")
 
 try:
-    from config import SHEET_MAPPING, SPREADSHEET_ID, GOOGLE_CREDENTIALS_FILE, GOOGLE_CREDENTIALS_JSON
+    from config import SHEET_MAPPING, SPREADSHEET_ID, GOOGLE_CREDENTIALS_FILE, GOOGLE_CREDENTIALS_JSON, IS_DEVELOPMENT, validate_sheet_access
 except ImportError:
+    if os.environ.get("APP_ENV") == "staging":
+        raise
+    IS_DEVELOPMENT = os.environ.get("APP_ENV", "development") == "development"
+    def validate_sheet_access(spreadsheet_id):
+        pass
     SHEET_MAPPING = {
         "All_User": "All_User",
         "Lease": "Lease_List",
@@ -80,16 +85,12 @@ def _get_client():
     """
     gspread 클라이언트 + 스프레드시트 반환 (내부용, 타임아웃 없음)
     - 개발 환경: data/local/{SPREADSHEET_ID}.json 로컬 파일 사용
-    - 운영 환경: 실제 Google Sheets API 사용
+    - 테스트/운영 환경: 실제 Google Sheets API 사용
     """
     global _cached_client
-    # ── 개발 모드: 로컬 JSON 파일 사용 ─────────────────────
-    try:
-        from config import IS_PRODUCTION as _IS_PROD
-    except ImportError:
-        _IS_PROD = os.environ.get("APP_ENV", "development") == "production"
-
-    if not _IS_PROD and SPREADSHEET_ID:
+    validate_sheet_access(SPREADSHEET_ID)
+    # Local storage is only for development; staging uses the test Google Sheets.
+    if IS_DEVELOPMENT and SPREADSHEET_ID:
         try:
             from backend.services.local_sheets import get_local_client
             client = get_local_client()

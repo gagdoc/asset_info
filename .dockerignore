@@ -60,3 +60,12 @@ frontend/dist
 # ── 기타 ─────────────────────────────────────────────
 package-lock.json
 *.zip
+.env*
+data/
+.test-environment/
+_workspace/
+tests/
+scripts/
+*.pptx
+*.xlsx
+!template.xlsx

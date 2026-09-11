@@ -55,3 +55,10 @@ data/local/
 *.db
 *.sqlite3
 .harness-100/
+
+# Test deployment credentials and local archives
+.test-environment/
+deployment_config.json
+*.xlsx
+!template.xlsx
+*.pptx

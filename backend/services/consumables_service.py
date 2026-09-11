@@ -11,8 +11,13 @@ except ImportError:
     pass
 
 try:
-    from config import CONSUMABLES_MASTER_SPREADSHEET_ID, CONSUMABLES_OUTBOUND_SPREADSHEET_ID, GOOGLE_CREDENTIALS_FILE, GOOGLE_CREDENTIALS_JSON, TONER_SPREADSHEET_ID, TONER_SHEET_GID, IS_PRODUCTION
+    from config import CONSUMABLES_MASTER_SPREADSHEET_ID, CONSUMABLES_OUTBOUND_SPREADSHEET_ID, GOOGLE_CREDENTIALS_FILE, GOOGLE_CREDENTIALS_JSON, TONER_SPREADSHEET_ID, TONER_SHEET_GID, IS_PRODUCTION, IS_DEVELOPMENT, validate_sheet_access
 except ImportError:
+    if os.environ.get("APP_ENV") == "staging":
+        raise
+    IS_DEVELOPMENT = os.environ.get("APP_ENV", "development") == "development"
+    def validate_sheet_access(spreadsheet_id):
+        pass
     CONSUMABLES_MASTER_SPREADSHEET_ID = os.environ.get("CONSUMABLES_MASTER_SPREADSHEET_ID")
     CONSUMABLES_OUTBOUND_SPREADSHEET_ID = os.environ.get("CONSUMABLES_OUTBOUND_SPREADSHEET_ID")
     GOOGLE_CREDENTIALS_FILE = os.environ.get("GOOGLE_CREDENTIALS_FILE", "data/st-asset-project-8000c6bb9905.json")
@@ -113,7 +118,7 @@ def _get_consumables_client(spreadsheet_id: str = None):
     """
     구글 시트 클라이언트를 반환합니다.
     - 개발 환경: data/local/{id}.json 로컬 파일 사용 (Google API 불필요)
-    - 운영 환경: 실제 Google Sheets API 사용
+    - 테스트/운영 환경: 실제 Google Sheets API 사용
     spreadsheet_id가 전달되지 않으면 마스터 시트를 기본으로 반환합니다.
     """
     global _cached_client
@@ -121,7 +126,8 @@ def _get_consumables_client(spreadsheet_id: str = None):
         spreadsheet_id = CONSUMABLES_MASTER_SPREADSHEET_ID
 
     # ── 개발 모드: 로컬 JSON 파일 사용 ─────────────────────
-    if not IS_PRODUCTION:
+    validate_sheet_access(spreadsheet_id)
+    if IS_DEVELOPMENT:
         try:
             from backend.services.local_sheets import get_local_client
             client = get_local_client()

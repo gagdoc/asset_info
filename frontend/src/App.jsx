@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
@@ -34,6 +34,13 @@ function DevEnvBanner() {
     retry: false,
   })
 
+  useEffect(() => {
+    if (!envStatus?.is_staging) return
+    const originalTitle = document.title
+    document.title = `[테스트] ${originalTitle}`
+    return () => { document.title = originalTitle }
+  }, [envStatus?.is_staging])
+
   const handleDownload = useCallback(async () => {
     if (!window.confirm(
       '운영 데이터를 로컬로 다운로드합니다.\n' +
@@ -59,6 +66,28 @@ function DevEnvBanner() {
   // 운영 환경이거나 아직 응답 전이면 배너 미표시
   if (!envStatus || envStatus.is_production) return null
 
+  // 1. 테스트 서버(Staging) 환경일 때
+  if (envStatus.is_staging) {
+    return (
+      <div style={{
+        background: '#eff6ff', // 연한 파란색
+        borderBottom: '3px solid #3b82f6', // 파란색 border
+        padding: '8px 20px',
+        display: 'flex', alignItems: 'center', gap: '12px',
+        flexWrap: 'wrap', fontSize: '0.85rem', position: 'sticky', top: 0, zIndex: 1000,
+      }}>
+        <span style={{ fontSize: '1.1em' }}>🧪</span>
+        <strong style={{ color: '#1d4ed8' }}>
+          테스트 서버 환경 — 테스트용 Google Sheets 복사본 사용 중
+        </strong>
+        <span style={{ color: '#4b5563', fontSize: '0.82rem' }}>
+          운영과 동일한 서비스 계정을 사용하며, 데이터 저장 대상은 별도의 테스트 복사본입니다.
+        </span>
+      </div>
+    )
+  }
+
+  // 2. 로컬 개발 환경(Development)일 때
   const localReady = envStatus.local_data_exists
 
   return (
@@ -113,7 +142,7 @@ function App() {
 
         <div className="main-wrapper">
           {/* 전역 개발 환경 배너 (운영에서는 자동 숨김) */}
-          {!isStandalonePage && <DevEnvBanner />}
+          <DevEnvBanner />
 
           {!isStandalonePage && (
             <div className="mobile-header">
