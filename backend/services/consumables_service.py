@@ -233,13 +233,7 @@ def get_inventory_basis_month():
         raise RuntimeError("마스터 시트 연결 실패")
     ws = _get_worksheet_safe(ss, INVENTORY_BASIS_SHEET)
     if not ws:
-        # One-time migration marker. It records a calculation anchor only;
-        # it never rewrites E/F or any live stock value.
-        available = _get_available_months_impl()
-        if not available:
-            raise ValueError("재고 기준월을 정할 출고 월이 없습니다.")
-        ws = ss.add_worksheet(title=INVENTORY_BASIS_SHEET, rows=2, cols=2)
-        ws.update("A1:B2", [["기준월", "설명"], [available[-1], "기존 마스터 수량 보존 기준"]], value_input_option="RAW")
+        raise ValueError("재고 기준월 설정이 필요합니다. 기존 수량 보존 검증 후 전환하세요.")
     rows = ws.get_all_values()
     month = rows[1][0].strip() if len(rows) > 1 and rows[1] else ""
     if not _parse_ym_from_month_title(month):
@@ -601,6 +595,8 @@ def get_estimate(month: str):
 
 def add_outbound(month: str, data: dict) -> bool:
     """월별 출고 시트 왼쪽 A~E열의 빈 칸 맨 아래에 데이터를 기록합니다."""
+    if _get_month_close_status_impl(month)["status"] == "closed":
+        return False
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
@@ -699,6 +695,8 @@ def _resolve_row_index(ws, row_index: int, verify_date: str, verify_item: str, v
 def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
     """월별 출고 시트의 특정 행(row_index) 데이터를 수정합니다.
     verify_date, verify_item이 제공되면 삭제 전 행 내용을 검증합니다."""
+    if _get_month_close_status_impl(month)["status"] == "closed":
+        return False
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
@@ -740,6 +738,8 @@ def delete_outbound_history(month: str, row_index: int,
     """월별 출고 시트의 특정 행(row_index)을 완전히 삭제합니다.
     verify_date + verify_item + verify_user 3중 검증으로 중복 행 오탐 방지.
     삭제 후 해당 품목의 토너 실재고를 자동 복구합니다."""
+    if _get_month_close_status_impl(month)["status"] == "closed":
+        return False
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
@@ -1900,6 +1900,13 @@ def get_month_close_status(month: str) -> dict:
 
 
 def _get_month_close_status_impl(month: str) -> dict:
+    # The snapshot commit is the authoritative close, even when the legacy
+    # status-sheet write failed after the commit. Read failures must propagate.
+    from backend.services.inventory_snapshots import get_report
+    snapshot = get_report(month)
+    if snapshot["snapshot_available"]:
+        return {"month": month, "status": "closed", "confirmed_at": None,
+                "closed_at": snapshot["closed_at"]}
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss_master:
         raise RuntimeError("마감 상태 시트 연결 실패")
@@ -1969,14 +1976,7 @@ def close_month(month: str) -> dict:
 
 
 def reopen_month(month: str) -> dict:
-    status = _get_month_close_status_impl(month)
-    if status["status"] != "closed":
-        return {"success": False, "error": "마감된 월만 해제할 수 있습니다."}
-    _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
-    _, close_ws = _ensure_snapshot_sheets(ss)
-    _upsert_close_status(close_ws, month, "confirmed", "", "")
-    invalidate_cache()
-    return {"success": True, "month": month}
+    return {"success": False, "error": "마감 스냅샷 보존을 위해 마감 해제는 지원하지 않습니다."}
 
 
 def get_monthly_toner_report(month: str) -> dict:
@@ -1991,7 +1991,7 @@ def _get_monthly_toner_report_impl(month: str) -> dict:
 
 
 def reset_month_snapshot(month: str) -> dict:
-    return {"success": False, "error": "마감 스냅샷은 보존됩니다. 초기화 대신 마감 해제를 사용하세요."}
+    return {"success": False, "error": "마감 스냅샷은 보존되며 초기화할 수 없습니다."}
 
 
 def _get_previous_month_remaining_by_type(month: str) -> dict:

@@ -36,6 +36,14 @@ class InventoryTests(unittest.TestCase):
         self.outbound.worksheets.return_value = []
         self.assertEqual(svc._get_items_list_impl()[0]['current_stock'],103)
 
+    def test_m240_september_outbound_stays_deducted_in_october(self):
+        self.items.get_values.return_value = [['Mouse', 'mouse', '25000', 'O', '24', '0']]
+        self.outbound.values_batch_get.side_effect = lambda ranges: {'valueRanges': [
+            {'values': [['2026-09-01', 'mouse', '10', 'user', '일반']]} if '9월!' in r else {'values': []}
+            for r in ranges]}
+        for month in ('2026년 9월', '2026년 10월', None):
+            self.assertEqual(svc._get_items_list_impl(month=month)[0]['current_stock'], 14)
+
     def test_new_future_month_does_not_change_master(self):
         self.assertTrue(svc.create_month_sheet('2027년 1월','2027-01-01'))
         self.master.assert_not_called()
@@ -70,6 +78,11 @@ class InventoryTests(unittest.TestCase):
         with patch.object(svc,'_get_consumables_client',return_value=(None,None)):
             with self.assertRaises((ValueError, RuntimeError)):
                 svc.get_inventory_basis_month()
+        master = Mock()
+        with patch.object(svc, '_get_consumables_client', return_value=(None, master)), patch.object(svc, '_get_worksheet_safe', return_value=None):
+            with self.assertRaises(ValueError):
+                svc.get_inventory_basis_month()
+            master.add_worksheet.assert_not_called()
 
 
 if __name__ == '__main__':
