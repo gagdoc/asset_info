@@ -51,10 +51,23 @@ def add_new_month(data: Dict[str, str] = Body(...)):
         raise HTTPException(status_code=500, detail="이미 존재하는 월이거나 구글 시트 생성에 실패했습니다.")
     return {"status": "success"}
 
+@router.get("/closed-months")
+def closed_months():
+    from backend.services.inventory_snapshots import get_closed_months
+    from backend.services.consumables_service import _parse_ym_from_month_title
+    return sorted(get_closed_months(), key=lambda m: _parse_ym_from_month_title(m) or (0, 0), reverse=True)
+
+
+def _require_open_month(month):
+    from backend.services.consumables_service import _get_month_close_status_impl
+    if _get_month_close_status_impl(month)["status"] == "closed":
+        raise HTTPException(status_code=403, detail="마감된 월의 출고는 수정할 수 없습니다.")
+
+
 @router.get("/items")
 def list_items(
     month: str = Query(None, description="월 필터 (예: '2026년 4월')"),
-    dispatch_mode: str = Query("monthly", description="출고 집계 모드: 'monthly'(월별) | 'cumulative'(누적, 레거시)")
+    dispatch_mode: str = Query("cumulative", description="출고 집계 모드: 'monthly'(월별) | 'cumulative'(누적, 레거시)")
 ):
     """품목 리스트 반환. dispatch_mode=monthly 시 지정 month의 출고만 집계."""
     items = get_items_list(month=month, dispatch_mode=dispatch_mode)
@@ -86,7 +99,8 @@ def create_outbound(data: Dict[str, Any] = Body(...)):
         raise HTTPException(status_code=400, detail="Month is required")
 
     # 마감된 월에는 신규 출고 불가
-    status_info = get_month_close_status(month)
+    from backend.services.consumables_service import _get_month_close_status_impl
+    status_info = _get_month_close_status_impl(month)
     if status_info["status"] == "closed":
         raise HTTPException(status_code=403, detail=f"'{month}'은(는) 마감된 월입니다. 출고 내역을 추가할 수 없습니다.")
 
@@ -221,6 +235,7 @@ def update_outbound(data: Dict[str, Any] = Body(...)):
     if not month or not row_index:
         raise HTTPException(status_code=400, detail="Month and row_index are required")
         
+    _require_open_month(month)
     success = update_outbound_history(month, int(row_index), data)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update outbound record")
@@ -235,6 +250,7 @@ def delete_outbound(
     verify_user: str = Query("", description="삭제 전 사용자명 검증값 (중복 행 오탐 방지)"),
 ):
     """월별 출고 개별 데이터 삭제 (날짜+품목+사용자 3중 검증)"""
+    _require_open_month(month)
     success = delete_outbound_history(month, row_index, verify_date, verify_item, verify_user)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete outbound record")

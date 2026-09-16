@@ -94,7 +94,7 @@ const Consumables = () => {
                     </button>
                 </div>
                 
-                {activeTab !== 'create-month' && (
+                {!['create-month', 'items', 'tracked'].includes(activeTab) && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', padding: '8px 12px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
                         <label style={{ fontWeight: 'bold' }}>📅 조회 월 선택:</label>
                         <select 
@@ -169,8 +169,8 @@ const Consumables = () => {
             {activeTab === 'estimate' && selectedMonth && <EstimateTab month={selectedMonth} />}
             {activeTab === 'outbound' && selectedMonth && <OutboundTab month={selectedMonth} isDev={isDev} />}
             {activeTab === 'create-month' && <CreateMonthTab />}
-            {activeTab === 'items' && <ItemsTab month={selectedMonth} months={monthsData} />}
-            {activeTab === 'tracked' && <TrackedItemsTab month={selectedMonth} months={monthsData} />}
+            {activeTab === 'items' && <InventoryModeTab><ItemsTab /></InventoryModeTab>}
+            {activeTab === 'tracked' && <InventoryModeTab><TrackedItemsTab /></InventoryModeTab>}
             {activeTab === 'purchase' && <PurchaseTab months={monthsData} items={undefined} />}
             {activeTab === 'tonner-consignment' && <TonnerConsignmentTab month={selectedMonth} months={monthsData} />}
             {activeTab === 'inventory' && <InventoryTab />}
@@ -404,6 +404,12 @@ const formatUserNames = (str) => {
 
 const OutboundTab = ({ month, isDev = false }) => {
     const queryClient = useQueryClient()
+    const { data: monthStatus } = useQuery({
+        queryKey: ['month-status', month],
+        queryFn: async () => (await axios.get(`/api/consumables/month-status?month=${encodeURIComponent(month)}`)).data,
+        enabled: !!month,
+    })
+    const canEdit = !!monthStatus && monthStatus.status !== 'closed'
     const [showForm, setShowForm] = useState(false)
     const [formData, setFormData] = useState({ date: '', item_name: '', quantity: '1', outbound_type: '일반', staff: '', staff_custom: '', delivery: '', delivery_custom: '' })
     // 다중 지급 대상자
@@ -674,13 +680,13 @@ const OutboundTab = ({ month, isDev = false }) => {
                         disabled={!history || history.length === 0}
                     />
                     <MonthStatusButton month={month} isDev={isDev} />
-                    <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
+                    <button className="btn btn-primary" disabled={!canEdit} onClick={() => setShowForm(!showForm)}>
                         {showForm ? '닫기' : '+ 출고 추가'}
                     </button>
                 </div>
             </div>
 
-            {showForm && (
+            {canEdit && showForm && (
                 <form onSubmit={handleSubmit} style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                         {/* 출고 날짜 */}
@@ -940,8 +946,8 @@ const OutboundTab = ({ month, isDev = false }) => {
                                     </span>
                                 </td>
                                 <td style={{ textAlign: 'center' }}>
-                                    <button className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8em', marginRight: '4px' }} onClick={() => handleEditStart(row)}>✏️</button>
-                                    <button className="btn btn-danger" style={{ padding: '2px 6px', fontSize: '0.8em' }} onClick={() => handleDelete(row)} disabled={deleteMutation.isPending}>🗑️</button>
+                                    <button className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8em', marginRight: '4px' }} disabled={!canEdit} onClick={() => handleEditStart(row)}>✏️</button>
+                                    <button className="btn btn-danger" style={{ padding: '2px 6px', fontSize: '0.8em' }} onClick={() => handleDelete(row)} disabled={!canEdit || deleteMutation.isPending}>🗑️</button>
                                 </td>
                             </tr>
                         )
@@ -952,14 +958,14 @@ const OutboundTab = ({ month, isDev = false }) => {
             </table>
 
             <ConfirmModal
-                isOpen={confirmModal.isOpen}
+                isOpen={canEdit && confirmModal.isOpen}
                 message={`해당 출고 기록을 완전히 삭제하시겠습니까?\n(재고 관리를 사용하는 품목인 경우, 삭제된 수량만큼 재고가 다시 증가합니다)`}
                 onConfirm={executeDelete}
                 onCancel={() => setConfirmModal({ isOpen: false, rowIndex: null })}
             />
 
             {/* ── 출고 수정 모달 ── */}
-            {isEditModalOpen && (
+            {canEdit && isEditModalOpen && (
                 <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
                     <div className="card modal" style={{ width: '90%', maxWidth: '620px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: '#fff' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderBottom: '1px solid #e2e8f0' }}>
@@ -1091,200 +1097,90 @@ const MonthStatusBar = ({ month }) => {
     )
 }
 
-const MonthStatusButton = ({ month, isDev = false }) => {
+const MonthStatusButton = ({ month }) => {
     const queryClient = useQueryClient()
     const [loading, setLoading] = useState(false)
-    const { data: statusData } = useQuery({
+    const { data, isLoading, isError } = useQuery({
         queryKey: ['month-status', month],
-        queryFn: async () => { const { data } = await axios.get(`/api/consumables/month-status?month=${encodeURIComponent(month)}`); return data },
+        queryFn: async () => (await axios.get(`/api/consumables/month-status?month=${encodeURIComponent(month)}`)).data,
         enabled: !!month,
     })
-    const status = statusData?.status || 'open'
-
-    const invalidate = () => {
-        queryClient.invalidateQueries(['month-status', month])
-        queryClient.invalidateQueries(['monthly-toner-report', month])
-    }
-
-    const handleReset = async () => {
-        if (!window.confirm(`[개발 모드] '${month}' 재고 확정/마감을 초기화하시겠습니까?\n스냅샷이 삭제되고 상태가 'open'으로 돌아갑니다.`)) return
-        setLoading(true)
-        try {
-            await axios.post('/api/consumables/month-reset', { month })
-            invalidate()
-            alert('초기화 완료. 상태가 open으로 리셋되었습니다.')
-        } catch (e) { alert(e?.response?.data?.detail || '초기화 실패') }
-        finally { setLoading(false) }
-    }
-
-    const handleConfirm = async () => {
-        if (!window.confirm(`'${month}' 재고를 확정하시겠습니까?\n현재 토너 재고(또는 이전 달 잔여재고)가 이달 시작 재고로 저장됩니다.`)) return
-        setLoading(true)
-        try {
-            await axios.post('/api/consumables/month-confirm', { month })
-            invalidate()
-            alert('이달 재고가 확정되었습니다.')
-        } catch (e) { alert(e?.response?.data?.detail || '오류가 발생했습니다.') }
-        finally { setLoading(false) }
-    }
-
     const handleClose = async () => {
-        if (!window.confirm(`'${month}'을(를) 마감하시겠습니까?\n마감 후에는 신규 출고를 추가할 수 없습니다.\n(기존 내역 수정은 가능)`)) return
+        if (!window.confirm(`${month}을 마감하시겠습니까?\n현재 재고 추적 품목의 재고를 마감 스냅샷으로 저장합니다. 마감된 출고 내역은 추가·수정·삭제할 수 없습니다.`)) return
         setLoading(true)
         try {
             await axios.post('/api/consumables/month-close', { month })
-            invalidate()
-            alert(`'${month}' 마감이 완료되었습니다.`)
-        } catch (e) { alert(e?.response?.data?.detail || '오류가 발생했습니다.') }
+            for (const key of ['month-status', 'monthly-toner-report', 'closed-months']) {
+                queryClient.invalidateQueries({ queryKey: [key] })
+            }
+            alert('마감 재고가 저장되었습니다.')
+        } catch (error) { alert(error.response?.data?.detail || '마감 실패') }
         finally { setLoading(false) }
     }
-
-    const handleReopen = async () => {
-        if (!window.confirm(`'${month}' 마감을 해제하시겠습니까?`)) return
-        setLoading(true)
-        try {
-            await axios.post('/api/consumables/month-reopen', { month })
-            invalidate()
-            alert('마감이 해제되었습니다.')
-        } catch (e) { alert(e?.response?.data?.detail || '오류가 발생했습니다.') }
-        finally { setLoading(false) }
-    }
-
-    // 개발 모드 초기화 버튼 (상태와 무관하게 항상 표시)
-    const resetBtn = isDev && status !== 'open' ? (
-        <button className="btn" onClick={handleReset} disabled={loading}
-            title="개발 모드 전용: 스냅샷/마감 상태를 open으로 되돌립니다"
-            style={{ background: '#f59e0b', color: '#fff', padding: '5px 12px', fontSize: '0.85em' }}>
-            🔄 초기화
-        </button>
-    ) : null
-
-    if (status === 'open') return (
-        <>
-            <button className="btn" onClick={handleConfirm} disabled={loading}
-                style={{ background: '#16a34a', color: '#fff', padding: '5px 12px', fontSize: '0.85em' }}>
-                {loading ? '처리중...' : '📸 이달 재고 확정'}
-            </button>
-            {resetBtn}
-        </>
-    )
-    if (status === 'confirmed') return (
-        <>
-            <button className="btn" onClick={handleClose} disabled={loading}
-                style={{ background: '#7c3aed', color: '#fff', padding: '5px 12px', fontSize: '0.85em' }}>
-                {loading ? '처리중...' : '🔒 마감'}
-            </button>
-            {resetBtn}
-        </>
-    )
-    if (status === 'closed') return (
-        <>
-            <button className="btn btn-secondary" onClick={handleReopen} disabled={loading}
-                style={{ padding: '5px 12px', fontSize: '0.85em' }}>
-                {loading ? '처리중...' : '🔓 마감 해제'}
-            </button>
-            {resetBtn}
-        </>
-    )
-    return null
+    if (data?.status === 'closed') return <span className="badge-success">🔒 마감 완료 · 출고 내역 변경 불가</span>
+    return <button className="btn btn-primary" onClick={handleClose} disabled={loading || isLoading || isError || !data}>
+        {loading ? '저장 중...' : '🔒 재고 추적 품목 마감 저장'}
+    </button>
 }
 
-const MonthlyTonerReport = ({ month }) => {
-    const { data: report, isLoading } = useQuery({
+const InventoryModeTab = ({ children }) => {
+    const [month, setMonth] = useState('')
+    const { data: months = [], isError } = useQuery({
+        queryKey: ['closed-months'],
+        queryFn: async () => (await axios.get('/api/consumables/closed-months')).data,
+    })
+    return <>
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
+            <label htmlFor="inventory-view">재고 조회</label>
+            <select id="inventory-view" value={month} onChange={e => setMonth(e.target.value)}>
+                <option value="">현재 재고 (전체 누적)</option>
+                {months.map(m => <option key={m} value={m}>{m} 마감 재고</option>)}
+            </select>
+            {isError && <span role="alert">마감월 목록을 불러오지 못했습니다.</span>}
+        </div>
+        {month ? <SnapshotInventoryView month={month} /> : children}
+    </>
+}
+
+const SnapshotInventoryView = ({ month }) => {
+    const { data: report, isLoading, isError } = useQuery({
         queryKey: ['monthly-toner-report', month],
-        queryFn: async () => { const { data } = await axios.get(`/api/consumables/monthly-report?month=${encodeURIComponent(month)}`); return data },
+        queryFn: async () => (await axios.get(`/api/consumables/monthly-report?month=${encodeURIComponent(month)}`)).data,
         enabled: !!month,
     })
-
-    if (!report || !report.has_snapshot || isLoading) return null
-
-    const handleExcel = async () => {
-        const generalRows = (report.general_items || []).map(it => ({
-            '구분': '일반 소모품', '월': month,
-            '품목명': it.item_name, '시작재고': it.start_stock,
-            '출고수량': it.outbound_qty, '잔여재고': it.remaining,
-        }))
-        const tonerRows = (report.toner_items || []).map(it => ({
-            '구분': '토너', '월': month,
-            '품목명': it.item_name, '시작재고': it.start_stock,
-            '출고수량': it.outbound_qty, '잔여재고': it.remaining,
-        }))
-        await exportToXLSX({
-            filename: `재고현황_${month}_${todayStr()}`,
-            sheets: [
-                { title: '일반 소모품', columns: [{key:'구분',label:'구분'},{key:'월',label:'월'},{key:'품목명',label:'품목명'},{key:'시작재고',label:'시작재고'},{key:'출고수량',label:'출고수량'},{key:'잔여재고',label:'잔여재고'}], rows: generalRows },
-                { title: '토너', columns: [{key:'구분',label:'구분'},{key:'월',label:'월'},{key:'품목명',label:'품목명'},{key:'시작재고',label:'시작재고'},{key:'출고수량',label:'출고수량'},{key:'잔여재고',label:'잔여재고'}], rows: tonerRows },
-            ],
-        })
+    const { data: liveItems, isError: liveError } = useQuery({
+        queryKey: ['consumables-items', 'cumulative'],
+        queryFn: async () => (await axios.get('/api/consumables/items?dispatch_mode=cumulative')).data,
+    })
+    if (isLoading) return <div role="status">마감 재고를 불러오는 중입니다...</div>
+    if (isError) return <div role="alert">마감 재고를 불러오지 못했습니다.</div>
+    if (report?.snapshot_kind !== 'closing' || !(report.snapshot_available ?? report.has_snapshot)) {
+        return <div className="alert alert-info">{month}에 저장된 마감 스냅샷이 없습니다. 과거 재고를 현재 데이터로 재계산하지 않습니다.</div>
     }
-
-    const statusMeta = STATUS_META[report.status] || STATUS_META.open
-
-    const StockTable = ({ items, emptyMsg }) => (
-        <table className="data-table" style={{ fontSize: '0.9rem' }}>
-            <thead>
-                <tr style={{ background: '#f1f5f9' }}>
-                    {['품목명', '시작 재고', '출고 수량', '잔여 재고'].map(h => (
-                        <th key={h} style={{ padding: '8px 12px', textAlign: h === '품목명' ? 'left' : 'center', fontWeight: '600', color: '#475569', fontSize: '0.85em', borderBottom: '1px solid #e2e8f0' }}>{h}</th>
-                    ))}
-                </tr>
-            </thead>
-            <tbody>
-                {items.length === 0
-                    ? <tr><td colSpan={4} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85em' }}>{emptyMsg}</td></tr>
-                    : items.map((it, idx) => {
-                        const isLow = it.remaining <= 0
-                        return (
-                            <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? '#fff' : '#fafafa' }}>
-                                <td style={{ padding: '7px 12px', fontWeight: '500' }}>{it.item_name}</td>
-                                <td style={{ padding: '7px 12px', textAlign: 'center' }}>{it.start_stock}</td>
-                                <td style={{ padding: '7px 12px', textAlign: 'center', color: it.outbound_qty > 0 ? '#dc2626' : '#64748b' }}>{it.outbound_qty > 0 ? `-${it.outbound_qty}` : '0'}</td>
-                                <td style={{ padding: '7px 12px', textAlign: 'center', fontWeight: 'bold', color: isLow ? '#dc2626' : '#15803d' }}>
-                                    {it.remaining}{isLow && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🚨</span>}
-                                </td>
-                            </tr>
-                        )
-                    })
-                }
-            </tbody>
-        </table>
-    )
-
-    return (
-        <div style={{ marginTop: '2rem', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
-            {/* 헤더 */}
-            <div style={{ background: '#f8fafc', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>🗂️ {month} 재고 현황</span>
-                    <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '0.8em', background: statusMeta.bg, color: statusMeta.color, border: `1px solid ${statusMeta.border}` }}>
-                        {statusMeta.icon} {statusMeta.label}
-                    </span>
-                </div>
-                <button className="btn btn-secondary" onClick={handleExcel} style={{ padding: '4px 12px', fontSize: '0.85em' }}>
-                    📥 엑셀 내보내기
-                </button>
-            </div>
-
-            {/* 일반 소모품 섹션 */}
-            <div>
-                <div style={{ padding: '8px 14px', background: '#eff6ff', borderBottom: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontWeight: '700', color: '#1d4ed8', fontSize: '0.88rem' }}>📦 일반 소모품</span>
-                    <span style={{ fontSize: '0.8em', color: '#64748b' }}>({(report.general_items || []).length}개 품목)</span>
-                </div>
-                <StockTable items={report.general_items || []} emptyMsg="재고 추적 중인 일반 소모품이 없습니다." />
-            </div>
-
-            {/* 토너 섹션 */}
-            <div style={{ borderTop: '2px solid #e2e8f0' }}>
-                <div style={{ padding: '8px 14px', background: '#fff7ed', borderBottom: '1px solid #fed7aa', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontWeight: '700', color: '#c2410c', fontSize: '0.88rem' }}>🖨️ 토너</span>
-                    <span style={{ fontSize: '0.8em', color: '#64748b' }}>({(report.toner_items || []).length}개 품목)</span>
-                </div>
-                <StockTable items={report.toner_items || []} emptyMsg="토너 재고 데이터가 없습니다." />
-            </div>
-        </div>
-    )
+    const items = report.tracked_items || []
+    const liveMap = new Map((liveItems || []).map(item => [item.item_name.toLowerCase(), item]))
+    const display = value => value == null ? '—' : Number(value).toLocaleString()
+    const rows = items.map(item => {
+        const live = liveMap.get(item.item_name.toLowerCase())?.current_stock ?? null
+        return { ...item, live_stock: live, difference: live == null ? null : live - item.closing_stock }
+    })
+    return <div className="card">
+        <h3>{month} 마감 재고 · 읽기 전용</h3>
+        <p>마감 당시 재고 추적 품목만 표시합니다. 저장 시각: {report.closed_at || '기록 없음'}</p>
+        <p>마감 재고는 저장된 값이며, 현재 재고와 증감은 현재 시점의 비교 정보입니다.</p>
+        {liveError && <p role="alert">현재 재고 비교 정보를 불러오지 못했습니다.</p>}
+        <ExportButton onClick={() => exportToXLSX({ filename: `마감재고_${month}_${todayStr()}`, rows,
+            columns: [{key:'item_name',label:'품목명'},{key:'category',label:'분류'},{key:'closing_stock',label:'마감 재고'},{key:'live_stock',label:'현재 재고'},{key:'difference',label:'증감'}] })} />
+        <div className="table-wrapper"><table className="data-table">
+            <thead><tr><th>품목명</th><th>분류</th><th>마감 재고</th><th>현재 재고</th><th>증감 (현재 − 마감)</th></tr></thead>
+            <tbody>{rows.length ? rows.map(item => <tr key={item.item_name}>
+                <td>{item.item_name}</td><td>{item.category}</td><td>{display(item.closing_stock)}</td><td>{display(item.live_stock)}</td><td>{display(item.difference)}</td>
+            </tr>) : <tr><td colSpan={5}>마감 당시 재고 추적 품목이 없습니다.</td></tr>}</tbody>
+        </table></div>
+    </div>
 }
+
+const MonthlyTonerReport = ({ month }) => <SnapshotInventoryView month={month} />
 
 const isTonnerItem = (name, category) => {
     const n = (name || '').toLowerCase()
@@ -1293,11 +1189,10 @@ const isTonnerItem = (name, category) => {
         || c.includes('tonner') || c.includes('toner') || c.includes('토너')
 }
 
-const ItemsTab = ({ month, months }) => {
+const ItemsTab = () => {
     const queryClient = useQueryClient()
     const [viewMode, setViewMode] = useState('general') // 'general' | 'toner-inventory'
-    const dispatchMode = 'monthly' // 항상 월별 모드
-    const [dispatchMonth, setDispatchMonth] = useState(month || '')
+    const dispatchMonth = ''
     const [showForm, setShowForm] = useState(false)
     const [formData, setFormData] = useState({
         row_index: null,
@@ -1319,17 +1214,12 @@ const ItemsTab = ({ month, months }) => {
     const [indivEditRow, setIndivEditRow] = useState(null)  // null | { row_index, date, quantity, note, item_name }
     const [indivEditForm, setIndivEditForm] = useState({ date: '', quantity: '', source: '한누리', note: '' })
 
-    // 부모에서 month가 바뀌면 dispatchMonth도 동기화
-    useEffect(() => {
-        if (month && !dispatchMonth) setDispatchMonth(month)
-    }, [month])
 
-    const itemsQueryKey = ['consumables-items', 'monthly', dispatchMonth]
+    const itemsQueryKey = ['consumables-items', 'cumulative']
     const { data: items, isLoading } = useQuery({
         queryKey: itemsQueryKey,
         queryFn: async () => {
-            const params = new URLSearchParams({ dispatch_mode: 'monthly' })
-            if (dispatchMonth) params.append('month', dispatchMonth)
+            const params = new URLSearchParams({ dispatch_mode: 'cumulative' })
             const { data } = await axios.get(`/api/consumables/items?${params}`)
             return data
         }
@@ -1557,21 +1447,7 @@ const ItemsTab = ({ month, months }) => {
                 </div>
             </div>
 
-            {/* 출고 월 선택 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem', padding: '10px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 'bold', fontSize: '0.88em', color: '#475569' }}>📅 출고 기준 월:</span>
-                <select
-                    value={dispatchMonth}
-                    onChange={e => setDispatchMonth(e.target.value)}
-                    style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #4f46e5', fontSize: '0.88em', color: '#4f46e5', fontWeight: 'bold' }}
-                >
-                    <option value="">-- 월 선택 --</option>
-                    {(months || []).map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-                <span style={{ fontSize: '0.8em', color: '#94a3b8' }}>
-                    {dispatchMonth ? `${dispatchMonth} 출고량 기준` : '월을 선택하면 해당 월 출고량으로 실재고를 계산합니다'}
-                </span>
-            </div>
+            <p className="alert alert-info">현재 재고 · 전체 입출고 누적 기준. 월별 마감 재고는 위 조회 메뉴에서 확인하세요.</p>
 
 
             {/* 일반 소모품 / 토너 재고 관리 서브 탭 */}
@@ -1707,7 +1583,7 @@ const ItemsTab = ({ month, months }) => {
                         <th>대분류 (Category)</th>
                         <th>{'소모품명 (Item Name)'}</th>
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
-                        <th style={{ textAlign: 'center', background: '#fdf4ff', color: '#86198f' }}>출고<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMonth || '선택월'}</small></th>
+                        <th style={{ textAlign: 'center', background: '#fdf4ff', color: '#86198f' }}>출고<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{'전체 누적'}</small></th>
                         <th style={{ textAlign: 'center', background: '#f0fdf4', color: '#15803d' }}>추가 (조정)<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
                         <th style={{ textAlign: 'center', background: '#fff1f2', color: '#9f1239' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>구매+추가-출고</small></th>
                         <th style={{ textAlign: 'center' }}>관리</th>
@@ -1982,25 +1858,20 @@ const ItemHistoryModal = ({ itemName, onClose }) => {
     )
 }
 
-const TrackedItemsTab = ({ month, months }) => {
+const TrackedItemsTab = () => {
     const queryClient = useQueryClient()
     const [selectedHistoryItem, setSelectedHistoryItem] = useState(null)
-    const dispatchMode = 'monthly' // 항상 월별 모드
-    const [dispatchMonth, setDispatchMonth] = useState(month || '')
+    const dispatchMonth = ''
 
     // 개별 추가 내역 보기 모달 상태
     const [indivModal, setIndivModal] = useState(null)  // null | { item_name, item }
 
-    useEffect(() => {
-        if (month && !dispatchMonth) setDispatchMonth(month)
-    }, [month])
 
-    const trackedQueryKey = ['consumables-items', 'monthly', dispatchMonth, 'tracked']
+    const trackedQueryKey = ['consumables-items', 'cumulative']
     const { data: items, isLoading } = useQuery({
         queryKey: trackedQueryKey,
         queryFn: async () => {
-            const params = new URLSearchParams({ dispatch_mode: 'monthly' })
-            if (dispatchMonth) params.append('month', dispatchMonth)
+            const params = new URLSearchParams({ dispatch_mode: 'cumulative' })
             const { data } = await axios.get(`/api/consumables/items?${params}`)
             return data
         }
@@ -2070,23 +1941,12 @@ const TrackedItemsTab = ({ month, months }) => {
     if (isLoading) return <LoadingModal isOpen={isLoading} message="재고 추적 데이터를 불러오는 중입니다..." />
 
     const trackedItems = items?.filter(item => item.is_tracked) || []
-    const dispatchLabel = `${dispatchMonth || '월 선택 필요'} 출고량`
 
     return (
         <div className="card">
             <h3 style={{ marginBottom: '0.75rem' }}>📍 재고 추적 관리 현황</h3>
 
-            {/* 출고 월 선택 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem', padding: '10px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 'bold', fontSize: '0.88em', color: '#475569' }}>📅 출고 기준 월:</span>
-                <select value={dispatchMonth} onChange={e => setDispatchMonth(e.target.value)} style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #4f46e5', fontSize: '0.88em', color: '#4f46e5', fontWeight: 'bold' }}>
-                    <option value="">-- 월 선택 --</option>
-                    {(months || []).map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-                <span style={{ fontSize: '0.8em', color: '#94a3b8' }}>
-                    {dispatchMonth ? `${dispatchMonth} 출고량 기준` : '월을 선택하면 해당 월 출고량으로 실재고를 계산합니다'}
-                </span>
-            </div>
+            <p className="alert alert-info">현재 재고 · 전체 입출고 누적 기준. 월별 마감 재고는 위 조회 메뉴에서 확인하세요.</p>
 
             <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
                 💡 <strong>실재고 수량</strong>은 각 품목의 실시간 재고(구매+추가-출고 또는 토너DB)를 표시합니다.<br/>
@@ -2098,7 +1958,7 @@ const TrackedItemsTab = ({ month, months }) => {
                     <tr>
                         <th>품목명</th>
                         <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
-                        <th style={{ textAlign: 'center', color: '#f59e0b' }}>출고량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMonth || '선택월'}</small></th>
+                        <th style={{ textAlign: 'center', color: '#f59e0b' }}>출고량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{'전체 누적'}</small></th>
                         <th style={{ textAlign: 'center', color: '#2563eb' }}>추가 (조정)<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
                         <th style={{ textAlign: 'center', color: '#3b82f6', fontSize: '1.1em' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>실재고</small></th>
                         <th style={{ textAlign: 'center' }}>상태</th>
@@ -2237,11 +2097,11 @@ const CreateMonthTab = () => {
 
     return (
         <div className="card" style={{ maxWidth: '600px', margin: '0 auto' }}>
-            <h3 style={{ marginBottom: '1rem' }}>📝 신규 월 출고 내역 시작하기 (재고 이월)</h3>
+            <h3 style={{ marginBottom: '1rem' }}>📝 신규 월 출고 내역 시작하기</h3>
             <div className="alert alert-info" style={{ marginBottom: '1.5rem', lineHeight: '1.5' }}>
                 💡 이번 달 혹은 새로운 분기의 출고 내역을 적기 시작할 때 사용합니다.<br/>
-                지정하신 '월' 이름으로 구글 시트 탭이 생성되며, <strong>현재까지의 실재고가 새로운 기본 재고(구매)로 이월</strong>됩니다.<br/>
-                이월과 동시에 기존의 <strong>'추가(조정)' 수량은 0으로 초기화</strong>되며, 이후 과거 출고 내역을 수정하더라도 이월된 재고에는 영향을 주지 않습니다. (과거 마감)
+                지정하신 '월' 이름으로 출고 내역 탭을 생성합니다.<br/>
+                현재 재고와 누적 조정 수량은 유지됩니다. 월 마감 시 재고 추적 품목의 재고를 별도로 저장합니다.
             </div>
             
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>

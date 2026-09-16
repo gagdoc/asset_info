@@ -67,26 +67,17 @@ def _get_cached(key, func, *args):
             return _STALE_CACHE[key]
         raise
 
-    # 유효한 결과만 stale 캐시에 저장
-    if not _is_empty_result(val):
-        _STALE_CACHE[key] = val
-
-    # 빈 결과가 왔지만 stale 데이터가 있으면 stale 반환 (rate limit 대응)
-    if _is_empty_result(val) and key in _STALE_CACHE:
-        logger.warning(f"[캐시] 빈 결과 수신 — stale 데이터 반환: {key}")
-        return _STALE_CACHE[key]
-
+    # Empty is a valid result (e.g. the last row was deleted).
+    _STALE_CACHE[key] = val
     _CACHE[key] = (val, now + _CACHE_TTL)
     return val
 
 def invalidate_cache(key_prefix: str = None):
-    """캐시 무효화. key_prefix 지정 시 해당 키만, 없으면 전체 삭제."""
-    if key_prefix is None:
-        _CACHE.clear()
-    else:
-        for k in list(_CACHE.keys()):
-            if k.startswith(key_prefix):
-                del _CACHE[k]
+    for cache in (_CACHE, _STALE_CACHE):
+        for key in list(cache):
+            if key_prefix is None or key.startswith(key_prefix):
+                del cache[key]
+
 
 def _retry_sheets_op(func, max_retries=3, initial_delay=1.0):
     """Google Sheets API 호출을 재시도합니다 (지수 백오프).
@@ -107,8 +98,7 @@ def _get_worksheet_safe(ss, sheet_name: str):
     """워크시트를 안전하게 가져옵니다. 없으면 None 반환."""
     try:
         return ss.worksheet(sheet_name)
-    except Exception as e:
-        logger.error(f"워크시트 '{sheet_name}' 없음 또는 접근 오류: {e}")
+    except gspread.WorksheetNotFound:
         return None
 
 _cached_client = None
@@ -174,10 +164,6 @@ def get_available_months():
 
 def create_month_sheet(month_name: str, start_date: str) -> bool:
     try:
-        # 1. 롤오버(이월)를 위해 새 시트 개설 전의 전체 실재고 스냅샷 확보
-        # 이 시점에서 get_items_list는 최신 출고월 데이터까지 모두 반영된 실재고를 계산해 줍니다.
-        items_snapshot = _get_items_list_impl(dispatch_mode="cumulative")
-
         _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
         if not ss: return False
         
@@ -186,26 +172,7 @@ def create_month_sheet(month_name: str, start_date: str) -> bool:
         if month_name in existing:
             return False
             
-        # 2. 마스터 시트(품목리스트) 이월 업데이트
-        # 구매수량(E) = 기존 현재고, 추가수량(F) = 0 으로 일괄 갱신
-        _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
-        if ss_master:
-            ws_master = _get_worksheet_safe(ss_master, "품목리스트")
-            if ws_master:
-                update_data = []
-                for item in items_snapshot:
-                    row_idx = item.get("row_index")
-                    if row_idx:
-                        new_base = item.get("current_stock", 0)
-                        # E열(5번째), F열(6번째)
-                        update_data.append({
-                            'range': f'E{row_idx}:F{row_idx}',
-                            'values': [[new_base, 0]]
-                        })
-                if update_data:
-                    _retry_sheets_op(lambda: ws_master.batch_update(update_data))
-                    logger.info(f"[{month_name} 개설] {len(update_data)}개 품목의 재고가 이월되었으며 추가 수량이 초기화되었습니다.")
-
+        # Creating a month is an organisational action; never reset stock.
         # 3. 새 시트 추가
         ws = ss.add_worksheet(title=month_name, rows=1000, cols=20)
         
@@ -256,25 +223,45 @@ def _get_available_months_impl():
     months.sort(key=sort_key, reverse=True)
     return months
 
+INVENTORY_BASIS_SHEET = "재고계산기준"
+
+
+def get_inventory_basis_month():
+    """An explicitly migrated, fixed month; never infer it from newest tabs."""
+    _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss:
+        raise RuntimeError("마스터 시트 연결 실패")
+    ws = _get_worksheet_safe(ss, INVENTORY_BASIS_SHEET)
+    if not ws:
+        # One-time migration marker. It records a calculation anchor only;
+        # it never rewrites E/F or any live stock value.
+        available = _get_available_months_impl()
+        if not available:
+            raise ValueError("재고 기준월을 정할 출고 월이 없습니다.")
+        ws = ss.add_worksheet(title=INVENTORY_BASIS_SHEET, rows=2, cols=2)
+        ws.update("A1:B2", [["기준월", "설명"], [available[-1], "기존 마스터 수량 보존 기준"]], value_input_option="RAW")
+    rows = ws.get_all_values()
+    month = rows[1][0].strip() if len(rows) > 1 and rows[1] else ""
+    if not _parse_ym_from_month_title(month):
+        raise ValueError("재고 기준월 설정이 필요합니다. 기존 수량 보존 검증 후 전환하세요.")
+    return month
+
+
 def get_items_list(month=None, dispatch_mode="cumulative"):
-    """
-    품목 리스트를 반환합니다.
-    dispatch_mode:
-      'cumulative' - 전체 기간 누적 출고량 (기본값)
-      'monthly'    - 특정 월(month)의 출고량만 집계
-    """
-    cache_key = f"items_{dispatch_mode}_{month or 'all'}"
-    return _get_cached(cache_key, lambda: _get_items_list_impl(month=month, dispatch_mode=dispatch_mode))
+    # A selected historical month always means a frozen closing snapshot.
+    if month and dispatch_mode == "monthly":
+        from backend.services.inventory_snapshots import get_report
+        return get_report(month).get("tracked_items", [])
+    return _get_cached("items_current", _get_items_list_impl)
 
 def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
     # 품목 정보는 Master 시트에서 가져옴
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
-    if not ss_master: return []
+    if not ss_master: raise RuntimeError("마스터 시트 연결 실패")
     try:
         ws = _get_worksheet_safe(ss_master, "품목리스트")
         if not ws:
-            logger.error("'품목리스트' 시트를 찾을 수 없습니다.")
-            return []
+            raise RuntimeError("품목리스트 시트를 찾을 수 없습니다.")
         # A부터 F열까지 (분류, 품목, 가격, 관리여부, 구매수량, 추가수량)
         records = _retry_sheets_op(lambda: ws.get_values("A2:F"))
         items = []
@@ -312,8 +299,8 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
                 "row_index": i + 2,
                 "dispatched_qty": 0,
                 "rented_qty": 0,
-                "dispatch_mode": dispatch_mode,
-                "dispatch_month": month,
+                "dispatch_mode": "cumulative",
+                "dispatch_month": None,
             })
 
         # 1.5단계: 대여 장부(Rental)에서 '대여중', '연체'인 품목 수량 합산
@@ -321,7 +308,7 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
         try:
             from backend.services.database import load_from_db
             dfs = load_from_db()
-            if "Rental" in dfs:
+            if "Rental" in dfs and not dfs["Rental"].empty:
                 df_rental = dfs["Rental"]
                 import pandas as pd
                 # '대여중' 또는 '연체'인 항목만 필터링
@@ -335,24 +322,24 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
                         except (ValueError, TypeError):
                             pass
         except Exception as _e:
-            logger.warning(f"대여 데이터 합산 중 오류: {_e}")
+            raise RuntimeError("대여 데이터 합산 실패") from _e
+
+        for item in items:
+            item["rented_qty"] = rented_agg.get(item["item_name"], 0)
+            item["current_stock"] = item["total_stock"] - item["rented_qty"]
 
         # 2단계: 모든 품목에 대해 출고 데이터 합산 (is_tracked 무관)
         if all_item_names:
             _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
-            if not ss_outbound: return items
+            if not ss_outbound: raise RuntimeError("출고 데이터 조회 실패")
 
             all_ws = ss_outbound.worksheets()
             all_month_titles = [w.title for w in all_ws if "월" in w.title and w.title != "품목리스트"]
 
-            if dispatch_mode == "monthly" and month:
-                target_months = [m for m in all_month_titles if m == month]
-            else:
-                # 롤오버(Rollover) 방식 적용: 
-                # 마스터 시트의 구매수량에는 이미 과거 출고가 반영된 이월 재고가 들어가 있으므로,
-                # 중복 차감을 방지하기 위해 '가장 최신(최근 개설된) 1개의 월' 시트만 대상(target)으로 삼습니다.
-                available = get_available_months()
-                target_months = [available[0]] if available else []
+            basis = _parse_ym_from_month_title(get_inventory_basis_month())
+            target_months = [m for m in all_month_titles
+                             if _parse_ym_from_month_title(m)
+                             and _parse_ym_from_month_title(m) >= basis]
 
             if target_months:
                 ranges = [f"{m}!A2:E" for m in target_months]
@@ -406,12 +393,11 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
                         # 토너의 static sheet 수량에서 현재 대여중인 수량 차감
                         item["current_stock"] = toner_stock_map[key] - r_qty
         except Exception as _e:
-            logger.warning(f"토너 실재고 적용 오류 (계산값 유지): {_e}")
+            raise RuntimeError("토너 현재고 조회 실패") from _e
 
         return items
     except Exception as e:
-        print(f"Error reading items list: {e}")
-        return []
+        raise RuntimeError("현재 재고 조회 실패") from e
 
 
 # ──────────────────────────────────────────────────────────────
@@ -500,12 +486,11 @@ def get_outbound_history(month: str):
 
 def _get_outbound_history_impl(month: str):
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
-    if not ss: return []
+    if not ss: raise RuntimeError("출고 시트 연결 실패")
     try:
         ws = _get_worksheet_safe(ss, month)
         if not ws:
-            logger.warning(f"출고 내역 시트 없음: {month}")
-            return []
+            raise ValueError(f"출고 내역 시트 없음: {month}")
         # A부터 G열까지 (날짜, 품목, 수량, 이름, 출고유형, 지급담당, 수령방법)
         records = _retry_sheets_op(lambda: ws.get_values("A2:G"))
         history = []
@@ -527,8 +512,7 @@ def _get_outbound_history_impl(month: str):
             })
         return history
     except Exception as e:
-        print(f"Error reading outbound history: {e}")
-        return []
+        raise RuntimeError("출고 내역 조회 실패") from e
 
 def get_estimate(month: str):
     """
@@ -974,7 +958,7 @@ def get_toner_inventory():
 def _get_toner_inventory_impl():
     ws = _get_toner_worksheet()
     if not ws:
-        return {"headers": [], "items": [], "name_col": None, "stock_col": None, "model_col": None}
+        raise RuntimeError("토너 재고 시트 연결 실패")
     try:
         all_values = ws.get_all_values()
         if not all_values:
@@ -1049,8 +1033,7 @@ def _get_toner_inventory_impl():
             "model_col": model_col,
         }
     except Exception as e:
-        logger.error(f"토너 재고 데이터 로드 오류: {e}")
-        return {"headers": [], "items": [], "name_col": None, "stock_col": None, "model_col": None}
+        raise RuntimeError("토너 재고 조회 실패") from e
 
 
 def update_toner_item(row_index: int, data: dict) -> bool:
@@ -1296,7 +1279,7 @@ def _get_individual_inbound_impl(month: str = None):
     from datetime import datetime as _dt
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss_master:
-        return []
+        raise RuntimeError("개별 입고 시트 연결 실패")
     try:
         ws = _get_worksheet_safe(ss_master, INDIVIDUAL_INBOUND_SHEET)
         if not ws:
@@ -1335,8 +1318,7 @@ def _get_individual_inbound_impl(month: str = None):
             })
         return history
     except Exception as e:
-        logger.error(f"개별입고내역 조회 오류: {e}")
-        return []
+        raise RuntimeError("개별 입고 내역 조회 실패") from e
 
 
 def adjust_general_item_order_qty(item_name: str, qty_diff: int) -> bool:
@@ -1920,10 +1902,10 @@ def get_month_close_status(month: str) -> dict:
 def _get_month_close_status_impl(month: str) -> dict:
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss_master:
-        return {"month": month, "status": "open", "confirmed_at": None, "closed_at": None}
+        raise RuntimeError("마감 상태 시트 연결 실패")
     try:
-        _, close_ws = _ensure_snapshot_sheets(ss_master)
-        rows = _retry_sheets_op(lambda: close_ws.get_all_values())
+        close_ws = _get_worksheet_safe(ss_master, CLOSE_STATUS_SHEET)
+        rows = _retry_sheets_op(lambda: close_ws.get_all_values()) if close_ws else []
         # 첫 번째 행이 헤더인지 판별 (헤더 없이 데이터만 있는 운영 시트 대응)
         is_header = bool(rows and rows[0] and rows[0][0].strip().lower() in ("월", "month"))
         data_rows = rows[1:] if is_header else rows
@@ -1936,295 +1918,80 @@ def _get_month_close_status_impl(month: str) -> dict:
                     "closed_at": row[3].strip() if len(row) > 3 else None,
                 }
     except Exception as e:
-        logger.error(f"월 상태 조회 오류: {e}")
+        raise RuntimeError("월 상태 조회 실패") from e
     return {"month": month, "status": "open", "confirmed_at": None, "closed_at": None}
 
 
 def confirm_month_snapshot(month: str) -> dict:
-    """
-    '이달 재고 확정': 일반 소모품(is_tracked) + 토너 재고를 해당 월 시작 재고로 저장.
-    이전 달이 마감된 경우 → 분류별 잔여재고를 자동 이월.
-    스냅샷 컬럼: 월 | 분류(일반/토너) | 품목명 | 시작재고 | 스냅샷일시 | 이월여부
-    """
+    # Legacy clients should use the same closing operation, not a second baseline.
+    return close_month(month)
+
+
+def _validate_closing_period(month):
+    ym = _parse_ym_from_month_title(month)
+    if not ym or not 1 <= ym[1] <= 12:
+        raise ValueError("올바른 마감 월을 선택하세요.")
     from datetime import datetime
-    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
-    if not ss_master:
-        return {"success": False, "error": "마스터 시트 접근 실패"}
-
-    snap_ws, close_ws = _ensure_snapshot_sheets(ss_master)
-
-    # 이미 확정/마감된 월이면 거부
-    status = get_month_close_status(month)
-    if status["status"] in ("confirmed", "closed"):
-        return {"success": False, "error": f"이미 {status['status']} 상태입니다."}
-
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # ── 이전 달 잔여재고 확인 (분류별) ──
-    prev_remaining = _get_previous_month_remaining_by_type(month)
-    prev_general = prev_remaining.get("일반", {})
-    prev_toner   = prev_remaining.get("토너", {})
-    has_prev = bool(prev_general or prev_toner)
-
-    # ── 일반 소모품 스냅샷 ──
-    if prev_general:
-        general_data = prev_general
-        general_carryover = True
-    else:
-        # 품목리스트의 is_tracked 일반 품목에서 현재 재고 읽기
-        all_items = _get_items_list_impl()
-        general_data = {}
-        for it in all_items:
-            name = it.get("item_name", "").strip()
-            cat  = it.get("category", "").lower()
-            if it.get("is_tracked") and name and "tonner" not in cat and "toner" not in cat and "토너" not in cat:
-                general_data[name] = it.get("current_stock", 0) or 0
-        general_carryover = False
-
-    # ── 토너 스냅샷 ──
-    if prev_toner:
-        toner_data = prev_toner
-        toner_carryover = True
-    else:
-        toner_inv = _get_toner_inventory_impl()
-        toner_data = {}
-        for item in toner_inv.get("items", []):
-            name  = item.get("item_name", "").strip()
-            stock = item.get("current_stock", 0) or 0
-            if name:
-                toner_data[name] = stock
-        toner_carryover = False
-
-    # 기존 스냅샷 행 삭제 (재확정 시 덮어쓰기)
-    try:
-        all_snap = snap_ws.get_all_values()
-        # 첫 번째 행이 헤더인지 판별 — 헤더면 i=0 건너뜀, 데이터면 i=0부터 삭제
-        is_header = bool(all_snap and all_snap[0] and all_snap[0][0].strip().lower() in ("월", "month"))
-        start_idx = 1 if is_header else 0
-        rows_to_delete = [i + 1 for i, r in enumerate(all_snap) if i >= start_idx and len(r) > 0 and r[0].strip() == month]
-        for row_idx in sorted(rows_to_delete, reverse=True):
-            snap_ws.delete_rows(row_idx)
-    except Exception as e:
-        logger.warning(f"기존 스냅샷 삭제 오류 (무시): {e}")
-
-    # 스냅샷 기록 — 분류 컬럼 포함
-    new_rows = []
-    for name, qty in general_data.items():
-        new_rows.append([month, "일반", name, qty, now_str, "이월" if general_carryover else "현재재고"])
-    for name, qty in toner_data.items():
-        new_rows.append([month, "토너", name, qty, now_str, "이월" if toner_carryover else "현재재고"])
-
-    if new_rows:
-        snap_ws.append_rows(new_rows, value_input_option="USER_ENTERED")
-
-    _upsert_close_status(close_ws, month, "confirmed", now_str, "")
-    invalidate_cache(f"month_status_{month}")
-    invalidate_cache(f"monthly_report_{month}")
-
-    total = len(general_data) + len(toner_data)
-    logger.info(f"재고 확정: {month} — 일반 {len(general_data)}개, 토너 {len(toner_data)}개 (이월: {has_prev})")
-    return {
-        "success": True, "month": month,
-        "general_count": len(general_data), "toner_count": len(toner_data),
-        "item_count": total, "is_carryover": has_prev,
-    }
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    if ym != (now.year, now.month):
+        raise ValueError("현재 월만 마감할 수 있습니다. 과거 월은 당시 저장된 스냅샷으로만 조회할 수 있습니다.")
+    if ym < _parse_ym_from_month_title(get_inventory_basis_month()):
+        raise ValueError("전환 기준월 이전의 마감 재고는 재구성할 수 없습니다.")
+    # Taking today's stock and labelling it a previous month's stock is unsafe.
+    for other in _get_available_months_impl():
+        if _parse_ym_from_month_title(other) and _parse_ym_from_month_title(other) > ym:
+            rows = _get_outbound_history_impl(other)
+            if any(int(str(r.get("quantity", 0)).replace(",", "") or 0) != 0 for r in rows):
+                raise ValueError("이후 월의 출고가 있어 과거 월 재고를 현재 수량으로 마감할 수 없습니다.")
+    for record in _get_individual_inbound_impl():
+        date = _parse_ym(record.get("date", ""))
+        if date and date > f"{ym[0]:04d}-{ym[1]:02d}" and int(record.get("quantity", 0)):
+            raise ValueError("이후 월의 입고가 있어 과거 월 재고를 현재 수량으로 마감할 수 없습니다.")
 
 
 def close_month(month: str) -> dict:
-    """월 마감: 신규 출고 추가 차단. 수정은 허용."""
-    from datetime import datetime
-    status = get_month_close_status(month)
-    if status["status"] == "closed":
-        return {"success": False, "error": "이미 마감된 월입니다."}
-    if status["status"] == "open":
-        return {"success": False, "error": "재고 확정(이달 재고 확정) 후 마감할 수 있습니다."}
-
-    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
-    if not ss_master:
-        return {"success": False, "error": "마스터 시트 접근 실패"}
-
-    _, close_ws = _ensure_snapshot_sheets(ss_master)
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    _upsert_close_status(close_ws, month, "closed", status.get("confirmed_at", ""), now_str)
-    invalidate_cache(f"month_status_{month}")
-
-    return {"success": True, "month": month, "closed_at": now_str}
+    from backend.services.inventory_snapshots import capture_snapshot
+    try:
+        status = _get_month_close_status_impl(month)
+        if status["status"] == "closed":
+            return {"success": False, "error": "이미 마감된 월입니다."}
+        _validate_closing_period(month)
+        # Snapshot writes never touch live stock. Mark closed only after success.
+        snapshot = capture_snapshot(month, recapture=True)
+        _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+        _, close_ws = _ensure_snapshot_sheets(ss)
+        _upsert_close_status(close_ws, month, "closed", "", snapshot["closed_at"])
+        invalidate_cache()
+        return {"success": True, "month": month, "closed_at": snapshot["closed_at"]}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
 
 
 def reopen_month(month: str) -> dict:
-    """마감 해제: closed → confirmed (수정 가능 상태로 복귀)"""
-    status = get_month_close_status(month)
+    status = _get_month_close_status_impl(month)
     if status["status"] != "closed":
         return {"success": False, "error": "마감된 월만 해제할 수 있습니다."}
-
-    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
-    if not ss_master:
-        return {"success": False, "error": "마스터 시트 접근 실패"}
-
-    _, close_ws = _ensure_snapshot_sheets(ss_master)
-    _upsert_close_status(close_ws, month, "confirmed", status.get("confirmed_at", ""), "")
-    invalidate_cache(f"month_status_{month}")
-
+    _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    _, close_ws = _ensure_snapshot_sheets(ss)
+    _upsert_close_status(close_ws, month, "confirmed", "", "")
+    invalidate_cache()
     return {"success": True, "month": month}
 
 
 def get_monthly_toner_report(month: str) -> dict:
-    """월별 재고 보고서 (일반 소모품 + 토너 구분): 시작재고 / 출고수량 / 잔여재고"""
-    return _get_cached(f"monthly_report_{month}", _get_monthly_toner_report_impl, month)
+    from backend.services.inventory_snapshots import get_report
+    result = get_report(month)
+    result["status"] = _get_month_close_status_impl(month)["status"]
+    return result
 
 
 def _get_monthly_toner_report_impl(month: str) -> dict:
-    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
-    if not ss_master:
-        return {"month": month, "general_items": [], "toner_items": [], "status": "open", "has_snapshot": False}
-
-    snap_ws, _ = _ensure_snapshot_sheets(ss_master)
-
-    # 1. 스냅샷 로드 — 분류별로 분리
-    # 컬럼 형식(신형): 월 | 분류(일반/토너) | 품목명 | 시작재고 | 스냅샷일시 | 이월여부
-    # 구형(분류 컬럼 없음): 월 | 품목명 | 시작재고 | ...
-    # 헤더 행이 없을 수도 있음 (운영 시트에 헤더 없이 데이터만 저장된 경우)
-    general_start = {}  # {품목명: 시작재고}
-    toner_start   = {}
-    try:
-        all_snap = snap_ws.get_all_values()
-
-        if all_snap:
-            first_row = all_snap[0]
-            first_col0 = first_row[0].strip() if first_row else ""
-            # 첫 번째 행이 헤더인지 판별: "월" 또는 "month" → 헤더, 그 외 → 데이터
-            is_header_row = first_col0.lower() in ("월", "month")
-            if is_header_row:
-                has_type_col = len(first_row) >= 2 and first_row[1].strip() in ("분류", "type")
-                data_rows = all_snap[1:]
-            else:
-                # 헤더 없음 — col[1]이 "일반"/"토너"이면 신형 형식으로 간주
-                sample = [r for r in all_snap if len(r) >= 2 and r[0].strip()]
-                has_type_col = bool(sample and sample[0][1].strip() in ("일반", "토너"))
-                data_rows = all_snap
-        else:
-            has_type_col = True
-            data_rows = []
-
-        for row in data_rows:
-            if not row or row[0].strip() != month:
-                continue
-            if has_type_col:
-                # 신형: 월, 분류, 품목명, 시작재고
-                if len(row) < 4:
-                    continue
-                cls  = row[1].strip()
-                name = row[2].strip()
-                try:
-                    qty = int(str(row[3]).replace(",", "").strip() or "0")
-                except ValueError:
-                    qty = 0
-            else:
-                # 구형(분류 컬럼 없음) → 토너로 간주
-                if len(row) < 3:
-                    continue
-                cls  = "토너"
-                name = row[1].strip()
-                try:
-                    qty = int(str(row[2]).replace(",", "").strip() or "0")
-                except ValueError:
-                    qty = 0
-
-            if not name:
-                continue
-            if cls == "일반":
-                general_start[name] = qty
-            else:
-                toner_start[name] = qty
-    except Exception as e:
-        logger.error(f"스냅샷 조회 오류: {e}")
-
-    # 2. 해당 월 출고 내역 로드
-    _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
-    outbound_qty = {}  # {품목명: 총출고량}
-    if ss_outbound:
-        try:
-            ws_out = _get_worksheet_safe(ss_outbound, month)
-            if ws_out:
-                rows = ws_out.get_values("A2:E")
-                for row in rows:
-                    if len(row) > 2:
-                        name = str(row[1]).strip()
-                        if name and not (name.startswith("==") and name.endswith("==")):
-                            try:
-                                qty = int(str(row[2]).replace(",", "").strip() or "0")
-                                outbound_qty[name] = outbound_qty.get(name, 0) + qty
-                            except ValueError:
-                                pass
-        except Exception as e:
-            logger.error(f"출고 내역 조회 오류: {e}")
-
-    def _build_items(start_dict):
-        all_names = set(list(start_dict.keys()) + [k for k in outbound_qty if k in start_dict])
-        result = []
-        for name in sorted(all_names):
-            s = start_dict.get(name, 0)
-            o = outbound_qty.get(name, 0)
-            result.append({"item_name": name, "start_stock": s, "outbound_qty": o, "remaining": s - o})
-        return result
-
-    status_info = get_month_close_status(month)
-    has_snapshot = bool(general_start or toner_start)
-    return {
-        "month": month,
-        "status": status_info["status"],
-        "confirmed_at": status_info.get("confirmed_at"),
-        "closed_at": status_info.get("closed_at"),
-        "general_items": _build_items(general_start),
-        "toner_items":   _build_items(toner_start),
-        "has_snapshot": has_snapshot,
-        # 하위 호환용 (기존 코드가 items를 쓸 경우)
-        "items": _build_items({**general_start, **toner_start}),
-    }
+    return get_monthly_toner_report(month)
 
 
 def reset_month_snapshot(month: str) -> dict:
-    """
-    개발/테스트용 초기화: 해당 월 스냅샷 행 삭제 + 마감 상태를 open으로 리셋.
-    프로덕션 환경에서는 차단됩니다.
-    """
-    if IS_PRODUCTION:
-        return {"success": False, "error": "프로덕션 환경에서는 초기화를 사용할 수 없습니다."}
-
-    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
-    if not ss_master:
-        return {"success": False, "error": "마스터 시트 접근 실패"}
-
-    snap_ws, close_ws = _ensure_snapshot_sheets(ss_master)
-    deleted_rows = 0
-
-    try:
-        all_snap = snap_ws.get_all_values()
-        is_header = bool(all_snap and all_snap[0] and all_snap[0][0].strip().lower() in ("월", "month"))
-        start_idx = 1 if is_header else 0
-        rows_to_delete = [i + 1 for i, r in enumerate(all_snap) if i >= start_idx and len(r) > 0 and r[0].strip() == month]
-        for row_idx in sorted(rows_to_delete, reverse=True):
-            snap_ws.delete_rows(row_idx)
-            deleted_rows += 1
-    except Exception as e:
-        logger.warning(f"스냅샷 행 삭제 오류: {e}")
-
-    try:
-        all_close = close_ws.get_all_values()
-        is_hdr = bool(all_close and all_close[0] and all_close[0][0].strip().lower() in ("월", "month"))
-        close_enum_start = 2 if is_hdr else 1
-        close_data = all_close[1:] if is_hdr else all_close
-        for i, row in enumerate(close_data, start=close_enum_start):
-            if len(row) > 0 and row[0].strip() == month:
-                close_ws.delete_rows(i)
-                break
-    except Exception as e:
-        logger.warning(f"마감 상태 행 삭제 오류: {e}")
-
-    invalidate_cache(f"month_status_{month}")
-    invalidate_cache(f"monthly_report_{month}")
-    logger.info(f"[DEV] 월 초기화 완료: {month} (스냅샷 {deleted_rows}행 삭제, 상태 → open)")
-    return {"success": True, "month": month, "deleted_rows": deleted_rows}
+    return {"success": False, "error": "마감 스냅샷은 보존됩니다. 초기화 대신 마감 해제를 사용하세요."}
 
 
 def _get_previous_month_remaining_by_type(month: str) -> dict:
@@ -2288,4 +2055,4 @@ def _upsert_close_status(close_ws, month: str, status: str, confirmed_at: str, c
         # 없으면 추가
         close_ws.append_row([month, status, confirmed_at, closed_at], value_input_option="USER_ENTERED")
     except Exception as e:
-        logger.error(f"마감 상태 기록 오류: {e}")
+        raise RuntimeError("마감 상태 기록 실패") from e
