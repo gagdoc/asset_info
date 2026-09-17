@@ -51,11 +51,24 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(self.items.mock_calls, [])
         self.client.assert_called_once_with(svc.CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
 
-    def test_monthly_items_only_reads_snapshot(self):
-        frozen = [{'item_name':'removed','current_stock':4}]
-        with patch.object(inventory_snapshots,'get_report',return_value={'tracked_items':frozen}) as get_report, patch.object(svc,'_get_items_list_impl',side_effect=AssertionError('live read')):
-            self.assertEqual(svc.get_items_list('2026년 9월','monthly'), frozen)
-            get_report.assert_called_once_with('2026년 9월')
+    def test_legacy_monthly_items_keep_live_stock_without_snapshot(self):
+        self.items.get_values.return_value = [
+            ['Mouse', 'mouse', '25000', 'O', '24', '0'],
+            ['Cable', 'untracked', '1000', '', '7', '0'],
+        ]
+        self.outbound.values_batch_get.side_effect = lambda ranges: {'valueRanges': [
+            {'values': [['2026-09-01', 'mouse', '10', 'user', '일반']]} if '9월!' in r else {'values': []}
+            for r in ranges]}
+        with patch.object(inventory_snapshots, 'get_report', side_effect=AssertionError('snapshot read')), patch.object(svc, '_get_cached', side_effect=lambda key, loader: loader()) as cache:
+            for month in ('2026년 9월', '2026년 10월', None):
+                items = svc.get_items_list(month, 'monthly')
+                self.assertEqual({item['item_name']: item['current_stock'] for item in items}, {'mouse': 14, 'untracked': 7})
+                cache.assert_called_with('items_current', svc._get_items_list_impl)
+
+    def test_monthly_report_still_reads_frozen_inventory(self):
+        frozen = {'tracked_items': [{'item_name': 'mouse', 'current_stock': 4}]}
+        with patch.object(inventory_snapshots, 'get_report', return_value=frozen), patch.object(svc, '_get_month_close_status_impl', return_value={'status': 'closed'}), patch.object(svc, '_get_items_list_impl', side_effect=AssertionError('live read')):
+            self.assertEqual(svc.get_monthly_toner_report('2026년 9월')['tracked_items'], frozen['tracked_items'])
 
     def test_close_only_writes_snapshot_and_status(self):
         with patch.object(svc,'_get_month_close_status_impl',return_value={'status':'open'}), patch.object(svc,'_validate_closing_period'), patch.object(inventory_snapshots,'capture_snapshot',return_value={'closed_at':'timestamp'}) as capture, patch.object(svc,'_ensure_snapshot_sheets',return_value=(Mock(), 'status-sheet')), patch.object(svc,'_upsert_close_status') as status:

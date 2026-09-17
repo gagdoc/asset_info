@@ -18,6 +18,7 @@ const Sidebar = ({ isOpen, onClose }) => {
 
     const systemItems = [
         { name: '소모품 관리', path: '/consumables', icon: <FaBoxOpen /> },
+        { name: '월별 마감 재고', path: '/consumables/closing-inventory', icon: <FaBoxOpen /> },
         { name: '대여 관리 (Rentals)', path: '/rentals', icon: <FaExchangeAlt /> },
         { name: 'BU/ROLE 설정', path: '/config', icon: <FaCog /> },
         { name: '엑셀 업로드', path: '/upload', icon: <FaUpload /> },
@@ -57,7 +58,7 @@ const Sidebar = ({ isOpen, onClose }) => {
 
             <div className="sidebar-section">시스템</div>
             {systemItems.map(item => (
-                <NavLink key={item.path} to={item.path} onClick={onClose} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                <NavLink key={item.path} to={item.path} end onClick={onClose} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                     {item.icon} <span>{item.name}</span>
                 </NavLink>
             ))}

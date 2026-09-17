@@ -46,7 +46,7 @@ def health_check():
 @app.middleware("http")
 async def add_no_cache_header(request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith("/api/"):
+    if request.url.path.startswith("/api/") or response.headers.get("content-type", "").startswith("text/html"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"

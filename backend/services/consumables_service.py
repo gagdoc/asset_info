@@ -242,10 +242,8 @@ def get_inventory_basis_month():
 
 
 def get_items_list(month=None, dispatch_mode="cumulative"):
-    # A selected historical month always means a frozen closing snapshot.
-    if month and dispatch_mode == "monthly":
-        from backend.services.inventory_snapshots import get_report
-        return get_report(month).get("tracked_items", [])
+    # Master/tracking always show live inventory, including legacy clients that
+    # still send monthly parameters. Historical stock has its own report API.
     return _get_cached("items_current", _get_items_list_impl)
 
 def _get_items_list_impl(month=None, dispatch_mode="cumulative"):

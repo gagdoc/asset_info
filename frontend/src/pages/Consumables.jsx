@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import ConfirmModal from '../components/ConfirmModal'
@@ -74,7 +75,7 @@ const Consumables = () => {
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    <h1 style={{ margin: 0 }}>📦 소모품 월별 관리 및 견적서</h1>
+                    <h1 style={{ margin: 0 }}>📦 소모품 관리</h1>
                     <button 
                         onClick={handleSync} 
                         disabled={isSyncing}
@@ -94,7 +95,7 @@ const Consumables = () => {
                     </button>
                 </div>
                 
-                {!['create-month', 'items', 'tracked'].includes(activeTab) && (
+                {['estimate', 'outbound', 'tonner-consignment'].includes(activeTab) && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', padding: '8px 12px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
                         <label style={{ fontWeight: 'bold' }}>📅 조회 월 선택:</label>
                         <select 
@@ -169,8 +170,8 @@ const Consumables = () => {
             {activeTab === 'estimate' && selectedMonth && <EstimateTab month={selectedMonth} />}
             {activeTab === 'outbound' && selectedMonth && <OutboundTab month={selectedMonth} isDev={isDev} />}
             {activeTab === 'create-month' && <CreateMonthTab />}
-            {activeTab === 'items' && <InventoryModeTab><ItemsTab /></InventoryModeTab>}
-            {activeTab === 'tracked' && <InventoryModeTab><TrackedItemsTab /></InventoryModeTab>}
+            {activeTab === 'items' && <ItemsTab />}
+            {activeTab === 'tracked' && <TrackedItemsTab />}
             {activeTab === 'purchase' && <PurchaseTab months={monthsData} items={undefined} />}
             {activeTab === 'tonner-consignment' && <TonnerConsignmentTab month={selectedMonth} months={monthsData} />}
             {activeTab === 'inventory' && <InventoryTab />}
@@ -1064,8 +1065,7 @@ const OutboundTab = ({ month, isDev = false }) => {
                     </div>
                 </div>
             )}
-            {/* 월별 토너 재고 보고서 */}
-            <MonthlyTonerReport month={month} />
+            <p><Link to="/consumables/closing-inventory">월별 마감 재고 페이지에서 저장된 재고 확인하기 →</Link></p>
         </div>
     )
 }
@@ -1123,26 +1123,7 @@ const MonthStatusButton = ({ month }) => {
     </button>
 }
 
-const InventoryModeTab = ({ children }) => {
-    const [month, setMonth] = useState('')
-    const { data: months = [], isError } = useQuery({
-        queryKey: ['closed-months'],
-        queryFn: async () => (await axios.get('/api/consumables/closed-months')).data,
-    })
-    return <>
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
-            <label htmlFor="inventory-view">재고 조회</label>
-            <select id="inventory-view" value={month} onChange={e => setMonth(e.target.value)}>
-                <option value="">현재 재고 (전체 누적)</option>
-                {months.map(m => <option key={m} value={m}>{m} 마감 재고</option>)}
-            </select>
-            {isError && <span role="alert">마감월 목록을 불러오지 못했습니다.</span>}
-        </div>
-        {month ? <SnapshotInventoryView month={month} /> : children}
-    </>
-}
-
-const SnapshotInventoryView = ({ month }) => {
+export const SnapshotInventoryView = ({ month }) => {
     const { data: report, isLoading, isError } = useQuery({
         queryKey: ['monthly-toner-report', month],
         queryFn: async () => (await axios.get(`/api/consumables/monthly-report?month=${encodeURIComponent(month)}`)).data,
@@ -1180,8 +1161,6 @@ const SnapshotInventoryView = ({ month }) => {
     </div>
 }
 
-const MonthlyTonerReport = ({ month }) => <SnapshotInventoryView month={month} />
-
 const isTonnerItem = (name, category) => {
     const n = (name || '').toLowerCase()
     const c = (category || '').toLowerCase()
@@ -1216,7 +1195,7 @@ const ItemsTab = () => {
 
 
     const itemsQueryKey = ['consumables-items', 'cumulative']
-    const { data: items, isLoading } = useQuery({
+    const { data: items, isLoading, isError, refetch } = useQuery({
         queryKey: itemsQueryKey,
         queryFn: async () => {
             const params = new URLSearchParams({ dispatch_mode: 'cumulative' })
@@ -1407,6 +1386,7 @@ const ItemsTab = () => {
     })
 
     if (isLoading) return <LoadingModal isOpen={isLoading} message="소모품 마스터 리스트를 불러오는 중입니다..." />
+    if (isError) return <div role="alert" className="card">품목을 불러오지 못했습니다. <button className="btn btn-secondary" onClick={() => refetch()}>다시 시도</button></div>
 
     // 일반 소모품만 (토너 제외)
     const allGeneral = items?.filter(it => !isTonnerItem(it.item_name, it.category)) || []
@@ -1447,7 +1427,7 @@ const ItemsTab = () => {
                 </div>
             </div>
 
-            <p className="alert alert-info">현재 재고 · 전체 입출고 누적 기준. 월별 마감 재고는 위 조회 메뉴에서 확인하세요.</p>
+            <p className="alert alert-info">현재 재고와 입출고를 관리합니다. 품목별 추가 입고와 입고 이력을 확인할 수 있습니다.</p>
 
 
             {/* 일반 소모품 / 토너 재고 관리 서브 탭 */}
@@ -1868,7 +1848,7 @@ const TrackedItemsTab = () => {
 
 
     const trackedQueryKey = ['consumables-items', 'cumulative']
-    const { data: items, isLoading } = useQuery({
+    const { data: items, isLoading, isError, refetch } = useQuery({
         queryKey: trackedQueryKey,
         queryFn: async () => {
             const params = new URLSearchParams({ dispatch_mode: 'cumulative' })
@@ -1939,6 +1919,7 @@ const TrackedItemsTab = () => {
     })
 
     if (isLoading) return <LoadingModal isOpen={isLoading} message="재고 추적 데이터를 불러오는 중입니다..." />
+    if (isError) return <div role="alert" className="card">재고 추적 품목을 불러오지 못했습니다. <button className="btn btn-secondary" onClick={() => refetch()}>다시 시도</button></div>
 
     const trackedItems = items?.filter(item => item.is_tracked) || []
 
@@ -1946,7 +1927,7 @@ const TrackedItemsTab = () => {
         <div className="card">
             <h3 style={{ marginBottom: '0.75rem' }}>📍 재고 추적 관리 현황</h3>
 
-            <p className="alert alert-info">현재 재고 · 전체 입출고 누적 기준. 월별 마감 재고는 위 조회 메뉴에서 확인하세요.</p>
+            <p className="alert alert-info">재고 추적 중인 품목의 현재 재고와 입출고 이력을 확인합니다.</p>
 
             <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
                 💡 <strong>실재고 수량</strong>은 각 품목의 실시간 재고(구매+추가-출고 또는 토너DB)를 표시합니다.<br/>

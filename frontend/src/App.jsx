@@ -9,6 +9,7 @@ import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
 import AssetList from './pages/AssetList'
 import Consumables from './pages/Consumables'
+import ClosingInventory from './pages/ClosingInventory'
 import NewHire from './pages/NewHire'
 import Resign from './pages/Resign'
 import DeptConfig from './pages/DeptConfig'
@@ -160,6 +161,7 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/assets/:type" element={<AssetList />} />
               <Route path="/consumables" element={<Consumables />} />
+              <Route path="/consumables/closing-inventory" element={<ClosingInventory />} />
               <Route path="/newhire" element={<NewHire />} />
               <Route path="/resign" element={<Resign />} />
               <Route path="/config" element={<DeptConfig />} />
