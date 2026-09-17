@@ -6,6 +6,8 @@ import uuid
 SHEET_NAME = "재고마감스냅샷V2"
 HEADERS = ["month", "batch_id", "kind", "closed_at", "item_name", "category", "price", "is_tracked", "closing_stock", "outbound_qty", "item_count"]
 _LOCK = threading.RLock()
+USER_SHEET = "재고사용자저장V1"
+USER_HEADERS = ["save_id", "label", "saved_at", "item_name", "category", "price", "stock", "kind", "item_count"]
 
 
 def _service():
@@ -88,6 +90,71 @@ def get_report(month):
 
 def get_closed_months():
     return sorted(_committed(_worksheet()), reverse=True)
+
+def save_named_current_inventory(label):
+    """Save the current tracked inventory under a user-provided label."""
+    if not isinstance(label, str):
+        raise ValueError("저장 이름을 입력하세요.")
+    label = label.strip()
+    if not label or len(label) > 80:
+        raise ValueError("저장 이름은 1~80자로 입력하세요.")
+    svc = _service()
+    items = svc._get_items_list_impl()
+    tracked = [x for x in items if x.get('is_tracked') is True]
+    if not tracked:
+        raise ValueError("저장할 재고 추적 품목이 없습니다.")
+    save_id = uuid.uuid4().hex
+    saved_at = datetime.now(timezone.utc).isoformat()
+    rows = []
+    for item in tracked:
+        name = str(item.get('item_name', '')).strip()
+        if not name: raise ValueError("품목명이 없는 추적 품목은 저장할 수 없습니다.")
+        stock = _integer(item.get('current_stock'))
+        rows.append([save_id, label, saved_at, name, item.get('category',''), item.get('price',''), stock, 'ITEM', ''])
+    with _LOCK:
+        ws = _named_worksheet(create=True)
+        ws.append_rows(rows, value_input_option="RAW")
+        ws.append_rows([[save_id, label, saved_at, '', '', '', '', 'COMMIT', len(rows)]], value_input_option="RAW")
+        return get_named_inventory_save(save_id)
+
+def _named_worksheet(create=False):
+    svc = _service()
+    _, ss = svc._get_consumables_client(svc.CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if ss is None: raise RuntimeError("Snapshot spreadsheet is unavailable")
+    ws = next((w for w in ss.worksheets() if w.title == USER_SHEET), None)
+    if ws is None and create:
+        ws = ss.add_worksheet(title=USER_SHEET, rows=2000, cols=len(USER_HEADERS))
+        ws.update("A1:I1", [USER_HEADERS], value_input_option="RAW")
+    return ws
+
+def _named_saves():
+    ws = _named_worksheet()
+    if ws is None: return {}
+    rows = ws.get_all_values()
+    if not rows or rows[0] != USER_HEADERS:
+        raise RuntimeError("저장 재고 시트의 헤더가 올바르지 않습니다.")
+    pending, result = {}, {}
+    for row in rows[1:]:
+        if not row: continue
+        row = row + [''] * (len(USER_HEADERS) - len(row))
+        save_id, label, saved_at = row[:3]
+        if row[7] == 'ITEM':
+            pending.setdefault(save_id, []).append({'item_name': row[3], 'category': row[4], 'price': row[5], 'current_stock': _integer(row[6])})
+        elif row[7] == 'COMMIT':
+            items = pending.get(save_id, [])
+            if len(items) != _integer(row[8]):
+                raise RuntimeError("저장 재고의 품목 수가 일치하지 않습니다.")
+            result[save_id] = {'save_id': save_id, 'label': label, 'saved_at': saved_at, 'item_count': len(items), 'items': items}
+    return result
+
+def get_named_inventory_save(save_id):
+    result = _named_saves().get(save_id)
+    if result is None: raise KeyError(save_id)
+    return result
+
+def list_named_inventory_saves():
+    summaries = [{k: v for k, v in record.items() if k != 'items'} for record in _named_saves().values()]
+    return sorted(summaries, key=lambda x:x['saved_at'], reverse=True)
 
 
 def capture_snapshot(month, recapture=False, validate=None):

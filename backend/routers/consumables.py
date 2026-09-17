@@ -57,6 +57,25 @@ def closed_months():
     from backend.services.consumables_service import _parse_ym_from_month_title
     return sorted(get_closed_months(), key=lambda m: _parse_ym_from_month_title(m) or (0, 0), reverse=True)
 
+@router.post("/inventory-saves")
+def save_inventory(data: Dict[str, Any] = Body(...)):
+    from backend.services.inventory_snapshots import save_named_current_inventory
+    try: return save_named_current_inventory(data.get("label"))
+    except ValueError as exc: raise HTTPException(status_code=400, detail=str(exc))
+
+@router.get("/inventory-saves")
+def inventory_saves():
+    from backend.services.inventory_snapshots import list_named_inventory_saves
+    return list_named_inventory_saves()
+
+@router.get("/inventory-saves/{save_id}")
+def inventory_save_detail(save_id: str):
+    from backend.services.inventory_snapshots import get_named_inventory_save
+    try:
+        return get_named_inventory_save(save_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="저장한 재고를 찾을 수 없습니다.")
+
 
 def _require_open_month(month):
     from backend.services.consumables_service import _get_month_close_status_impl

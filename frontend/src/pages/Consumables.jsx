@@ -1839,6 +1839,8 @@ const ItemHistoryModal = ({ itemName, onClose }) => {
 }
 
 const TrackedItemsTab = () => {
+    const [saveLabel, setSaveLabel] = useState('')
+    const [savePending, setSavePending] = useState(false)
     const queryClient = useQueryClient()
     const [selectedHistoryItem, setSelectedHistoryItem] = useState(null)
     const dispatchMonth = ''
@@ -1922,10 +1924,27 @@ const TrackedItemsTab = () => {
     if (isError) return <div role="alert" className="card">재고 추적 품목을 불러오지 못했습니다. <button className="btn btn-secondary" onClick={() => refetch()}>다시 시도</button></div>
 
     const trackedItems = items?.filter(item => item.is_tracked) || []
+    const saveCurrentInventory = async () => {
+        const label = saveLabel.trim() || window.prompt('현재 재고 저장 이름을 입력하세요.')?.trim()
+        if (!label) return
+        setSavePending(true)
+        try {
+            await axios.post('/api/consumables/inventory-saves', { label })
+            queryClient.invalidateQueries({ queryKey: ['inventory-saves'] })
+            setSaveLabel('')
+            alert(`현재 재고를 '${label}' 이름으로 저장했습니다.`)
+        } catch (e) { alert(e?.response?.data?.detail || '현재 재고 저장에 실패했습니다.') }
+        finally { setSavePending(false) }
+    }
 
     return (
         <div className="card">
             <h3 style={{ marginBottom: '0.75rem' }}>📍 재고 추적 관리 현황</h3>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '1rem' }}>
+                <input aria-label="재고 저장 이름" value={saveLabel} onChange={e => setSaveLabel(e.target.value)} placeholder="저장 이름 (예: 9월 실사)" maxLength={80} />
+                <button className="btn btn-primary" onClick={saveCurrentInventory} disabled={savePending}>{savePending ? '저장 중...' : '현재 재고 저장'}</button>
+                <Link to="/consumables/closing-inventory">저장한 재고 보기</Link>
+            </div>
 
             <p className="alert alert-info">재고 추적 중인 품목의 현재 재고와 입출고 이력을 확인합니다.</p>
 
