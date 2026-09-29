@@ -96,13 +96,13 @@ const AssetList = () => {
 
     const assetsWithIdx = assets?.map((row, idx) => ({ ...row, _originalIdx: idx })) || []
 
-    const PRINTER_HIDDEN_COLS = ['DATE', '카트리지 사용 내역']
+    const PRINTER_HIDDEN_COLS_LOWER = ['date', '카트리지 사용 내역']
 
     const columns = assets?.length > 0
         ? Object.keys(assets[0]).filter(col => {
             const trimmed = col.trim()
             if (/^unnamed[\s_:.\-]*\d*$/i.test(trimmed)) return false
-            if (type === 'Printer' && PRINTER_HIDDEN_COLS.includes(trimmed)) return false
+            if (type === 'Printer' && PRINTER_HIDDEN_COLS_LOWER.includes(trimmed.toLowerCase())) return false
             return true
         })
         : []
