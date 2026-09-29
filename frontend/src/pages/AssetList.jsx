@@ -96,7 +96,11 @@ const AssetList = () => {
 
     const assetsWithIdx = assets?.map((row, idx) => ({ ...row, _originalIdx: idx })) || []
 
-    const columns = assets?.length > 0 ? Object.keys(assets[0]) : []
+    const columns = assets?.length > 0
+        ? Object.keys(assets[0]).filter(col =>
+            !/^unnamed[\s_:.\-]*\d*$/i.test(col.trim())
+        )
+        : []
 
     // ── 연도/월 추출 및 데이터 필터링 ──
     const getYear = (row) => {
