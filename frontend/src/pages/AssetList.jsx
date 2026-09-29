@@ -96,10 +96,15 @@ const AssetList = () => {
 
     const assetsWithIdx = assets?.map((row, idx) => ({ ...row, _originalIdx: idx })) || []
 
+    const PRINTER_HIDDEN_COLS = ['DATE', '카트리지 사용 내역']
+
     const columns = assets?.length > 0
-        ? Object.keys(assets[0]).filter(col =>
-            !/^unnamed[\s_:.\-]*\d*$/i.test(col.trim())
-        )
+        ? Object.keys(assets[0]).filter(col => {
+            const trimmed = col.trim()
+            if (/^unnamed[\s_:.\-]*\d*$/i.test(trimmed)) return false
+            if (type === 'Printer' && PRINTER_HIDDEN_COLS.includes(trimmed)) return false
+            return true
+        })
         : []
 
     // ── 연도/월 추출 및 데이터 필터링 ──
