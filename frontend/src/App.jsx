@@ -59,6 +59,28 @@ function DevEnvBanner() {
   // 운영 환경이거나 아직 응답 전이면 배너 미표시
   if (!envStatus || envStatus.is_production) return null
 
+  // 1. 테스트 서버(Staging) 환경일 때
+  if (envStatus.is_staging) {
+    return (
+      <div style={{
+        background: '#eff6ff', // 연한 파란색
+        borderBottom: '3px solid #3b82f6', // 파란색 border
+        padding: '8px 20px',
+        display: 'flex', alignItems: 'center', gap: '12px',
+        flexWrap: 'wrap', fontSize: '0.85rem', position: 'sticky', top: 0, zIndex: 1000,
+      }}>
+        <span style={{ fontSize: '1.1em' }}>🧪</span>
+        <strong style={{ color: '#1d4ed8' }}>
+          테스트 서버 환경 — 테스트용 Google Sheets 사용 중 (운영 데이터 완전 격리)
+        </strong>
+        <span style={{ color: '#4b5563', fontSize: '0.82rem' }}>
+          이곳은 신규 기능 검증 및 테스트용 공간입니다. 안심하고 데이터를 변경해보세요! (실제 운영 데이터에 영향을 주지 않습니다)
+        </span>
+      </div>
+    )
+  }
+
+  // 2. 로컬 개발 환경(Development)일 때
   const localReady = envStatus.local_data_exists
 
   return (

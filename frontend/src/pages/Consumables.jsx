@@ -2237,11 +2237,10 @@ const CreateMonthTab = () => {
 
     return (
         <div className="card" style={{ maxWidth: '600px', margin: '0 auto' }}>
-            <h3 style={{ marginBottom: '1rem' }}>📝 신규 월 출고 내역 시작하기 (재고 이월)</h3>
+            <h3 style={{ marginBottom: '1rem' }}>📝 신규 월 출고 내역 시작하기</h3>
             <div className="alert alert-info" style={{ marginBottom: '1.5rem', lineHeight: '1.5' }}>
-                💡 이번 달 혹은 새로운 분기의 출고 내역을 적기 시작할 때 사용합니다.<br/>
-                지정하신 '월' 이름으로 구글 시트 탭이 생성되며, <strong>현재까지의 실재고가 새로운 기본 재고(구매)로 이월</strong>됩니다.<br/>
-                이월과 동시에 기존의 <strong>'추가(조정)' 수량은 0으로 초기화</strong>되며, 이후 과거 출고 내역을 수정하더라도 이월된 재고에는 영향을 주지 않습니다. (과거 마감)
+                💡 이번 달 혹은 새로운 월의 출고 내역을 기록하기 위한 출고 탭을 생성합니다.<br/>
+                지정하신 '월' 이름으로 구글 시트 출고 탭이 생성되며, <strong>소모품 마스터 리스트의 기존 재고(구매/추가 수량)는 안전하게 그대로 유지</strong>됩니다.
             </div>
             
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>

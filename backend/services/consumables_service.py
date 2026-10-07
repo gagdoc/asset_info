@@ -120,16 +120,7 @@ def _get_consumables_client(spreadsheet_id: str = None):
     if not spreadsheet_id:
         spreadsheet_id = CONSUMABLES_MASTER_SPREADSHEET_ID
 
-    # ── 개발 모드: 로컬 JSON 파일 사용 ─────────────────────
-    if not IS_PRODUCTION:
-        try:
-            from backend.services.local_sheets import get_local_client
-            client = get_local_client()
-            return client, client.open_by_key(spreadsheet_id)
-        except Exception as e:
-            logger.warning(f"로컬 클라이언트 초기화 실패, Google Sheets로 전환: {e}")
-
-    # ── 운영 모드: 실제 Google Sheets ───────────────────────
+    # ── Google Sheets API 직접 연결 ───────────────────────
     if not _cached_client:
         creds = None
         if GOOGLE_CREDENTIALS_JSON:
@@ -168,39 +159,15 @@ def get_available_months():
 
 def create_month_sheet(month_name: str, start_date: str) -> bool:
     try:
-        # 1. 롤오버(이월)를 위해 새 시트 개설 전의 전체 실재고 스냅샷 확보
-        # 이 시점에서 get_items_list는 최신 출고월 데이터까지 모두 반영된 실재고를 계산해 줍니다.
-        items_snapshot = _get_items_list_impl(dispatch_mode="cumulative")
-
         _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
         if not ss: return False
-        
+
         # 이름 중복 확인
         existing = [ws.title for ws in ss.worksheets()]
         if month_name in existing:
             return False
-            
-        # 2. 마스터 시트(품목리스트) 이월 업데이트
-        # 구매수량(E) = 기존 현재고, 추가수량(F) = 0 으로 일괄 갱신
-        _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
-        if ss_master:
-            ws_master = _get_worksheet_safe(ss_master, "품목리스트")
-            if ws_master:
-                update_data = []
-                for item in items_snapshot:
-                    row_idx = item.get("row_index")
-                    if row_idx:
-                        new_base = item.get("current_stock", 0)
-                        # E열(5번째), F열(6번째)
-                        update_data.append({
-                            'range': f'E{row_idx}:F{row_idx}',
-                            'values': [[new_base, 0]]
-                        })
-                if update_data:
-                    _retry_sheets_op(lambda: ws_master.batch_update(update_data))
-                    logger.info(f"[{month_name} 개설] {len(update_data)}개 품목의 재고가 이월되었으며 추가 수량이 초기화되었습니다.")
 
-        # 3. 새 시트 추가
+        # 새 시트 추가 (마스터 시트 품목리스트의 구매수량 및 추가수량은 초기화하지 않고 그대로 유지)
         ws = ss.add_worksheet(title=month_name, rows=1000, cols=20)
         
         # 헤더 기록
