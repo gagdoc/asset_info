@@ -319,6 +319,17 @@ const EstimateTab = ({ month }) => {
                             '총수량': r.total_qty, '사용자': Array.isArray(r.users) ? r.users.join(', ') : (r.users || ''),
                             '단가(원)': r.unit_price, '견적비용(원)': r.total_price || r.total_cost || '',
                         }))
+                        // 총 합계 행 추가
+                        if (rows.length > 0) {
+                            rows.push({
+                                '구분(분류)': '총 합계',
+                                '품목명': '',
+                                '총수량': totalQty.toLocaleString(),
+                                '사용자': '',
+                                '단가(원)': '',
+                                '견적비용(원)': totalCost.toLocaleString(),
+                            })
+                        }
                         await exportToXLSX({ filename: `견적서_${month}_${todayStr()}`,
                             columns: [{key:'구분(분류)',label:'구분(분류)'},{key:'품목명',label:'품목명'},{key:'총수량',label:'총수량'},{key:'사용자',label:'사용자'},{key:'단가(원)',label:'단가(원)'},{key:'견적비용(원)',label:'견적비용(원)'}],
                             rows })
