@@ -326,6 +326,42 @@ class TestMonthlyClose(unittest.TestCase):
         result = cs._get_cached("test_cache_key", lambda: [])
         self.assertEqual(result, [])
 
+    def test_delete_outbound_batch(self):
+        """다중 선택 일괄 삭제 시 아래쪽 행부터 안전 삭제 및 토너 실재고 복원 검증"""
+        month = "2026년 7월"
+        # 토너 재고 시트에 토너_검정 10개 설정
+        self.toner_ws.rows = [
+            ["토너_품번", "실재고"],
+            ["토너_검정", "10"],
+        ]
+        # 7월 출고 시트에 3건 등록
+        out_ws = self.ss_outbound.add_worksheet(month)
+        out_ws.rows = [
+            ["날짜", "품목", "수량", "사용자", "유형", "담당", "수령"],
+            ["2026-07-01", "토너_검정", "2", "홍길동", "일반", "관리자", "직접"],
+            ["2026-07-02", "토너_검정", "3", "이순신", "일반", "관리자", "직접"],
+            ["2026-07-03", "토너_검정", "1", "강감찬", "일반", "관리자", "직접"],
+        ]
+
+        # 2행(2개), 4행(1개) 선택 삭제 요청 (총 3개 삭제 -> 재고 10 -> 13)
+        items_to_del = [
+            {"row_index": 2, "verify_date": "2026-07-01", "verify_item": "토너_검정", "verify_user": "홍길동"},
+            {"row_index": 4, "verify_date": "2026-07-03", "verify_item": "토너_검정", "verify_user": "강감찬"},
+        ]
+
+        res = cs.delete_outbound_batch(month, items_to_del)
+        self.assertTrue(res["success"])
+        self.assertEqual(res["deleted_count"], 2)
+
+        # 남아있는 출고 내역 확인: 1건(이순신 3개)만 남아있어야 함
+        self.assertEqual(len(out_ws.rows), 2)  # 헤더 + 이순신 행
+        self.assertEqual(out_ws.rows[1][3], "이순신")
+
+        # 토너 재고: 10 + 2 + 1 = 13개로 복원
+        self.assertEqual(self.toner_ws.rows[1][1], "13")
+
+
 
 if __name__ == "__main__":
     unittest.main()
+

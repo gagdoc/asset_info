@@ -13,6 +13,7 @@ from backend.services.consumables_service import (
     get_purchase_history, add_purchase_record, delete_purchase_record,
     set_toner_stock_direct,
     get_individual_inbound_history, add_individual_inbound, delete_individual_inbound, update_individual_inbound,
+    delete_outbound_batch,
     IS_PRODUCTION,
 )
 from typing import List, Dict, Any
@@ -247,6 +248,25 @@ def delete_outbound(
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete outbound record")
     return {"status": "success"}
+
+@router.delete("/outbound/batch")
+def delete_outbound_batch_endpoint(data: Dict[str, Any] = Body(...)):
+    """월별 출고 데이터 다중(선택) 일괄 삭제"""
+    month = data.get("month")
+    items = data.get("items", [])
+    if not month:
+        raise HTTPException(status_code=400, detail="month는 필수입니다.")
+    if not items:
+        raise HTTPException(status_code=400, detail="삭제할 항목이 지정되지 않았습니다.")
+
+    status_info = get_month_close_status(month)
+    if status_info.get("status") == "closed":
+        raise HTTPException(status_code=403, detail=f"'{month}'은(는) 마감된 월입니다. 출고 내역을 삭제할 수 없습니다.")
+
+    result = delete_outbound_batch(month, items)
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "일괄 삭제 실패"))
+    return result
 
 @router.get("/tonner-consignment")
 def list_tonner_consignment(month: str = Query(None, description="조회할 월 (없으면 전체)")):

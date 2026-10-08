@@ -459,6 +459,8 @@ const OutboundTab = ({ month, isDev = false }) => {
         onError: () => alert("수정 중 오류가 발생했습니다.")
     })
 
+    const [selectedRows, setSelectedRows] = useState([]) // [row.row_index]
+
     const deleteMutation = useMutation({
         mutationFn: async ({ rowIndex, date, item_name, user_name }) => await axios.delete(
             `/api/consumables/outbound?month=${month}&row_index=${rowIndex}` +
@@ -467,13 +469,30 @@ const OutboundTab = ({ month, isDev = false }) => {
         ),
         onSuccess: () => {
             alert("출고 내역이 삭제되었습니다.")
-            // Google Sheets API 안정화 대기 후 refetch (연속 삭제 시 과호출 방지)
+            setSelectedRows([])
             setTimeout(() => {
                 queryClient.invalidateQueries(['consumables-outbound', month])
                 queryClient.invalidateQueries(['consumables-estimate', month])
-            }, 1200)
+                queryClient.invalidateQueries(['consumables-items'])
+            }, 800)
         },
-        onError: () => alert("삭제 중 오류가 발생했습니다.")
+        onError: (err) => alert(err?.response?.data?.detail || "삭제 중 오류가 발생했습니다.")
+    })
+
+    const deleteBatchMutation = useMutation({
+        mutationFn: async (items) => await axios.delete('/api/consumables/outbound/batch', {
+            data: { month, items }
+        }),
+        onSuccess: (res) => {
+            alert(`선택한 ${res.data?.deleted_count || 0}건의 출고 내역이 안전하게 삭제되었습니다.`)
+            setSelectedRows([])
+            setTimeout(() => {
+                queryClient.invalidateQueries(['consumables-outbound', month])
+                queryClient.invalidateQueries(['consumables-estimate', month])
+                queryClient.invalidateQueries(['consumables-items'])
+            }, 800)
+        },
+        onError: (err) => alert(err?.response?.data?.detail || "일괄 삭제 중 오류가 발생했습니다.")
     })
 
     const handleEditStart = (row) => {
@@ -499,16 +518,38 @@ const OutboundTab = ({ month, isDev = false }) => {
         })
     }
 
-    const [confirmModal, setConfirmModal] = useState({ isOpen: false, row: null })
+    const [confirmModal, setConfirmModal] = useState({ isOpen: false, rows: [], isBatch: false })
 
     const handleDelete = (row) => {
-        setConfirmModal({ isOpen: true, row })
+        setConfirmModal({ isOpen: true, rows: [row], isBatch: false })
+    }
+
+    const handleBatchDeleteClick = () => {
+        const rowsToDelete = (history || []).filter(r => selectedRows.includes(r.row_index))
+        if (rowsToDelete.length === 0) return
+        setConfirmModal({ isOpen: true, rows: rowsToDelete, isBatch: true })
     }
 
     const executeDelete = () => {
-        const { row } = confirmModal
-        deleteMutation.mutate({ rowIndex: row.row_index, date: row.date, item_name: row.item_name, user_name: row.user_name })
-        setConfirmModal({ isOpen: false, row: null })
+        const { rows, isBatch } = confirmModal
+        if (isBatch) {
+            const items = rows.map(r => ({
+                row_index: r.row_index,
+                verify_date: r.date,
+                verify_item: r.item_name,
+                verify_user: r.user_name || ''
+            }))
+            deleteBatchMutation.mutate(items)
+        } else if (rows.length > 0) {
+            const row = rows[0]
+            deleteMutation.mutate({
+                rowIndex: row.row_index,
+                date: row.date,
+                item_name: row.item_name,
+                user_name: row.user_name
+            })
+        }
+        setConfirmModal({ isOpen: false, rows: [], isBatch: false })
     }
 
     const { data: itemsList } = useQuery({
@@ -882,6 +923,7 @@ const OutboundTab = ({ month, isDev = false }) => {
             <LoadingModal isOpen={isSubmittingMulti} message="출고 내역을 구글 시트에 기록 중입니다..." />
             <LoadingModal isOpen={updateMutation.isPending} message="출고 내역을 수정하고 있습니다..." />
             <LoadingModal isOpen={deleteMutation.isPending} message="출고 내역을 삭제하고 있습니다..." />
+            <LoadingModal isOpen={deleteBatchMutation.isPending} message="선택한 출고 내역들을 안전하게 삭제하고 있습니다..." />
 
             {/* 출고 내역 검색 바 */}
             <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '0.8rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -912,11 +954,56 @@ const OutboundTab = ({ month, isDev = false }) => {
                 <span style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#1e40af', background: '#eff6ff', padding: '3px 10px', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
                     총 지급수량: {totalFilteredQty.toLocaleString()}개
                 </span>
+
+                {/* 다중 선택 일괄 삭제 액션 바 */}
+                {selectedRows.length > 0 && (
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        backgroundColor: '#fef2f2', border: '1px solid #fecaca',
+                        padding: '4px 12px', borderRadius: '8px', marginLeft: 'auto'
+                    }}>
+                        <span style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#b91c1c' }}>
+                            ✓ {selectedRows.length}건 선택됨
+                        </span>
+                        <button
+                            className="btn btn-danger"
+                            style={{ padding: '4px 10px', fontSize: '0.85em', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            onClick={handleBatchDeleteClick}
+                            disabled={deleteBatchMutation.isPending}
+                        >
+                            🗑️ 선택 삭제 ({selectedRows.length}건)
+                        </button>
+                        <button
+                            className="btn btn-secondary"
+                            style={{ padding: '4px 8px', fontSize: '0.82em' }}
+                            onClick={() => setSelectedRows([])}
+                        >
+                            선택 해제
+                        </button>
+                    </div>
+                )}
             </div>
 
             <table className="data-table">
                 <thead>
                     <tr>
+                        <th style={{ width: '40px', textAlign: 'center' }}>
+                            <input
+                                type="checkbox"
+                                title="전체 선택 / 해제"
+                                checked={filteredHistory.length > 0 && filteredHistory.every(r => selectedRows.includes(r.row_index))}
+                                onChange={e => {
+                                    if (e.target.checked) {
+                                        const allIds = filteredHistory.map(r => r.row_index)
+                                        setSelectedRows(Array.from(new Set([...selectedRows, ...allIds])))
+                                    } else {
+                                        const filteredIds = new Set(filteredHistory.map(r => r.row_index))
+                                        setSelectedRows(selectedRows.filter(id => !filteredIds.has(id)))
+                                    }
+                                }}
+                                style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                            />
+                        </th>
                         <th>출고 날짜</th>
                         <th>구분</th>
                         <th>출고 품목명</th>
@@ -932,12 +1019,28 @@ const OutboundTab = ({ month, isDev = false }) => {
                     {filteredHistory?.length > 0 ? filteredHistory.map((row, idx) => {
                         const rowType = row.outbound_type || '일반';
                         const isConsignment = rowType === '위탁';
+                        const isSelected = selectedRows.includes(row.row_index);
+                        const rowBg = isSelected ? '#fee2e2' : (isConsignment ? '#fff7ed' : 'transparent');
                         return (
-                            <tr key={idx} style={{ backgroundColor: isConsignment ? '#fff7ed' : 'transparent' }}>
+                            <tr key={idx} style={{ backgroundColor: rowBg, transition: 'background-color 0.15s' }}>
+                                <td style={{ textAlign: 'center' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={e => {
+                                            if (e.target.checked) {
+                                                setSelectedRows(prev => [...prev, row.row_index])
+                                            } else {
+                                                setSelectedRows(prev => prev.filter(id => id !== row.row_index))
+                                            }
+                                        }}
+                                        style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                                    />
+                                </td>
                                 <td>{row.date}</td>
                                 <td style={{ fontSize: '0.85em', color: '#64748b' }}>{row.category || '-'}</td>
                                 <td>{row.item_name}</td>
-                                <td style={{ textAlign: 'center' }}>{row.quantity}</td>
+                                <td style={{ textAlign: 'center', fontWeight: isSelected ? 'bold' : 'normal' }}>{row.quantity}</td>
                                 <td>{formatUserNames(row.user_name)}</td>
                                 <td style={{ textAlign: 'center', fontSize: '0.85em' }}>{row.staff || '-'}</td>
                                 <td style={{ textAlign: 'center', fontSize: '0.85em' }}>{row.delivery || '-'}</td>
@@ -952,22 +1055,79 @@ const OutboundTab = ({ month, isDev = false }) => {
                                 </td>
                                 <td style={{ textAlign: 'center' }}>
                                     <button className="btn btn-secondary" style={{ padding: '2px 6px', fontSize: '0.8em', marginRight: '4px' }} onClick={() => handleEditStart(row)}>✏️</button>
-                                    <button className="btn btn-danger" style={{ padding: '2px 6px', fontSize: '0.8em' }} onClick={() => handleDelete(row)} disabled={deleteMutation.isPending}>🗑️</button>
+                                    <button className="btn btn-danger" style={{ padding: '2px 6px', fontSize: '0.8em' }} onClick={() => handleDelete(row)} disabled={deleteMutation.isPending || deleteBatchMutation.isPending}>🗑️</button>
                                 </td>
                             </tr>
                         )
                     }) : (
-                        <tr><td colSpan="9" style={{ textAlign: 'center' }}>출고 내역이 비어 있습니다.</td></tr>
+                        <tr><td colSpan="10" style={{ textAlign: 'center' }}>출고 내역이 비어 있습니다.</td></tr>
                     )}
                 </tbody>
             </table>
 
-            <ConfirmModal
-                isOpen={confirmModal.isOpen}
-                message={`해당 출고 기록을 완전히 삭제하시겠습니까?\n(재고 관리를 사용하는 품목인 경우, 삭제된 수량만큼 재고가 다시 증가합니다)`}
-                onConfirm={executeDelete}
-                onCancel={() => setConfirmModal({ isOpen: false, rowIndex: null })}
-            />
+            {/* 안전 확인 모달 (단일/선택 일괄 삭제 모두 지원) */}
+            {confirmModal.isOpen && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+                    background: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999
+                }}>
+                    <div style={{
+                        background: '#fff', padding: '24px', borderRadius: '12px', maxWidth: '480px', width: '92%',
+                        boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)'
+                    }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '2.2rem', marginBottom: '10px' }}>⚠️</div>
+                            <h3 style={{ margin: '0 0 10px 0', color: '#1a202c', fontSize: '1.2rem' }}>
+                                {confirmModal.isBatch ? `선택한 ${confirmModal.rows.length}건의 출고 내역을 삭제하시겠습니까?` : '출고 내역을 삭제하시겠습니까?'}
+                            </h3>
+                            <p style={{ margin: '0 0 14px 0', color: '#4b5563', fontSize: '0.9rem', lineHeight: '1.4' }}>
+                                삭제 시 재고 관리 품목(토너 등)의 경우 <strong>출고 수량만큼 실재고가 자동으로 복원</strong>됩니다.
+                            </p>
+                        </div>
+
+                        {/* 삭제 대상 항목 리스트 미리보기 */}
+                        <div style={{
+                            maxHeight: '180px', overflowY: 'auto', background: '#f8fafc',
+                            border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 14px', marginBottom: '20px'
+                        }}>
+                            <div style={{ fontSize: '0.82em', fontWeight: 'bold', color: '#64748b', marginBottom: '6px' }}>
+                                📋 삭제 대상 목록 ({confirmModal.rows.length}건):
+                            </div>
+                            {confirmModal.rows.map((r, i) => (
+                                <div key={i} style={{
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    fontSize: '0.85em', padding: '4px 0', borderBottom: i < confirmModal.rows.length - 1 ? '1px dashed #cbd5e1' : 'none'
+                                }}>
+                                    <span style={{ color: '#334155', fontWeight: '500' }}>
+                                        {r.date} | <strong>{r.item_name}</strong> ({formatUserNames(r.user_name)})
+                                    </span>
+                                    <span style={{ color: '#dc2626', fontWeight: 'bold' }}>
+                                        {r.quantity}개
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => setConfirmModal({ isOpen: false, rows: [], isBatch: false })}
+                                style={{ padding: '8px 16px' }}
+                            >
+                                취소
+                            </button>
+                            <button
+                                className="btn btn-danger"
+                                onClick={executeDelete}
+                                disabled={deleteMutation.isPending || deleteBatchMutation.isPending}
+                                style={{ padding: '8px 20px', fontWeight: 'bold' }}
+                            >
+                                {confirmModal.isBatch ? `선택 ${confirmModal.rows.length}건 삭제` : '삭제하기'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── 출고 수정 모달 ── */}
             {isEditModalOpen && (

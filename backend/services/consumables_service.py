@@ -826,6 +826,102 @@ def delete_outbound_history(month: str, row_index: int,
         logger.error(f"Error deleting outbound: {e}")
         return False
 
+
+def delete_outbound_batch(month: str, items_to_delete: list) -> dict:
+    """월별 출고 시트에서 여러 행을 안전하게 일괄 삭제합니다.
+    items_to_delete: [{"row_index": int, "verify_date": str, "verify_item": str, "verify_user": str}]
+    1. 마감된 월은 삭제를 차단합니다.
+    2. 시트 전체 행을 대조하여 실제 행 번호를 확정한 뒤 아래쪽(큰 행 번호)부터 역순으로 삭제합니다.
+    3. 삭제된 품목들의 출고 수량만큼 토너 실재고를 안전하게 복구합니다.
+    """
+    status_info = get_month_close_status(month)
+    if status_info.get("status") == "closed":
+        logger.warning(f"마감된 월('{month}')의 출고 내역은 일괄 삭제할 수 없습니다.")
+        return {"success": False, "error": f"'{month}'은(는) 마감된 월입니다. 출고 내역을 삭제할 수 없습니다.", "deleted_count": 0}
+
+    if not items_to_delete:
+        return {"success": True, "deleted_count": 0}
+
+    _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
+    if not ss:
+        return {"success": False, "error": "출고 시트 접근 실패", "deleted_count": 0}
+
+    try:
+        ws = _get_worksheet_safe(ss, month)
+        if not ws:
+            return {"success": False, "error": f"'{month}' 워크시트를 찾을 수 없습니다.", "deleted_count": 0}
+
+        # 1. 대상 행들의 실제 위치 및 데이터 확인
+        resolved_items = []
+        for item in items_to_delete:
+            orig_row = int(item.get("row_index", 0))
+            v_date = str(item.get("verify_date", "")).strip()
+            v_item = str(item.get("verify_item", "")).strip()
+            v_user = str(item.get("verify_user", "")).strip()
+
+            actual_row = orig_row
+            if v_date and v_item:
+                actual_row = _resolve_row_index(ws, orig_row, v_date, v_item, v_user)
+                if actual_row == -1:
+                    logger.warning(f"일괄 삭제 중 행 검증 실패 (건너뜀): {v_date} / {v_item} / {v_user}")
+                    continue
+
+            # 삭제 전 데이터 읽기
+            del_name = ""
+            del_qty = 0
+            try:
+                row_vals = ws.row_values(actual_row)
+                del_name = str(row_vals[1]).strip() if len(row_vals) > 1 else ""
+                del_qty_str = str(row_vals[2]).strip().replace(',', '') if len(row_vals) > 2 else "0"
+                del_qty = int(float(del_qty_str)) if del_qty_str.replace('.', '', 1).isdigit() else 0
+            except Exception as e:
+                logger.warning(f"행 데이터 읽기 실패 (행 {actual_row}): {e}")
+
+            resolved_items.append({
+                "row_index": actual_row,
+                "item_name": del_name or v_item,
+                "quantity": del_qty
+            })
+
+        if not resolved_items:
+            return {"success": False, "error": "삭제할 대상 행을 검증하지 못했습니다.", "deleted_count": 0}
+
+        # 2. 행 번호 기준 내림차순(역순) 정렬하여 아래쪽부터 삭제 (인덱스 밀림 방지)
+        resolved_items.sort(key=lambda x: x["row_index"], reverse=True)
+
+        deleted_count = 0
+        stock_to_restore = {}  # {item_name: total_qty}
+
+        for item in resolved_items:
+            r_idx = item["row_index"]
+            try:
+                ws.delete_rows(r_idx)
+                deleted_count += 1
+                i_name = item["item_name"]
+                q = item["quantity"]
+                if i_name and q > 0:
+                    stock_to_restore[i_name] = stock_to_restore.get(i_name, 0) + q
+            except Exception as e:
+                logger.error(f"행 {r_idx} 삭제 중 오류: {e}")
+
+        # 캐시 무효화
+        invalidate_cache(f"outbound_{month}")
+        invalidate_cache("items_")
+
+        # 3. 토너 실재고 일괄 복원
+        for item_name, qty in stock_to_restore.items():
+            try:
+                restore_toner_stock(item_name, qty)
+                logger.info(f"일괄 삭제 후 토너 재고 복원 완료: '{item_name}' +{qty}")
+            except Exception as e:
+                logger.error(f"토너 재고 복원 실패 ('{item_name}'): {e}")
+
+        return {"success": True, "deleted_count": deleted_count}
+    except Exception as e:
+        logger.error(f"일괄 출고 삭제 실패: {e}")
+        return {"success": False, "error": str(e), "deleted_count": 0}
+
+
 def save_item(data: dict) -> bool:
     """품목리스트 시트 A~F열에 새로운 품목을 추가하거나 기존 품목(B열 기준)을 수정합니다."""
     _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
