@@ -588,7 +588,10 @@ def update_row(req: RowUpdateRequest):
         if col in df.columns:
             df.at[req.row_index, col] = val
     
-    update_db(req.asset_type, df)
+    try:
+        update_db(req.asset_type, df)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"데이터 저장 실패: {str(e)}")
     return {"message": "Row updated successfully"}
 
 # ── Row Delete ───────────────────────────────────────
@@ -601,7 +604,10 @@ def delete_rows(req: RowDeleteRequest):
     df = dfs[req.asset_type]
     valid_indices = [i for i in req.row_indices if 0 <= i < len(df)]
     df = df.drop(index=valid_indices).reset_index(drop=True)
-    update_db(req.asset_type, df)
+    try:
+        update_db(req.asset_type, df)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"데이터 삭제 후 저장 실패: {str(e)}")
     _invalidate_dashboard_cache()
     return {"message": f"{len(valid_indices)} rows deleted"}
 

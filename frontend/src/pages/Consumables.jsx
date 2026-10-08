@@ -1213,18 +1213,25 @@ const MonthlyTonerReport = ({ month }) => {
         const generalRows = (report.general_items || []).map(it => ({
             '구분': '일반 소모품', '월': month,
             '품목명': it.item_name, '시작재고': it.start_stock,
+            '입고수량': it.inbound_qty || 0,
             '출고수량': it.outbound_qty, '잔여재고': it.remaining,
         }))
         const tonerRows = (report.toner_items || []).map(it => ({
             '구분': '토너', '월': month,
             '품목명': it.item_name, '시작재고': it.start_stock,
+            '입고수량': it.inbound_qty || 0,
             '출고수량': it.outbound_qty, '잔여재고': it.remaining,
         }))
+        const cols = [
+            {key:'구분',label:'구분'},{key:'월',label:'월'},{key:'품목명',label:'품목명'},
+            {key:'시작재고',label:'시작재고'},{key:'입고수량',label:'입고수량'},
+            {key:'출고수량',label:'출고수량'},{key:'잔여재고',label:'잔여재고'}
+        ]
         await exportToXLSX({
             filename: `재고현황_${month}_${todayStr()}`,
             sheets: [
-                { title: '일반 소모품', columns: [{key:'구분',label:'구분'},{key:'월',label:'월'},{key:'품목명',label:'품목명'},{key:'시작재고',label:'시작재고'},{key:'출고수량',label:'출고수량'},{key:'잔여재고',label:'잔여재고'}], rows: generalRows },
-                { title: '토너', columns: [{key:'구분',label:'구분'},{key:'월',label:'월'},{key:'품목명',label:'품목명'},{key:'시작재고',label:'시작재고'},{key:'출고수량',label:'출고수량'},{key:'잔여재고',label:'잔여재고'}], rows: tonerRows },
+                { title: '일반 소모품', columns: cols, rows: generalRows },
+                { title: '토너', columns: cols, rows: tonerRows },
             ],
         })
     }
@@ -1235,20 +1242,22 @@ const MonthlyTonerReport = ({ month }) => {
         <table className="data-table" style={{ fontSize: '0.9rem' }}>
             <thead>
                 <tr style={{ background: '#f1f5f9' }}>
-                    {['품목명', '시작 재고', '출고 수량', '잔여 재고'].map(h => (
+                    {['품목명', '시작 재고', '입고 수량', '출고 수량', '잔여 재고'].map(h => (
                         <th key={h} style={{ padding: '8px 12px', textAlign: h === '품목명' ? 'left' : 'center', fontWeight: '600', color: '#475569', fontSize: '0.85em', borderBottom: '1px solid #e2e8f0' }}>{h}</th>
                     ))}
                 </tr>
             </thead>
             <tbody>
                 {items.length === 0
-                    ? <tr><td colSpan={4} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85em' }}>{emptyMsg}</td></tr>
+                    ? <tr><td colSpan={5} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85em' }}>{emptyMsg}</td></tr>
                     : items.map((it, idx) => {
                         const isLow = it.remaining <= 0
+                        const inQty = it.inbound_qty || 0
                         return (
                             <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? '#fff' : '#fafafa' }}>
                                 <td style={{ padding: '7px 12px', fontWeight: '500' }}>{it.item_name}</td>
                                 <td style={{ padding: '7px 12px', textAlign: 'center' }}>{it.start_stock}</td>
+                                <td style={{ padding: '7px 12px', textAlign: 'center', color: inQty > 0 ? '#2563eb' : '#64748b' }}>{inQty > 0 ? `+${inQty}` : '0'}</td>
                                 <td style={{ padding: '7px 12px', textAlign: 'center', color: it.outbound_qty > 0 ? '#dc2626' : '#64748b' }}>{it.outbound_qty > 0 ? `-${it.outbound_qty}` : '0'}</td>
                                 <td style={{ padding: '7px 12px', textAlign: 'center', fontWeight: 'bold', color: isLow ? '#dc2626' : '#15803d' }}>
                                     {it.remaining}{isLow && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🚨</span>}

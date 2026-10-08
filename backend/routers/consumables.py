@@ -215,12 +215,16 @@ def delete_item_endpoint(
 
 @router.put("/outbound")
 def update_outbound(data: Dict[str, Any] = Body(...)):
-    """월별 출고 개별 데이터 수정"""
+    """월별 출고 개별 데이터 수정 (마감된 월은 차단)"""
     month = data.get("month")
     row_index = data.get("row_index")
     if not month or not row_index:
         raise HTTPException(status_code=400, detail="Month and row_index are required")
-        
+
+    status_info = get_month_close_status(month)
+    if status_info.get("status") == "closed":
+        raise HTTPException(status_code=403, detail=f"'{month}'은(는) 마감된 월입니다. 출고 내역을 수정할 수 없습니다.")
+
     success = update_outbound_history(month, int(row_index), data)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update outbound record")
@@ -234,7 +238,11 @@ def delete_outbound(
     verify_item: str = Query("", description="삭제 전 품목명 검증값"),
     verify_user: str = Query("", description="삭제 전 사용자명 검증값 (중복 행 오탐 방지)"),
 ):
-    """월별 출고 개별 데이터 삭제 (날짜+품목+사용자 3중 검증)"""
+    """월별 출고 개별 데이터 삭제 (날짜+품목+사용자 3중 검증, 마감된 월은 차단)"""
+    status_info = get_month_close_status(month)
+    if status_info.get("status") == "closed":
+        raise HTTPException(status_code=403, detail=f"'{month}'은(는) 마감된 월입니다. 출고 내역을 삭제할 수 없습니다.")
+
     success = delete_outbound_history(month, row_index, verify_date, verify_item, verify_user)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete outbound record")

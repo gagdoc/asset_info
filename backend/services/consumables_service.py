@@ -62,26 +62,28 @@ def _get_cached(key, func, *args):
             return _STALE_CACHE[key]
         raise
 
-    # 유효한 결과만 stale 캐시에 저장
+    # 정상 호출 완료: 결과가 비어있지 않은 경우 stale 캐시 갱신
     if not _is_empty_result(val):
         _STALE_CACHE[key] = val
-
-    # 빈 결과가 왔지만 stale 데이터가 있으면 stale 반환 (rate limit 대응)
-    if _is_empty_result(val) and key in _STALE_CACHE:
-        logger.warning(f"[캐시] 빈 결과 수신 — stale 데이터 반환: {key}")
-        return _STALE_CACHE[key]
+    else:
+        # 정상 호출에서 빈 결과가 온 경우 stale 캐시도 제거하여 stale 부활 방지
+        _STALE_CACHE.pop(key, None)
 
     _CACHE[key] = (val, now + _CACHE_TTL)
     return val
 
 def invalidate_cache(key_prefix: str = None):
-    """캐시 무효화. key_prefix 지정 시 해당 키만, 없으면 전체 삭제."""
+    """캐시 무효화. key_prefix 지정 시 해당 키만, 없으면 전체 삭제 (stale 캐시 포함)."""
     if key_prefix is None:
         _CACHE.clear()
+        _STALE_CACHE.clear()
     else:
         for k in list(_CACHE.keys()):
             if k.startswith(key_prefix):
                 del _CACHE[k]
+        for k in list(_STALE_CACHE.keys()):
+            if k.startswith(key_prefix):
+                del _STALE_CACHE[k]
 
 def _retry_sheets_op(func, max_retries=3, initial_delay=1.0):
     """Google Sheets API 호출을 재시도합니다 (지수 백오프).
@@ -577,7 +579,23 @@ def get_estimate(month: str):
     return estimate
 
 def add_outbound(month: str, data: dict) -> bool:
-    """월별 출고 시트 왼쪽 A~E열의 빈 칸 맨 아래에 데이터를 기록합니다."""
+    """월별 출고 시트 왼쪽 A~E열의 빈 칸 맨 아래에 데이터를 기록합니다.
+    마감된 월은 출고 등록을 차단하며, 수량은 1 이상의 정수여야 합니다."""
+    status_info = get_month_close_status(month)
+    if status_info.get("status") == "closed":
+        logger.warning(f"마감된 월('{month}')에는 신규 출고를 등록할 수 없습니다.")
+        return False
+
+    qty_raw = str(data.get('quantity', '0')).replace(',', '').strip()
+    try:
+        qty_int = int(float(qty_raw))
+        if qty_int <= 0:
+            logger.warning(f"출고 수량은 1 이상이어야 합니다: {qty_raw}")
+            return False
+    except (ValueError, TypeError):
+        logger.warning(f"유효하지 않은 출고 수량: {qty_raw}")
+        return False
+
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
@@ -675,7 +693,13 @@ def _resolve_row_index(ws, row_index: int, verify_date: str, verify_item: str, v
 
 def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
     """월별 출고 시트의 특정 행(row_index) 데이터를 수정합니다.
-    verify_date, verify_item이 제공되면 삭제 전 행 내용을 검증합니다."""
+    마감된 월은 수정을 차단합니다.
+    품목이나 수량이 변경된 경우 토너 실재고를 자동으로 차액 조정합니다."""
+    status_info = get_month_close_status(month)
+    if status_info.get("status") == "closed":
+        logger.warning(f"마감된 월('{month}')의 출고 내역은 수정할 수 없습니다.")
+        return False
+
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
@@ -691,13 +715,28 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
             if row_index == -1:
                 return False
 
+        # ── 수정 전 행 데이터 읽기 (재고 조정용) ──────────────────
+        old_item = ""
+        old_qty = 0
+        try:
+            old_row_data = ws.row_values(row_index)
+            old_item = str(old_row_data[1]).strip() if len(old_row_data) > 1 else ""
+            old_qty_str = str(old_row_data[2]).strip().replace(',', '') if len(old_row_data) > 2 else "0"
+            old_qty = int(float(old_qty_str)) if old_qty_str.replace('.', '', 1).isdigit() else 0
+        except Exception as _e:
+            logger.warning(f"수정 전 행 데이터 읽기 실패: {_e}")
+
+        new_item = str(data.get('item_name', old_item)).strip()
+        new_qty_str = str(data.get('quantity', old_qty)).strip().replace(',', '')
+        new_qty = int(float(new_qty_str)) if new_qty_str.replace('.', '', 1).isdigit() else old_qty
+
         outbound_type = data.get('outbound_type', '일반')
         if not outbound_type or outbound_type.strip() == '':
             outbound_type = '일반'
         ws.update(f"A{row_index}:G{row_index}", [[
             data.get('date', ''),
-            data.get('item_name', ''),
-            data.get('quantity', ''),
+            new_item,
+            str(new_qty),
             data.get('user_name', ''),
             outbound_type,
             data.get('staff', ''),
@@ -706,6 +745,24 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
         invalidate_cache(f"outbound_{month}")
         invalidate_cache("items_")  # "items_cumulative_all", "items_monthly_*" 등 모두 무효화
         sync_inventory_summary_sheet()
+
+        # ── 토너 실재고 차액/품목 변경 반영 ──
+        try:
+            if old_item and new_item and old_item.lower() == new_item.lower():
+                qty_diff = new_qty - old_qty  # 양수: 출고량 증가 -> 재고 추가 차감
+                if qty_diff > 0:
+                    deduct_toner_stock(new_item, qty_diff)
+                elif qty_diff < 0:
+                    restore_toner_stock(new_item, abs(qty_diff))
+            else:
+                # 품목 변경: 이전 품목 원복, 새 품목 차감
+                if old_item and old_qty > 0:
+                    restore_toner_stock(old_item, old_qty)
+                if new_item and new_qty > 0:
+                    deduct_toner_stock(new_item, new_qty)
+        except Exception as e:
+            logger.warning(f"출고 수정 후 토너 재고 조정 오류 (출고 수정은 완료): {e}")
+
         return True
     except Exception as e:
         logger.error(f"Error updating outbound: {e}")
@@ -715,8 +772,14 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
 def delete_outbound_history(month: str, row_index: int,
                             verify_date: str = "", verify_item: str = "", verify_user: str = "") -> bool:
     """월별 출고 시트의 특정 행(row_index)을 완전히 삭제합니다.
+    마감된 월은 삭제를 차단합니다.
     verify_date + verify_item + verify_user 3중 검증으로 중복 행 오탐 방지.
     삭제 후 해당 품목의 토너 실재고를 자동 복구합니다."""
+    status_info = get_month_close_status(month)
+    if status_info.get("status") == "closed":
+        logger.warning(f"마감된 월('{month}')의 출고 내역은 삭제할 수 없습니다.")
+        return False
+
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return False
     try:
@@ -1370,7 +1433,7 @@ def add_individual_inbound(data: dict) -> bool:
 
 
 def delete_individual_inbound(row_index: int, item_name: str = "", quantity: int = 0) -> dict:
-    """개별 입고 한 건 삭제 + 토너/일반 실재고 복원 차감"""
+    """개별 입고 한 건 삭제 + 토너/일반 실재고 복원 차감 (이미 삭제된 행은 재차감 방지)"""
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss_master:
         return {"success": False, "error": "Google Sheets 연결 실패"}
@@ -1379,38 +1442,41 @@ def delete_individual_inbound(row_index: int, item_name: str = "", quantity: int
         if not ws:
             return {"success": False, "error": "개별입고내역 시트 없음"}
 
-        # 행 데이터 확인 (인자로 안 온 경우 시트에서 읽기)
-        if not item_name or not quantity:
-            try:
-                row_data  = ws.row_values(row_index)
-                item_name = str(row_data[1]).strip() if len(row_data) > 1 else item_name
-                qty_str   = str(row_data[2]).strip().replace(',', '') if len(row_data) > 2 else "0"
-                quantity  = int(float(qty_str)) if qty_str.replace('.', '', 1).isdigit() else quantity
-            except Exception as _e:
-                logger.warning(f"개별 입고 삭제 행 읽기 실패: {_e}")
+        # 행 데이터 확인
+        row_data = ws.row_values(row_index)
+        cur_item = str(row_data[1]).strip() if len(row_data) > 1 else item_name
+        cur_qty_str = str(row_data[2]).strip().replace(',', '') if len(row_data) > 2 else "0"
+        cur_qty = int(float(cur_qty_str)) if cur_qty_str.replace('.', '', 1).isdigit() else 0
+        old_note = str(row_data[3]).strip() if len(row_data) > 3 else ""
+
+        # 이미 [삭제됨] 이거나 수량이 0이면 중복 차감하지 않고 성공 반환
+        if "[삭제됨]" in old_note or cur_qty == 0:
+            logger.info(f"개별 입고 row {row_index} 이미 삭제 처리됨 — 중복 차감 방지")
+            return {"success": True, "already_deleted": True}
+
+        target_item = cur_item or item_name
+        target_qty = cur_qty if cur_qty > 0 else quantity
 
         # 소프트 삭제: 수량 0, 비고 [삭제됨] 추가
         try:
-            row_data = ws.row_values(row_index)
-            old_note = str(row_data[3]).strip() if len(row_data) > 3 else ""
-            if "[삭제됨]" not in old_note:
-                new_note = f"[삭제됨] {old_note}".strip()
-                ws.update_cell(row_index, 3, "0")
-                ws.update_cell(row_index, 4, new_note)
+            new_note = f"[삭제됨] {old_note}".strip()
+            ws.update_cell(row_index, 3, "0")
+            ws.update_cell(row_index, 4, new_note)
         except Exception as _e:
-            logger.warning(f"소프트 삭제 업데이트 실패: {_e}")
+            logger.error(f"소프트 삭제 업데이트 실패: {_e}")
+            raise _e
 
         invalidate_cache("individual_inbound_")
 
         # 개별 입고 취소 → 실재고 차감
-        if item_name and quantity > 0:
+        if target_item and target_qty > 0:
             try:
-                success = deduct_toner_stock(item_name, quantity)
+                success = deduct_toner_stock(target_item, target_qty)
                 if not success:
-                    adjust_general_item_order_qty(item_name, -quantity)
-                    logger.info(f"개별 입고 삭제 후 일반 소모품 추가 수량 차감: '{item_name}' -{quantity}")
+                    adjust_general_item_order_qty(target_item, -target_qty)
+                    logger.info(f"개별 입고 삭제 후 일반 소모품 추가 수량 차감: '{target_item}' -{target_qty}")
                 else:
-                    logger.info(f"개별 입고 삭제 후 토너 재고 차감: '{item_name}' -{quantity}")
+                    logger.info(f"개별 입고 삭제 후 토너 재고 차감: '{target_item}' -{target_qty}")
             except Exception as e:
                 logger.warning(f"개별 입고 삭제 재고 차감 오류 (삭제는 완료): {e}")
 
@@ -1421,7 +1487,7 @@ def delete_individual_inbound(row_index: int, item_name: str = "", quantity: int
 
 
 def update_individual_inbound(row_index: int, new_data: dict) -> dict:
-    """개별 입고 수정 + 실재고 자동 조정 (수량 변경 시 차액만 반영)"""
+    """개별 입고 수정 + 실재고 자동 조정 (수량 변경 차액 및 품목 변경 재고 이동)"""
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss_master:
         return {"success": False, "error": "Google Sheets 연결 실패"}
@@ -1451,26 +1517,31 @@ def update_individual_inbound(row_index: int, new_data: dict) -> dict:
         ws.update(f"A{row_index}:E{row_index}", [[date, item_name, str(new_qty), note, source]])
         invalidate_cache("individual_inbound_")
 
-        # 실재고 차액 조정 (수량 변경 시만)
-        if item_name and new_qty != old_qty:
-            diff = new_qty - old_qty
-            try:
-                if diff > 0:
-                    success = restore_toner_stock(item_name, diff)
-                    if not success:
-                        adjust_general_item_order_qty(item_name, diff)
-                        logger.info(f"개별 입고 수정 일반 소모품 추가 수량 반영: '{item_name}' +{diff}")
+        # 실재고 조정 (품목 동일 vs 품목 변경)
+        try:
+            if old_item.lower() == item_name.lower():
+                if new_qty != old_qty:
+                    diff = new_qty - old_qty
+                    if diff > 0:
+                        success = restore_toner_stock(item_name, diff)
+                        if not success:
+                            adjust_general_item_order_qty(item_name, diff)
                     else:
-                        logger.info(f"개별 입고 수정 토너 재고 추가: '{item_name}' +{diff}")
-                else:
-                    success = deduct_toner_stock(item_name, abs(diff))
-                    if not success:
-                        adjust_general_item_order_qty(item_name, diff) # diff가 음수이므로 그대로 더함
-                        logger.info(f"개별 입고 수정 일반 소모품 추가 수량 차감: '{item_name}' {diff}")
-                    else:
-                        logger.info(f"개별 입고 수정 토너 재고 차감: '{item_name}' {diff}")
-            except Exception as e:
-                logger.warning(f"개별 입고 수정 재고 조정 오류 (수정은 완료): {e}")
+                        success = deduct_toner_stock(item_name, abs(diff))
+                        if not success:
+                            adjust_general_item_order_qty(item_name, diff)
+            else:
+                # 품목 변경: 이전 품목 입고 취소(차감), 새 품목 입고 반영(추가)
+                if old_item and old_qty > 0:
+                    s_old = deduct_toner_stock(old_item, old_qty)
+                    if not s_old:
+                        adjust_general_item_order_qty(old_item, -old_qty)
+                if item_name and new_qty > 0:
+                    s_new = restore_toner_stock(item_name, new_qty)
+                    if not s_new:
+                        adjust_general_item_order_qty(item_name, new_qty)
+        except Exception as e:
+            logger.warning(f"개별 입고 수정 재고 조정 오류 (수정은 완료): {e}")
 
         return {"success": True}
     except Exception as e:
@@ -1856,12 +1927,12 @@ CLOSE_STATUS_SHEET = "월별마감"   # 마스터 스프레드시트 내 시트�
 
 def _ensure_snapshot_sheets(ss_master) -> tuple:
     """월별스냅샷, 월별마감 시트가 없으면 자동 생성 후 반환.
-    스냅샷 컬럼: 월 | 분류(일반/토너) | 품목명 | 시작재고 | 스냅샷일시 | 이월여부
+    스냅샷 컬럼(10열): 월 | 분류(일반/토너) | 품목명 | 기초재고 | 입고수량 | 출고수량 | 조정수량 | 기말재고 | 스냅샷일시 | 이월여부
     """
     snap_ws = _get_worksheet_safe(ss_master, SNAPSHOT_SHEET)
     if not snap_ws:
-        snap_ws = ss_master.add_worksheet(title=SNAPSHOT_SHEET, rows=2000, cols=6)
-        snap_ws.update("A1:F1", [["월", "분류", "품목명", "시작재고", "스냅샷일시", "이월여부"]])
+        snap_ws = ss_master.add_worksheet(title=SNAPSHOT_SHEET, rows=3000, cols=10)
+        snap_ws.update("A1:J1", [["월", "분류", "품목명", "기초재고", "입고수량", "출고수량", "조정수량", "기말재고", "스냅샷일시", "이월여부"]])
         logger.info(f"'{SNAPSHOT_SHEET}' 시트 자동 생성")
 
     close_ws = _get_worksheet_safe(ss_master, CLOSE_STATUS_SHEET)
@@ -1904,8 +1975,7 @@ def _get_month_close_status_impl(month: str) -> dict:
 def confirm_month_snapshot(month: str) -> dict:
     """
     '이달 재고 확정': 일반 소모품(is_tracked) + 토너 재고를 해당 월 시작 재고로 저장.
-    이전 달이 마감된 경우 → 분류별 잔여재고를 자동 이월.
-    스냅샷 컬럼: 월 | 분류(일반/토너) | 품목명 | 시작재고 | 스냅샷일시 | 이월여부
+    이전 달이 마감된 경우 → 분류별 잔여재고를 0재고 포함하여 자동 이월.
     """
     from datetime import datetime
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
@@ -1929,7 +1999,7 @@ def confirm_month_snapshot(month: str) -> dict:
 
     # ── 일반 소모품 스냅샷 ──
     if prev_general:
-        general_data = prev_general
+        general_data = dict(prev_general)
         general_carryover = True
     else:
         # 품목리스트의 is_tracked 일반 품목에서 현재 재고 읽기
@@ -1944,7 +2014,7 @@ def confirm_month_snapshot(month: str) -> dict:
 
     # ── 토너 스냅샷 ──
     if prev_toner:
-        toner_data = prev_toner
+        toner_data = dict(prev_toner)
         toner_carryover = True
     else:
         toner_inv = _get_toner_inventory_impl()
@@ -1959,7 +2029,6 @@ def confirm_month_snapshot(month: str) -> dict:
     # 기존 스냅샷 행 삭제 (재확정 시 덮어쓰기)
     try:
         all_snap = snap_ws.get_all_values()
-        # 첫 번째 행이 헤더인지 판별 — 헤더면 i=0 건너뜀, 데이터면 i=0부터 삭제
         is_header = bool(all_snap and all_snap[0] and all_snap[0][0].strip().lower() in ("월", "month"))
         start_idx = 1 if is_header else 0
         rows_to_delete = [i + 1 for i, r in enumerate(all_snap) if i >= start_idx and len(r) > 0 and r[0].strip() == month]
@@ -1968,12 +2037,12 @@ def confirm_month_snapshot(month: str) -> dict:
     except Exception as e:
         logger.warning(f"기존 스냅샷 삭제 오류 (무시): {e}")
 
-    # 스냅샷 기록 — 분류 컬럼 포함
+    # 스냅샷 기록 — 10열 구조 (기초재고 저장, 입출고/기말은 0 또는 기초와 동일)
     new_rows = []
     for name, qty in general_data.items():
-        new_rows.append([month, "일반", name, qty, now_str, "이월" if general_carryover else "현재재고"])
+        new_rows.append([month, "일반", name, str(qty), "0", "0", "0", str(qty), now_str, "이월" if general_carryover else "현재재고"])
     for name, qty in toner_data.items():
-        new_rows.append([month, "토너", name, qty, now_str, "이월" if toner_carryover else "현재재고"])
+        new_rows.append([month, "토너", name, str(qty), "0", "0", "0", str(qty), now_str, "이월" if toner_carryover else "현재재고"])
 
     if new_rows:
         snap_ws.append_rows(new_rows, value_input_option="USER_ENTERED")
@@ -1992,7 +2061,12 @@ def confirm_month_snapshot(month: str) -> dict:
 
 
 def close_month(month: str) -> dict:
-    """월 마감: 신규 출고 추가 차단. 수정은 허용."""
+    """
+    월 마감:
+    1. 확정된 기초재고 + 당월 입고/출고를 집계하여 기말재고 스냅샷을 10열 행으로 영구 고정 저장합니다.
+    2. 재고가 0인 품목 및 당월 신규 품목도 모두 포함합니다.
+    3. 월별마감 시트에 상태를 'closed'로 원자적으로 기록합니다. 실패 시 에러를 반환합니다.
+    """
     from datetime import datetime
     status = get_month_close_status(month)
     if status["status"] == "closed":
@@ -2004,12 +2078,73 @@ def close_month(month: str) -> dict:
     if not ss_master:
         return {"success": False, "error": "마스터 시트 접근 실패"}
 
-    _, close_ws = _ensure_snapshot_sheets(ss_master)
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    _upsert_close_status(close_ws, month, "closed", status.get("confirmed_at", ""), now_str)
-    invalidate_cache(f"month_status_{month}")
+    snap_ws, close_ws = _ensure_snapshot_sheets(ss_master)
 
-    return {"success": True, "month": month, "closed_at": now_str}
+    try:
+        # 1. 대상 월의 계산된 보고서 데이터 가져오기 (open/confirmed 상태의 실시간 집계치)
+        calc_report = _get_monthly_toner_report_impl(month)
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        general_items = calc_report.get("general_items", [])
+        toner_items = calc_report.get("toner_items", [])
+
+        # 2. 10열 스냅샷 행 구성
+        # 컬럼: [월, 분류, 품목명, 기초재고, 입고수량, 출고수량, 조정수량, 기말재고, 스냅샷일시, 이월여부]
+        snapshot_rows = []
+        for it in general_items:
+            snapshot_rows.append([
+                month,
+                "일반",
+                it.get("item_name", ""),
+                str(it.get("start_stock", 0)),
+                str(it.get("inbound_qty", 0)),
+                str(it.get("outbound_qty", 0)),
+                "0",
+                str(it.get("remaining", 0)),
+                now_str,
+                "마감고정"
+            ])
+
+        for it in toner_items:
+            snapshot_rows.append([
+                month,
+                "토너",
+                it.get("item_name", ""),
+                str(it.get("start_stock", 0)),
+                str(it.get("inbound_qty", 0)),
+                str(it.get("outbound_qty", 0)),
+                "0",
+                str(it.get("remaining", 0)),
+                now_str,
+                "마감고정"
+            ])
+
+        # 3. 기존 해당 월 스냅샷 행 삭제 후 최종 기말 스냅샷 기록
+        all_snap = snap_ws.get_all_values()
+        is_header = bool(all_snap and all_snap[0] and all_snap[0][0].strip().lower() in ("월", "month"))
+        start_idx = 1 if is_header else 0
+        rows_to_delete = [i + 1 for i, r in enumerate(all_snap) if i >= start_idx and len(r) > 0 and r[0].strip() == month]
+        if hasattr(snap_ws, "delete_rows"):
+            for row_idx in sorted(rows_to_delete, reverse=True):
+                snap_ws.delete_rows(row_idx)
+
+        if snapshot_rows:
+            if hasattr(snap_ws, "append_rows"):
+                snap_ws.append_rows(snapshot_rows, value_input_option="USER_ENTERED")
+            elif hasattr(snap_ws, "append_row"):
+                for s_row in snapshot_rows:
+                    snap_ws.append_row(s_row, value_input_option="USER_ENTERED")
+
+        # 4. 월별마감 상태 closed 로 저장 (실패 시 예외 발생하여 성공 응답 방지)
+        _upsert_close_status(close_ws, month, "closed", status.get("confirmed_at", ""), now_str)
+
+        invalidate_cache(f"month_status_{month}")
+        invalidate_cache(f"monthly_report_{month}")
+
+        return {"success": True, "month": month, "closed_at": now_str, "item_count": len(snapshot_rows)}
+    except Exception as e:
+        logger.error(f"월 마감 처리 중 오류 발생: {e}")
+        return {"success": False, "error": f"마감 처리 실패: {str(e)}"}
 
 
 def reopen_month(month: str) -> dict:
@@ -2040,26 +2175,29 @@ def _get_monthly_toner_report_impl(month: str) -> dict:
         return {"month": month, "general_items": [], "toner_items": [], "status": "open", "has_snapshot": False}
 
     snap_ws, _ = _ensure_snapshot_sheets(ss_master)
+    status_info = get_month_close_status(month)
+    is_closed = (status_info.get("status") == "closed")
 
-    # 1. 스냅샷 로드 — 분류별로 분리
-    # 컬럼 형식(신형): 월 | 분류(일반/토너) | 품목명 | 시작재고 | 스냅샷일시 | 이월여부
-    # 구형(분류 컬럼 없음): 월 | 품목명 | 시작재고 | ...
-    # 헤더 행이 없을 수도 있음 (운영 시트에 헤더 없이 데이터만 저장된 경우)
-    general_start = {}  # {품목명: 시작재고}
+    # 1. 스냅샷 로드
+    # 신형(10열): 월 | 분류 | 품목명 | 기초재고 | 입고수량 | 출고수량 | 조정수량 | 기말재고 | 스냅샷일시 | 이월여부
+    # 구형(6열): 월 | 분류(일반/토너) | 품목명 | 시작재고 | 스냅샷일시 | 이월여부
+    # 레거시(4열 이하): 월 | 품목명 | 시작재고 | ...
+    general_start = {}
     toner_start   = {}
+    fixed_general_items = []
+    fixed_toner_items = []
+    has_snapshot_data = False
+
     try:
         all_snap = snap_ws.get_all_values()
-
         if all_snap:
             first_row = all_snap[0]
             first_col0 = first_row[0].strip() if first_row else ""
-            # 첫 번째 행이 헤더인지 판별: "월" 또는 "month" → 헤더, 그 외 → 데이터
             is_header_row = first_col0.lower() in ("월", "month")
             if is_header_row:
                 has_type_col = len(first_row) >= 2 and first_row[1].strip() in ("분류", "type")
                 data_rows = all_snap[1:]
             else:
-                # 헤더 없음 — col[1]이 "일반"/"토너"이면 신형 형식으로 간주
                 sample = [r for r in all_snap if len(r) >= 2 and r[0].strip()]
                 has_type_col = bool(sample and sample[0][1].strip() in ("일반", "토너"))
                 data_rows = all_snap
@@ -2070,8 +2208,42 @@ def _get_monthly_toner_report_impl(month: str) -> dict:
         for row in data_rows:
             if not row or row[0].strip() != month:
                 continue
-            if has_type_col:
-                # 신형: 월, 분류, 품목명, 시작재고
+            has_snapshot_data = True
+
+            # 10열 기말 스냅샷 형식 검사 (col 7 = 기말재고, col 3 = 기초재고)
+            if len(row) >= 8 and has_type_col:
+                cls = row[1].strip()
+                name = row[2].strip()
+                if not name:
+                    continue
+                try:
+                    s_qty = int(str(row[3]).replace(",", "").strip() or "0")
+                except ValueError: s_qty = 0
+                try:
+                    in_qty = int(str(row[4]).replace(",", "").strip() or "0")
+                except ValueError: in_qty = 0
+                try:
+                    out_qty = int(str(row[5]).replace(",", "").strip() or "0")
+                except ValueError: out_qty = 0
+                try:
+                    rem_qty = int(str(row[7]).replace(",", "").strip() or "0")
+                except ValueError: rem_qty = s_qty + in_qty - out_qty
+
+                item_obj = {
+                    "item_name": name,
+                    "start_stock": s_qty,
+                    "inbound_qty": in_qty,
+                    "outbound_qty": out_qty,
+                    "remaining": rem_qty
+                }
+                if cls == "일반":
+                    fixed_general_items.append(item_obj)
+                    general_start[name] = s_qty
+                else:
+                    fixed_toner_items.append(item_obj)
+                    toner_start[name] = s_qty
+            elif has_type_col:
+                # 6열 시작재고 형식
                 if len(row) < 4:
                     continue
                 cls  = row[1].strip()
@@ -2080,8 +2252,13 @@ def _get_monthly_toner_report_impl(month: str) -> dict:
                     qty = int(str(row[3]).replace(",", "").strip() or "0")
                 except ValueError:
                     qty = 0
+                if not name: continue
+                if cls == "일반":
+                    general_start[name] = qty
+                else:
+                    toner_start[name] = qty
             else:
-                # 구형(분류 컬럼 없음) → 토너로 간주
+                # 구형
                 if len(row) < 3:
                     continue
                 cls  = "토너"
@@ -2090,16 +2267,27 @@ def _get_monthly_toner_report_impl(month: str) -> dict:
                     qty = int(str(row[2]).replace(",", "").strip() or "0")
                 except ValueError:
                     qty = 0
-
-            if not name:
-                continue
-            if cls == "일반":
-                general_start[name] = qty
-            else:
+                if not name: continue
                 toner_start[name] = qty
     except Exception as e:
         logger.error(f"스냅샷 조회 오류: {e}")
 
+    # 마감(closed) 상태이고 10열 고정 스냅샷 데이터가 존재하면 고정 스냅샷을 즉시 반환 (과거 보고서 불변성 보장)
+    if is_closed and (fixed_general_items or fixed_toner_items):
+        fixed_general_items.sort(key=lambda x: x["item_name"])
+        fixed_toner_items.sort(key=lambda x: x["item_name"])
+        return {
+            "month": month,
+            "status": "closed",
+            "confirmed_at": status_info.get("confirmed_at"),
+            "closed_at": status_info.get("closed_at"),
+            "general_items": fixed_general_items,
+            "toner_items":   fixed_toner_items,
+            "has_snapshot": True,
+            "items": fixed_general_items + fixed_toner_items,
+        }
+
+    # open / confirmed 상태이거나 구형 스냅샷인 경우 실시간 집계 계산:
     # 2. 해당 월 출고 내역 로드
     _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     outbound_qty = {}  # {품목명: 총출고량}
@@ -2120,27 +2308,98 @@ def _get_monthly_toner_report_impl(month: str) -> dict:
         except Exception as e:
             logger.error(f"출고 내역 조회 오류: {e}")
 
-    def _build_items(start_dict):
-        all_names = set(list(start_dict.keys()) + [k for k in outbound_qty if k in start_dict])
+    # 3. 해당 월 입고 내역 로드 (개별입고 + 일반입고)
+    inbound_qty = {}
+    try:
+        indiv_inbounds = get_individual_inbound_history(month=month)
+        for r in indiv_inbounds:
+            i_name = r.get("item_name", "").strip()
+            if i_name:
+                inbound_qty[i_name] = inbound_qty.get(i_name, 0) + int(r.get("quantity", 0) or 0)
+    except Exception as e:
+        logger.warning(f"당월 개별입고 조회 오류: {e}")
+
+    try:
+        inbound_records = _get_inbound_history_impl()
+        for r in inbound_records:
+            d_str = r.get("date", "")
+            r_ym = _parse_ym(d_str)
+            target_ym_tuple = _parse_ym_from_month_title(month)
+            if target_ym_tuple and r_ym:
+                expected_ym = f"{target_ym_tuple[0]}-{str(target_ym_tuple[1]).zfill(2)}"
+                if r_ym == expected_ym:
+                    i_name = r.get("item_name", "").strip()
+                    try:
+                        q = int(str(r.get("quantity", "0")).replace(",", ""))
+                    except ValueError:
+                        q = 0
+                    if i_name:
+                        inbound_qty[i_name] = inbound_qty.get(i_name, 0) + q
+    except Exception as e:
+        logger.warning(f"당월 일반입고 조회 오류: {e}")
+
+    # 마스터 품목 및 토너 마스터 품목도 포함하여 당월 신규 품목 및 0재고 품목 누락 방지
+    all_master_general = {}
+    try:
+        master_items = _get_items_list_impl()
+        for it in master_items:
+            cat = it.get("category", "").lower()
+            n = it.get("item_name", "").strip()
+            if it.get("is_tracked") and n and "tonner" not in cat and "toner" not in cat and "토너" not in cat:
+                all_master_general[n] = 0
+    except Exception:
+        pass
+
+    all_master_toner = {}
+    try:
+        t_inv = _get_toner_inventory_impl()
+        for it in t_inv.get("items", []):
+            n = it.get("item_name", "").strip()
+            if n:
+                all_master_toner[n] = 0
+    except Exception:
+        pass
+
+    def _build_items(start_dict, master_dict, cls_type):
+        all_names = set(list(start_dict.keys()) + list(master_dict.keys()))
+        for k in list(outbound_qty.keys()) + list(inbound_qty.keys()):
+            if k in start_dict or k in master_dict:
+                all_names.add(k)
+            else:
+                # 미분류 신규 품목: 토너 여부에 따라 분기
+                _is_toner_fn = globals().get('_is_in_toner_sheet')
+                is_toner = _is_toner_fn(k) if _is_toner_fn else any(kw in k.lower() for kw in ['toner', 'tonner', '토너'])
+                if (cls_type == "토너" and is_toner) or (cls_type == "일반" and not is_toner):
+                    all_names.add(k)
+
         result = []
         for name in sorted(all_names):
             s = start_dict.get(name, 0)
+            i = inbound_qty.get(name, 0)
             o = outbound_qty.get(name, 0)
-            result.append({"item_name": name, "start_stock": s, "outbound_qty": o, "remaining": s - o})
+            rem = s + i - o
+            result.append({
+                "item_name": name,
+                "start_stock": s,
+                "inbound_qty": i,
+                "outbound_qty": o,
+                "remaining": rem
+            })
         return result
 
-    status_info = get_month_close_status(month)
-    has_snapshot = bool(general_start or toner_start)
+    gen_items = _build_items(general_start, all_master_general, "일반")
+    ton_items = _build_items(toner_start, all_master_toner, "토너")
+    has_snap = has_snapshot_data or bool(general_start or toner_start)
+
     return {
         "month": month,
         "status": status_info["status"],
         "confirmed_at": status_info.get("confirmed_at"),
         "closed_at": status_info.get("closed_at"),
-        "general_items": _build_items(general_start),
-        "toner_items":   _build_items(toner_start),
-        "has_snapshot": has_snapshot,
-        # 하위 호환용 (기존 코드가 items를 쓸 경우)
-        "items": _build_items({**general_start, **toner_start}),
+        "general_items": gen_items,
+        "toner_items":   ton_items,
+        "has_snapshot": has_snap,
+        "items": gen_items + ton_items,
     }
 
 
@@ -2189,7 +2448,7 @@ def reset_month_snapshot(month: str) -> dict:
 
 
 def _get_previous_month_remaining_by_type(month: str) -> dict:
-    """이전 달이 마감 상태라면 분류별 잔여재고 반환: {"일반": {품목명:qty}, "토너": {품목명:qty}}"""
+    """이전 달이 마감 상태라면 분류별 잔여재고 반환 (0재고 품목 포함): {"일반": {품목명:qty}, "토너": {품목명:qty}}"""
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss_master:
         return {"일반": {}, "토너": {}}
@@ -2215,8 +2474,8 @@ def _get_previous_month_remaining_by_type(month: str) -> dict:
         prev_report = _get_monthly_toner_report_impl(prev_month)
 
         return {
-            "일반": {it["item_name"]: it["remaining"] for it in prev_report.get("general_items", []) if it["remaining"] > 0},
-            "토너": {it["item_name"]: it["remaining"] for it in prev_report.get("toner_items",   []) if it["remaining"] > 0},
+            "일반": {it["item_name"]: it["remaining"] for it in prev_report.get("general_items", [])},
+            "토너": {it["item_name"]: it["remaining"] for it in prev_report.get("toner_items",   [])},
         }
     except Exception as e:
         logger.warning(f"이전 달 잔여재고 조회 오류: {e}")
@@ -2250,3 +2509,4 @@ def _upsert_close_status(close_ws, month: str, status: str, confirmed_at: str, c
         close_ws.append_row([month, status, confirmed_at, closed_at], value_input_option="USER_ENTERED")
     except Exception as e:
         logger.error(f"마감 상태 기록 오류: {e}")
+        raise

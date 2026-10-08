@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 from datetime import datetime
 from backend.services.database import load_from_db, update_db
-from backend.services.consumables_service import add_outbound, add_purchase_record, invalidate_cache
+from backend.services.consumables_service import add_outbound, add_purchase_record, invalidate_cache, get_month_close_status
 
 router = APIRouter(
     prefix="/api/rentals",
@@ -223,14 +223,13 @@ def convert_to_outbound(item_no: int):
     if current_status in ["반납완료", "출고전환"]:
         raise HTTPException(status_code=400, detail="이미 처리된 항목입니다.")
         
-    # 상태를 '출고전환'으로 변경하여 반납 대상에서 제외
-    df.at[row_idx, "상태"] = "출고전환"
-    
-    update_db("Rental", df)
-    
-    # 이제 공식적으로 출고 내역(Outbound) 시트에 기록 (총 출고량 합산됨)
+    # 마감 검증 및 출고 내역(Outbound) 시트에 기록
     month_str = datetime.now().strftime("%Y년 %-m월")
-    add_outbound(month_str, {
+    close_info = get_month_close_status(month_str)
+    if close_info.get("status") == "closed":
+        raise HTTPException(status_code=403, detail=f"'{month_str}'은(는) 마감된 월입니다. 대여 출고 전환을 진행할 수 없습니다.")
+
+    success = add_outbound(month_str, {
         "date": datetime.now().strftime("%Y-%m-%d"),
         "item_name": df.at[row_idx, "품목명"],
         "quantity": df.at[row_idx, "수량"],
@@ -239,8 +238,14 @@ def convert_to_outbound(item_no: int):
         "staff": "시스템",
         "delivery": "직접"
     })
-    
+    if not success:
+        raise HTTPException(status_code=500, detail="출고 내역 기록에 실패하여 대여 상태를 변경하지 않았습니다.")
+
+    # 출고 성공 시 상태를 '출고전환'으로 변경하여 반납 대상에서 제외
+    df.at[row_idx, "상태"] = "출고전환"
+    update_db("Rental", df)
+
     # 상태 변경으로 인한 재고 변동(Rental 동적 차감 해제 -> 정식 출고 차감)을 반영하기 위해 캐시 초기화
     invalidate_cache("items_")
-    
+
     return {"message": "영구 출고 전환 완료"}

@@ -154,14 +154,17 @@ def update_db(key: str, df: pd.DataFrame):
 
     # 1. Google Sheets 저장
     if SHEETS_AVAILABLE:
+        ok = False
         try:
             ok = update_sheet(key, df)
             if ok:
                 print(f"✅ Google Sheets '{key}' 저장 완료")
             else:
-                print(f"⚠️  Google Sheets 저장 실패, SQLite에만 저장됩니다.")
+                logger.error(f"Google Sheets '{key}' 저장 실패")
+                raise RuntimeError(f"Google Sheets '{key}' 업데이트에 실패했습니다.")
         except Exception as e:
-            print(f"⚠️  Google Sheets 저장 오류: {e}")
+            logger.error(f"Google Sheets 저장 오류: {e}")
+            raise
 
     # 2. SQLite 백업 저장 (항상 실행)
     try:
