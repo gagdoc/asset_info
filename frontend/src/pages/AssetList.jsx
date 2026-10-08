@@ -31,8 +31,9 @@ const AssetList = () => {
     const [excludeQuery, setExcludeQuery] = useState('')
     const [onlyWithEmail, setOnlyWithEmail] = useState(false)
 
-    // 상세 수정 모달 상태
+    // 상세 수정/신규 추가 모달 상태
     const [isModalOpen, setIsModalOpen] = useState(false)
+    const [isCreateMode, setIsCreateMode] = useState(false)
     const [editingRowIdx, setEditingRowIdx] = useState(null)
     const [modalData, setModalData] = useState({})
     const [isSaving, setIsSaving] = useState(false)
@@ -289,8 +290,9 @@ const AssetList = () => {
     
     const duplicateEmails = Object.keys(duplicateGroups)
 
-    // ── 상세 수정 모달 로직 ──
+    // ── 상세 수정 / 신규 추가 모달 로직 ──
     const openEditModal = (row) => {
+        setIsCreateMode(false)
         setEditingRowIdx(row._originalIdx)
         const cleanRow = { ...row }
         delete cleanRow._originalIdx // backend doesn't need this
@@ -298,21 +300,43 @@ const AssetList = () => {
         setIsModalOpen(true)
     }
 
+    const openAddModal = () => {
+        setIsCreateMode(true)
+        setEditingRowIdx(null)
+        const initialData = {}
+        columns.forEach(col => {
+            initialData[col] = ''
+        })
+        setModalData(initialData)
+        setIsModalOpen(true)
+    }
+
     const handleModalSave = async () => {
         setIsSaving(true)
         try {
-            await axios.put('/api/assets/row/update', {
-                asset_type: type,
-                row_index: editingRowIdx,
-                updates: modalData
-            })
-            queryClient.invalidateQueries(['assets', type])
-            addToast('상세 수정 완료', 'success')
-            alert('상세 수정이 완료되었습니다.')
+            if (isCreateMode) {
+                await axios.post('/api/assets/row/add', {
+                    asset_type: type,
+                    row_data: modalData
+                })
+                queryClient.invalidateQueries(['assets', type])
+                addToast('신규 항목 추가 완료', 'success')
+                alert('신규 항목이 추가되었습니다.')
+            } else {
+                await axios.put('/api/assets/row/update', {
+                    asset_type: type,
+                    row_index: editingRowIdx,
+                    updates: modalData
+                })
+                queryClient.invalidateQueries(['assets', type])
+                addToast('상세 수정 완료', 'success')
+                alert('상세 수정이 완료되었습니다.')
+            }
             setIsModalOpen(false)
         } catch (err) {
-            addToast('수정 실패: ' + err.message, 'error')
-            alert('수정 실패: ' + err.message)
+            const actionStr = isCreateMode ? '추가' : '수정'
+            addToast(`${actionStr} 실패: ` + (err.response?.data?.detail || err.message), 'error')
+            alert(`${actionStr} 실패: ` + (err.response?.data?.detail || err.message))
         } finally {
             setIsSaving(false)
         }
@@ -752,6 +776,13 @@ const AssetList = () => {
                             </select>
                         </div>
                     )}
+                    <button 
+                        className="btn btn-primary btn-sm" 
+                        onClick={openAddModal} 
+                        style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    >
+                        ➕ {type === 'Printer' ? '프린터 신규 등록' : '신규 추가'}
+                    </button>
                     {selectedRows.size > 0 && (
                         <button className="btn btn-danger btn-sm" onClick={handleDeleteSelected}>
                             🗑 {selectedRows.size}개 삭제
@@ -888,13 +919,17 @@ const AssetList = () => {
                     <div className="card modal" style={{ width: '90%', maxWidth: '800px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: '#fff' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '1rem', borderBottom: '1px solid #eee' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <h3 style={{ margin: 0 }}>📍 상세 정보 수정</h3>
+                                <h3 style={{ margin: 0 }}>
+                                    {isCreateMode ? `➕ ${type === 'Printer' ? '프린터 신규 등록' : '신규 추가'}` : '📍 상세 정보 수정'}
+                                </h3>
                                 <button className="btn btn-sm" onClick={() => setIsUserSearchOpen(!isUserSearchOpen)} style={{ backgroundColor: isUserSearchOpen ? '#eff6ff' : '#f3f4f6', color: isUserSearchOpen ? '#1d4ed8' : '#374151', border: `1px solid ${isUserSearchOpen ? '#bfdbfe' : '#d1d5db'}` }}>
                                     🔍 {isUserSearchOpen ? '사용자/기기 검색 닫기' : '기존 사용자 정보 불러오기'}
                                 </button>
-                                <button className="btn btn-sm" onClick={handleReturnAsset} style={{ backgroundColor: '#fff1f2', color: '#be123c', border: '1px solid #fecdd3' }}>
-                                    🔄 반납 처리 (IT/STOCK)
-                                </button>
+                                {!isCreateMode && (
+                                    <button className="btn btn-sm" onClick={handleReturnAsset} style={{ backgroundColor: '#fff1f2', color: '#be123c', border: '1px solid #fecdd3' }}>
+                                        🔄 반납 처리 (IT/STOCK)
+                                    </button>
+                                )}
                             </div>
                             <button className="btn btn-secondary" onClick={() => { setIsModalOpen(false); setIsUserSearchOpen(false); }}>✖</button>
                         </div>
@@ -965,7 +1000,7 @@ const AssetList = () => {
                         <div style={{ padding: '1rem', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                             <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)} disabled={isSaving}>취소</button>
                             <button className="btn btn-primary" onClick={handleModalSave} disabled={isSaving}>
-                                {isSaving ? '⏳ 저장 중...' : '💾 모든 변경사항 저장'}
+                                {isSaving ? '⏳ 저장 중...' : (isCreateMode ? '💾 신규 항목 저장' : '💾 모든 변경사항 저장')}
                             </button>
                         </div>
                     </div>

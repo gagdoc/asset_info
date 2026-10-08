@@ -47,6 +47,10 @@ class RowDeleteRequest(BaseModel):
     asset_type: str
     row_indices: List[int]
 
+class RowAddRequest(BaseModel):
+    asset_type: str
+    row_data: Dict[str, Any]
+
 class NewHireEntry(BaseModel):
     NAME: Optional[str] = ""
     email: Optional[str] = ""
@@ -613,15 +617,20 @@ def delete_rows(req: RowDeleteRequest):
 
 # ── Add Row ──────────────────────────────────────────
 @router.post("/row/add")
-def add_row(asset_type: str, row_data: Dict[str, Any]):
+def add_row(req: RowAddRequest):
     dfs = load_from_db()
-    if asset_type not in dfs:
-        raise HTTPException(status_code=404, detail=f"Asset type '{asset_type}' not found")
+    if req.asset_type not in dfs:
+        raise HTTPException(status_code=404, detail=f"Asset type '{req.asset_type}' not found")
     
-    df = dfs[asset_type]
-    new_row = pd.DataFrame([row_data])
+    df = dfs[req.asset_type]
+    # 입력 데이터의 컬럼 정렬 및 보정
+    new_row = pd.DataFrame([req.row_data])
     df = pd.concat([df, new_row], ignore_index=True)
-    update_db(asset_type, df)
+    try:
+        update_db(req.asset_type, df)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"데이터 추가 후 저장 실패: {str(e)}")
+    _invalidate_dashboard_cache()
     return {"message": "Row added successfully"}
 
 # ── Replace Table (CSV/Excel upload per table) ───────
