@@ -94,7 +94,7 @@ const Consumables = () => {
                     </button>
                 </div>
                 
-                {activeTab !== 'create-month' && (
+                {activeTab !== 'create-month' && activeTab !== 'items' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', padding: '8px 12px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
                         <label style={{ fontWeight: 'bold' }}>📅 조회 월 선택:</label>
                         <select 
@@ -169,7 +169,7 @@ const Consumables = () => {
             {activeTab === 'estimate' && selectedMonth && <EstimateTab month={selectedMonth} />}
             {activeTab === 'outbound' && selectedMonth && <OutboundTab month={selectedMonth} isDev={isDev} />}
             {activeTab === 'create-month' && <CreateMonthTab />}
-            {activeTab === 'items' && <ItemsTab month={selectedMonth} months={monthsData} />}
+            {activeTab === 'items' && <ItemsTab />}
             {activeTab === 'tracked' && <TrackedItemsTab month={selectedMonth} months={monthsData} />}
             {activeTab === 'purchase' && <PurchaseTab months={monthsData} items={undefined} />}
             {activeTab === 'tonner-consignment' && <TonnerConsignmentTab month={selectedMonth} months={monthsData} />}
@@ -656,6 +656,7 @@ const OutboundTab = ({ month, isDev = false }) => {
             queryClient.invalidateQueries(['consumables-outbound', month])
             queryClient.invalidateQueries(['tonner-consignment'])
             queryClient.invalidateQueries(['toner-inventory'])
+            queryClient.invalidateQueries(['consumables-items'])
             setShowForm(false)
             setFormData({ date: '', item_name: '', quantity: '1', outbound_type: '일반', staff: '', staff_custom: '', delivery: '', delivery_custom: '' })
             setUserNames([''])
@@ -689,6 +690,7 @@ const OutboundTab = ({ month, isDev = false }) => {
             queryClient.invalidateQueries(['consumables-outbound', month])
             queryClient.invalidateQueries(['tonner-consignment'])
             queryClient.invalidateQueries(['toner-inventory'])
+            queryClient.invalidateQueries(['consumables-items'])
             setShowForm(false)
             setFormData({ date: '', item_name: '', quantity: '1', outbound_type: '일반', staff: '', staff_custom: '', delivery: '', delivery_custom: '' })
             setUserNames([''])
@@ -1473,11 +1475,9 @@ const isTonnerItem = (name, category) => {
         || c.includes('tonner') || c.includes('toner') || c.includes('토너')
 }
 
-const ItemsTab = ({ month, months }) => {
+const ItemsTab = () => {
     const queryClient = useQueryClient()
     const [viewMode, setViewMode] = useState('general') // 'general' | 'toner-inventory'
-    const dispatchMode = 'monthly' // 항상 월별 모드
-    const [dispatchMonth, setDispatchMonth] = useState(month || '')
     const [showForm, setShowForm] = useState(false)
     const [formData, setFormData] = useState({
         row_index: null,
@@ -1499,18 +1499,11 @@ const ItemsTab = ({ month, months }) => {
     const [indivEditRow, setIndivEditRow] = useState(null)  // null | { row_index, date, quantity, note, item_name }
     const [indivEditForm, setIndivEditForm] = useState({ date: '', quantity: '', source: '한누리', note: '' })
 
-    // 부모에서 month가 바뀌면 dispatchMonth도 동기화
-    useEffect(() => {
-        if (month && !dispatchMonth) setDispatchMonth(month)
-    }, [month])
-
-    const itemsQueryKey = ['consumables-items', 'monthly', dispatchMonth]
+    const itemsQueryKey = ['consumables-items', 'cumulative']
     const { data: items, isLoading } = useQuery({
         queryKey: itemsQueryKey,
         queryFn: async () => {
-            const params = new URLSearchParams({ dispatch_mode: 'monthly' })
-            if (dispatchMonth) params.append('month', dispatchMonth)
-            const { data } = await axios.get(`/api/consumables/items?${params}`)
+            const { data } = await axios.get('/api/consumables/items?dispatch_mode=cumulative')
             return data
         }
     })
@@ -1611,27 +1604,7 @@ const ItemsTab = ({ month, months }) => {
         setShowForm(true)
     }
 
-    // 개별 입고 내역 (선택 월 기준)
-    const { data: indivHistory } = useQuery({
-        queryKey: ['individual-inbound', dispatchMonth || 'all'],
-        queryFn: async () => {
-            const params = dispatchMonth ? `?month=${encodeURIComponent(dispatchMonth)}` : ''
-            const { data } = await axios.get(`/api/consumables/individual-inbound${params}`)
-            return data
-        },
-        staleTime: 60000,
-    })
-    const indivMap = useMemo(() => {
-        if (!indivHistory) return {}
-        const m = {}
-        indivHistory.forEach(rec => {
-            if (rec.item_name) {
-                const key = rec.item_name.toLowerCase()
-                m[key] = (m[key] || 0) + (rec.quantity || 0)
-            }
-        })
-        return m
-    }, [indivHistory])
+
 
     // 개별 입고 전체 내역 (모달에서 해당 품목 내역 표시용) — 키를 'individual-inbound-modal'로 분리해 월별 쿼리와 충돌 방지
     const { data: indivAllHistory, refetch: refetchIndivAll } = useQuery({
@@ -1722,11 +1695,10 @@ const ItemsTab = ({ month, months }) => {
                         onClick={async () => {
                         const rows = (filteredItems || []).map(r => ({
                             '대분류': r.category, '품목명': r.item_name,
-                            '단가(원)': r.price, '재고추적': r.is_tracked ? 'Y' : 'N',
-                            '출고수량': r.dispatched_qty || 0, '실재고수량': r.current_stock ?? '',
+                            '단가(원)': r.price, '현재 수량': r.current_stock ?? 0,
                         }))
-                        await exportToXLSX({ filename: `소모품리스트_${viewMode}_${todayStr()}`,
-                            columns: [{key:'대분류',label:'대분류'},{key:'품목명',label:'품목명'},{key:'단가(원)',label:'단가(원)'},{key:'재고추적',label:'재고추적'},{key:'출고수량',label:'출고수량'},{key:'실재고수량',label:'실재고수량'}],
+                        await exportToXLSX({ filename: `소모품마스터리스트_${todayStr()}`,
+                            columns: [{key:'대분류',label:'대분류'},{key:'품목명',label:'품목명'},{key:'단가(원)',label:'단가(원)'},{key:'현재 수량',label:'현재 수량'}],
                             rows })
                     }}
                         disabled={!filteredItems || filteredItems.length === 0}
@@ -1735,22 +1707,6 @@ const ItemsTab = ({ month, months }) => {
                         {showForm ? '닫기' : '+ 품목 추가'}
                     </button>
                 </div>
-            </div>
-
-            {/* 출고 월 선택 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem', padding: '10px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 'bold', fontSize: '0.88em', color: '#475569' }}>📅 출고 기준 월:</span>
-                <select
-                    value={dispatchMonth}
-                    onChange={e => setDispatchMonth(e.target.value)}
-                    style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #4f46e5', fontSize: '0.88em', color: '#4f46e5', fontWeight: 'bold' }}
-                >
-                    <option value="">-- 월 선택 --</option>
-                    {(months || []).map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-                <span style={{ fontSize: '0.8em', color: '#94a3b8' }}>
-                    {dispatchMonth ? `${dispatchMonth} 출고량 기준` : '월을 선택하면 해당 월 출고량으로 실재고를 계산합니다'}
-                </span>
             </div>
 
 
@@ -1884,13 +1840,11 @@ const ItemsTab = ({ month, months }) => {
             <table className="data-table">
                 <thead>
                     <tr>
-                        <th>대분류 (Category)</th>
+                        <th style={{ width: '16%' }}>대분류 (Category)</th>
                         <th>{'소모품명 (Item Name)'}</th>
-                        <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
-                        <th style={{ textAlign: 'center', background: '#fdf4ff', color: '#86198f' }}>출고<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMonth || '선택월'}</small></th>
-                        <th style={{ textAlign: 'center', background: '#f0fdf4', color: '#15803d' }}>추가 (조정)<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
-                        <th style={{ textAlign: 'center', background: '#fff1f2', color: '#9f1239' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>구매+추가-출고</small></th>
-                        <th style={{ textAlign: 'center' }}>관리</th>
+                        <th style={{ textAlign: 'right', width: '15%' }}>정상 단가(₩)</th>
+                        <th style={{ textAlign: 'center', width: '16%', background: '#fff1f2', color: '#9f1239' }}>현재 수량 (실재고)</th>
+                        <th style={{ textAlign: 'center', width: '22%' }}>관리</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1898,7 +1852,6 @@ const ItemsTab = ({ month, months }) => {
                         const handleInlineUpdate = (field, newVal) => {
                             inlineMutation.mutate({ ...item, [field]: newVal })
                         }
-                        const dispatched = item.dispatched_qty ?? 0
                         const currentStock = item.current_stock ?? null
 
                         // 실재고 수량 표시
@@ -1909,38 +1862,25 @@ const ItemsTab = ({ month, months }) => {
                             currentStockCell = <td style={{ textAlign: 'center', color: '#aaa', fontSize: '0.85em' }}>-</td>
                         } else if (isNegative) {
                             currentStockCell = (
-                                <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#b91c1c' }}>
+                                <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#b91c1c', fontSize: '1.05em' }}>
                                     🚨 {currentStock.toLocaleString()}
                                 </td>
                             )
                         } else {
                             currentStockCell = (
-                                <td style={{ textAlign: 'center', fontWeight: 'bold',
+                                <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '1.05em',
                                     color: isLow ? '#d32f2f' : '#2e7d32' }}>
                                     {isLow ? `🚨 ${currentStock.toLocaleString()}` : `✅ ${currentStock.toLocaleString()}`}
                                 </td>
                             )
                         }
 
-                        const indivQty = indivMap[item.item_name?.toLowerCase()] ?? 0
                         return (
-                            <tr key={idx} style={{}}>
+                            <tr key={idx}>
                                 <EditableCell value={item.category} onSave={(val) => handleInlineUpdate('category', val)} />
                                 <EditableCell value={item.item_name} onSave={(val) => handleInlineUpdate('item_name', val)} bold={true} />
                                 <EditableCell value={item.price} onSave={(val) => handleInlineUpdate('price', val)} align="right" />
-                                {/* 출고 (읽기전용) */}
-                                <td style={{ textAlign: 'center', color: '#86198f' }}>
-                                    {dispatched > 0
-                                        ? dispatched.toLocaleString()
-                                        : <span style={{ color: '#aaa' }}>0</span>}
-                                </td>
-                                {/* 추가 수량 (order_qty) */}
-                                <td style={{ textAlign: 'center' }}>
-                                    {(item.order_qty || 0) !== 0
-                                        ? <span style={{ color: item.order_qty > 0 ? '#15803d' : '#ef4444', fontWeight: 'bold' }}>{item.order_qty > 0 ? '+' : ''}{item.order_qty}</span>
-                                        : <span style={{ color: '#aaa' }}>-</span>}
-                                </td>
-                                {/* 실재고 수량 (복합기_토너_재고_DB 기준) */}
+                                {/* 현재 수량 (실재고) */}
                                 {currentStockCell}
                                 <td style={{ textAlign: 'center', display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' }}>
                                     <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => startEdit(item)}>상세 수정</button>
@@ -1959,7 +1899,7 @@ const ItemsTab = ({ month, months }) => {
                             </tr>
                         )
                     }) : (
-                        <tr><td colSpan="7" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
+                        <tr><td colSpan="5" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
                             조건에 맞는 품목이 없습니다.
                         </td></tr>
                     )}
