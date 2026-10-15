@@ -190,11 +190,13 @@ def _get_available_months_impl():
     _, ss = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
     if not ss: return []
     # "월" 키워드가 포함된 시트만 출고 내역 시트로 간주
-    months = [ws.title for ws in ss.worksheets() if "월" in ws.title and ws.title != "품목리스트" and ws.title != "재고리스트"]
+    raw_worksheets = ss.worksheets()
+    months = [ws.title for ws in raw_worksheets if "월" in ws.title and ws.title != "품목리스트" and ws.title != "재고리스트"]
     
     import re
     from datetime import datetime
-    current_year = datetime.now().year
+    now = datetime.now()
+    title_to_idx = {ws.title: idx for idx, ws in enumerate(raw_worksheets)}
     
     def sort_key(title):
         # "2026년 4월" 또는 "3월" 형식 처리
@@ -202,7 +204,6 @@ def _get_available_months_impl():
         month_match = re.search(r'(\d{1,2})월', title)
         
         month = int(month_match.group(1)) if month_match else 0
-        now = datetime.now()
         
         if year_match:
             year = int(year_match.group(1))
@@ -213,7 +214,20 @@ def _get_available_months_impl():
             if month > now.month + 3: # 넉넉하게 3개월 정도 여유 둠
                 year -= 1
         
-        return (year, month)
+        # 세부 기간 가산점 (후반 > 중반 > 전반/초)
+        sub_score = 0
+        if '후반' in title or '말' in title:
+            sub_score = 3
+        elif '중반' in title:
+            sub_score = 2
+        elif '초' in title or '전반' in title:
+            sub_score = 1
+        elif re.search(r'[-_](\d+)', title):
+            sub_score = int(re.search(r'[-_](\d+)', title).group(1))
+            
+        orig_idx = title_to_idx.get(title, 0)
+        
+        return (year, month, sub_score, orig_idx)
 
     # 연도와 월 기준 내림차순 정렬
     months.sort(key=sort_key, reverse=True)
