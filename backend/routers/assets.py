@@ -12,6 +12,7 @@ from backend.services.assets_service import (
     export_sheets_to_excel,
     EXPORT_SHEET_MAP,
 )
+from backend.services.history_service import log_asset_change, get_asset_history
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from datetime import datetime
@@ -87,6 +88,37 @@ class NewHireUpdateRequest(BaseModel):
     row_index: int                    # 프론트에서 전달하는 원본 newhires 배열 인덱스
     original_email: Optional[str] = "" # 기존 이메일 (변경 전 식별용)
     updates: Dict[str, Any]           # 변경할 필드
+
+class HistoryAddRequest(BaseModel):
+    asset_type: str
+    action: str = "정보수정"
+    identifier: Optional[str] = ""
+    user_name: Optional[str] = ""
+    user_email: Optional[str] = ""
+    changes_summary: str = ""
+    memo: Optional[str] = ""
+
+def _extract_asset_info(row_data: dict) -> tuple:
+    """자산 행에서 (식별자, 사용자이름, 이메일)을 추출합니다."""
+    identifier = ""
+    for k in ["S/N", "Serial", "Number", "TeamsNumber", "Model", "SNOW Tag", "NO"]:
+        if k in row_data and row_data[k] is not None and str(row_data[k]).strip() not in ["", "-", "nan", "None"]:
+            identifier = str(row_data[k]).strip()
+            break
+            
+    user_name = ""
+    for k in ["User", "USER", "NAME", "이름"]:
+        if k in row_data and row_data[k] is not None and str(row_data[k]).strip() not in ["", "-", "nan", "None"]:
+            user_name = str(row_data[k]).strip()
+            break
+            
+    user_email = ""
+    for k in ["email", "EMAIL", "이메일"]:
+        if k in row_data and row_data[k] is not None and str(row_data[k]).strip() not in ["", "-", "nan", "None"]:
+            user_email = str(row_data[k]).strip()
+            break
+            
+    return identifier, user_name, user_email
 
 # ── Dashboard ────────────────────────────────────────
 @router.get("/dashboard")
@@ -520,6 +552,45 @@ def export_assets_excel(sheets: str = ""):
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
+# ── Asset History Endpoints ──────────────────────────
+@router.get("/history")
+def get_history_endpoint(
+    asset_type: Optional[str] = None,
+    search: Optional[str] = None,
+    sn: Optional[str] = None,
+    email: Optional[str] = None,
+    limit: int = 300,
+):
+    """자산 변경 히스토리 로그 조회"""
+    try:
+        return get_asset_history(
+            asset_type=asset_type,
+            search=search,
+            sn=sn,
+            email=email,
+            limit=limit,
+        )
+    except Exception as e:
+        logger.error(f"히스토리 조회 오류: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/history/add")
+def add_manual_history_endpoint(entry: HistoryAddRequest):
+    """수동 히스토리/메모 로그 등록 (오프라인 반납 확인, 관리자 수동 메모 등)"""
+    try:
+        ok = log_asset_change(
+            asset_type=entry.asset_type,
+            action=entry.action,
+            identifier=entry.identifier or "",
+            user_name=entry.user_name or "",
+            user_email=entry.user_email or "",
+            changes_summary=entry.changes_summary or "",
+            memo=entry.memo or "관리자 수동 메모",
+        )
+        return {"success": True, "message": "히스토리 로그가 기록되었습니다."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ── Asset List (Read) ────────────────────────────────
 @router.get("/{asset_type}")
 def get_asset_list(asset_type: str):
@@ -588,14 +659,62 @@ def update_row(req: RowUpdateRequest):
     if req.row_index < 0 or req.row_index >= len(df):
         raise HTTPException(status_code=400, detail="Invalid row index")
     
+    before_series = df.iloc[req.row_index].copy()
+    before_dict = before_series.where(pd.notnull(before_series), "").to_dict()
+    
+    diffs = []
+    is_return = False
+    
     for col, val in req.updates.items():
         if col in df.columns:
+            old_val = str(df.at[req.row_index, col] if pd.notnull(df.at[req.row_index, col]) else "").strip()
+            new_val = str(val if val is not None else "").strip()
+            if old_val != new_val:
+                diffs.append(f"{col}: '{old_val}' → '{new_val}'")
+                if col in ["User", "USER", "NAME", "이름"] and new_val.upper() == "STOCK":
+                    is_return = True
+                if ("반납" in new_val) or ("반납" in str(col)):
+                    is_return = True
             df.at[req.row_index, col] = val
     
     try:
         update_db(req.asset_type, df)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"데이터 저장 실패: {str(e)}")
+        
+    _invalidate_dashboard_cache()
+    
+    # 히스토리 기록
+    if diffs:
+        try:
+            after_series = df.iloc[req.row_index].copy()
+            after_dict = after_series.where(pd.notnull(after_series), "").to_dict()
+            
+            identifier, user_name, user_email = _extract_asset_info(before_dict)
+            if not identifier:
+                identifier, _, _ = _extract_asset_info(after_dict)
+            if not user_name:
+                _, user_name, _ = _extract_asset_info(after_dict)
+            if not user_email:
+                _, _, user_email = _extract_asset_info(after_dict)
+                
+            action = "반납처리" if is_return else "정보수정"
+            changes_summary = ", ".join(diffs)
+            
+            log_asset_change(
+                asset_type=req.asset_type,
+                action=action,
+                identifier=identifier,
+                user_name=user_name,
+                user_email=user_email,
+                changes_summary=changes_summary,
+                before_data=before_dict,
+                after_data=after_dict,
+                memo="자산 상세 수정 모달에서 저장됨",
+            )
+        except Exception as log_err:
+            logger.error(f"히스토리 로깅 실패: {log_err}")
+
     return {"message": "Row updated successfully"}
 
 # ── Row Delete ───────────────────────────────────────
@@ -607,12 +726,36 @@ def delete_rows(req: RowDeleteRequest):
     
     df = dfs[req.asset_type]
     valid_indices = [i for i in req.row_indices if 0 <= i < len(df)]
+    
+    deleted_rows = []
+    for idx in valid_indices:
+        row_s = df.iloc[idx].copy()
+        deleted_rows.append(row_s.where(pd.notnull(row_s), "").to_dict())
+        
     df = df.drop(index=valid_indices).reset_index(drop=True)
     try:
         update_db(req.asset_type, df)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"데이터 삭제 후 저장 실패: {str(e)}")
+        
     _invalidate_dashboard_cache()
+    
+    for row_dict in deleted_rows:
+        try:
+            identifier, user_name, user_email = _extract_asset_info(row_dict)
+            log_asset_change(
+                asset_type=req.asset_type,
+                action="행삭제",
+                identifier=identifier,
+                user_name=user_name,
+                user_email=user_email,
+                changes_summary=f"행 삭제 완료 (식별자: {identifier})",
+                before_data=row_dict,
+                memo="자산 목록에서 삭제됨",
+            )
+        except Exception as log_err:
+            logger.error(f"히스토리 로깅 실패: {log_err}")
+
     return {"message": f"{len(valid_indices)} rows deleted"}
 
 # ── Add Row ──────────────────────────────────────────
@@ -623,14 +766,30 @@ def add_row(req: RowAddRequest):
         raise HTTPException(status_code=404, detail=f"Asset type '{req.asset_type}' not found")
     
     df = dfs[req.asset_type]
-    # 입력 데이터의 컬럼 정렬 및 보정
     new_row = pd.DataFrame([req.row_data])
     df = pd.concat([df, new_row], ignore_index=True)
     try:
         update_db(req.asset_type, df)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"데이터 추가 후 저장 실패: {str(e)}")
+        
     _invalidate_dashboard_cache()
+    
+    try:
+        identifier, user_name, user_email = _extract_asset_info(req.row_data)
+        log_asset_change(
+            asset_type=req.asset_type,
+            action="신규추가",
+            identifier=identifier,
+            user_name=user_name,
+            user_email=user_email,
+            changes_summary=f"신규 자산 행 추가 (식별자: {identifier})",
+            after_data=req.row_data,
+            memo="자산 목록에서 신규 추가됨",
+        )
+    except Exception as log_err:
+        logger.error(f"히스토리 로깅 실패: {log_err}")
+
     return {"message": "Row added successfully"}
 
 # ── Replace Table (CSV/Excel upload per table) ───────

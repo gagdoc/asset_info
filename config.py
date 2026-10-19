@@ -106,6 +106,7 @@ SHEET_MAPPING = {
     "NewHire": "신규입사자",
     "Dept_Config": "Dept_Config",
     "Rental": "Rental_List",
+    "History": "Asset_History",
 }
 
 # 자산 테이블별 주요 컬럼 매핑
@@ -170,6 +171,7 @@ DEFAULT_SCHEMAS = {
     "NewHire": ["NO", "이름", "NAME", "email", "BU", "ROLE", "노트북", "아이패드", "모니터", "Teams", "복합기"],
     "Dept_Config": ["BU", "ROLE"],
     "Rental": ["NO", "대여자 이름", "대여자 이메일", "품목명", "대여 일자", "반납 예정일", "실제 반납일", "상태", "비고"],
+    "History": ["일시", "자산유형", "작업구분", "식별자", "대상자", "이메일", "변경내용", "변경전", "변경후", "비고"],
 }
 
 # Streamlit 페이지 설정

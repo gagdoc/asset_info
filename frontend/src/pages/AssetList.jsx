@@ -42,6 +42,11 @@ const AssetList = () => {
     const [isUserSearchOpen, setIsUserSearchOpen] = useState(false)
     const [userSearchQuery, setUserSearchQuery] = useState('')
 
+    // 자산 변경 이력 조회 모달 상태
+    const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)
+    const [assetHistories, setAssetHistories] = useState([])
+    const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+
     // type(경로 파라미터)가 변경될 때 필터 상태 초기화
     useEffect(() => {
         setFilterYears([])
@@ -380,6 +385,39 @@ const AssetList = () => {
         }
 
         setModalData(updates);
+    }
+
+    // ── 자산별 변경 이력 조회 ──
+    const handleViewAssetHistory = async () => {
+        setIsLoadingHistory(true);
+        setIsHistoryModalOpen(true);
+        try {
+            // 현재 자산의 식별자(S/N 등) 및 이메일 추출
+            let sn = '';
+            for (const key of ['S/N', 'Serial', 'Number', 'TeamsNumber', 'Model', 'SNOW Tag']) {
+                if (modalData[key] && String(modalData[key]).trim() && String(modalData[key]).trim() !== '-') {
+                    sn = String(modalData[key]).trim();
+                    break;
+                }
+            }
+            const email = String(modalData.email || modalData.EMAIL || '').trim();
+            const userName = String(modalData.User || modalData.USER || modalData.NAME || modalData['이름'] || '').trim();
+
+            const { data } = await axios.get('/api/assets/history', {
+                params: {
+                    sn: sn || undefined,
+                    email: email || undefined,
+                    search: (!sn && !email) ? userName : undefined,
+                    limit: 50,
+                }
+            });
+            setAssetHistories(data || []);
+        } catch (err) {
+            console.error('히스토리 조회 오류:', err);
+            addToast('히스토리 조회 실패', 'error');
+        } finally {
+            setIsLoadingHistory(false);
+        }
     }
 
     // ── Row delete ──
@@ -926,9 +964,14 @@ const AssetList = () => {
                                     🔍 {isUserSearchOpen ? '사용자/기기 검색 닫기' : '기존 사용자 정보 불러오기'}
                                 </button>
                                 {!isCreateMode && (
-                                    <button className="btn btn-sm" onClick={handleReturnAsset} style={{ backgroundColor: '#fff1f2', color: '#be123c', border: '1px solid #fecdd3' }}>
-                                        🔄 반납 처리 (IT/STOCK)
-                                    </button>
+                                    <>
+                                        <button className="btn btn-sm" onClick={handleViewAssetHistory} style={{ backgroundColor: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>
+                                            📜 변경 이력 조회
+                                        </button>
+                                        <button className="btn btn-sm" onClick={handleReturnAsset} style={{ backgroundColor: '#fff1f2', color: '#be123c', border: '1px solid #fecdd3' }}>
+                                            🔄 반납 처리 (IT/STOCK)
+                                        </button>
+                                    </>
                                 )}
                             </div>
                             <button className="btn btn-secondary" onClick={() => { setIsModalOpen(false); setIsUserSearchOpen(false); }}>✖</button>
@@ -1002,6 +1045,80 @@ const AssetList = () => {
                             <button className="btn btn-primary" onClick={handleModalSave} disabled={isSaving}>
                                 {isSaving ? '⏳ 저장 중...' : (isCreateMode ? '💾 신규 항목 저장' : '💾 모든 변경사항 저장')}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isHistoryModalOpen && (
+                <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1100 }}>
+                    <div className="card modal" style={{ width: '90%', maxWidth: '750px', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: '#fff', borderRadius: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.2rem', borderBottom: '1px solid #e2e8f0' }}>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    📜 해당 자산 변경 히스토리 이력
+                                </h3>
+                                <p style={{ margin: '0.25rem 0 0 0', color: '#64748b', fontSize: '0.82rem' }}>
+                                    식별자: <strong>{modalData['S/N'] || modalData.Model || modalData.Number || modalData.TeamsNumber || 'N/A'}</strong> | 현재 사용자: {modalData.User || modalData.NAME || modalData['이름'] || 'STOCK'} ({modalData.email || modalData.EMAIL || '-'})
+                                </p>
+                            </div>
+                            <button className="btn btn-secondary" onClick={() => setIsHistoryModalOpen(false)}>✖</button>
+                        </div>
+
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '1.2rem' }}>
+                            {isLoadingHistory ? (
+                                <div style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>히스토리 조회 중...</div>
+                            ) : assetHistories.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>
+                                    기록된 변경 히스토리가 없습니다. (최근 수정된 자산만 히스토리가 남습니다)
+                                </div>
+                            ) : (
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                    <thead>
+                                        <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', color: '#475569', textAlign: 'left' }}>
+                                            <th style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>일시</th>
+                                            <th style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>작업구분</th>
+                                            <th style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>대상자</th>
+                                            <th style={{ padding: '8px 10px' }}>변경내용</th>
+                                            <th style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>비고</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {assetHistories.map((h, i) => (
+                                            <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                                <td style={{ padding: '8px 10px', color: '#64748b', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{h['일시']}</td>
+                                                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                                                    <span style={{
+                                                        padding: '2px 6px',
+                                                        borderRadius: '4px',
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: '600',
+                                                        background: (h['작업구분'] || '').includes('반납') ? '#fef3c7' : '#e0e7ff',
+                                                        color: (h['작업구분'] || '').includes('반납') ? '#d97706' : '#4338ca',
+                                                    }}>
+                                                        {h['작업구분']}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{h['대상자'] || '-'}</td>
+                                                <td style={{ padding: '8px 10px', color: '#334155' }}>{h['변경내용']}</td>
+                                                <td style={{ padding: '8px 10px', color: '#64748b', fontSize: '0.8rem' }}>{h['비고'] || '-'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+
+                        <div style={{ padding: '0.9rem 1.2rem', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <a
+                                href="/history"
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ fontSize: '0.82rem', color: '#4f46e5', textDecoration: 'none', fontWeight: '500' }}
+                            >
+                                🔗 전체 히스토리 로그 페이지 열기
+                            </a>
+                            <button className="btn btn-secondary" onClick={() => setIsHistoryModalOpen(false)}>닫기</button>
                         </div>
                     </div>
                 </div>

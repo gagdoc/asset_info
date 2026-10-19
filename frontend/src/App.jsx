@@ -17,6 +17,7 @@ import ExcelUpload from './pages/ExcelUpload'
 import SelfOutbound from './pages/SelfOutbound'
 import BulkSearch from './pages/BulkSearch'
 import PublicConsumables from './pages/PublicConsumables'
+import AssetHistory from './pages/AssetHistory'
 
 // ── 전역 개발 환경 배너 ──────────────────────────────────────────
 function DevEnvBanner() {
@@ -161,6 +162,7 @@ function App() {
               <Route path="/register" element={<SelfOutbound />} />
               <Route path="/bulk-search" element={<BulkSearch />} />
               <Route path="/public-consumables" element={<PublicConsumables />} />
+              <Route path="/history" element={<AssetHistory />} />
             </Routes>
             </ErrorBoundary>
           </main>

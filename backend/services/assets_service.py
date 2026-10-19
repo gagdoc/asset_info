@@ -319,11 +319,35 @@ def return_asset(email: str, asset_type: Optional[str], name: Optional[str], bu:
         if table_key in dfs and not dfs[table_key].empty and "email" in dfs[table_key].columns:
             mask = dfs[table_key]["email"].str.strip().str.lower() == email
             if mask.any():
+                matched_rows = dfs[table_key][mask].copy()
                 dfs[table_key].loc[mask, "email"] = ""
                 if extra_updates:
                     for col, val in extra_updates.items():
                         if col in dfs[table_key].columns: dfs[table_key].loc[mask, col] = val
                 update_db(table_key, dfs[table_key])
+
+                # 히스토리 로그 기록
+                try:
+                    from backend.services.history_service import log_asset_change
+                    for _, row_item in matched_rows.iterrows():
+                        sn = ""
+                        for sn_cand in ["S/N", "Serial", "Number", "TeamsNumber", "Model", "SNOW Tag"]:
+                            if sn_cand in row_item and pd.notnull(row_item[sn_cand]) and str(row_item[sn_cand]).strip():
+                                sn = str(row_item[sn_cand]).strip()
+                                break
+                        log_asset_change(
+                            asset_type=table_key,
+                            action="반납처리",
+                            identifier=sn,
+                            user_name=eng_name,
+                            user_email=email,
+                            changes_summary="반납 완료 (STOCK 전환)",
+                            before_data=row_item.where(pd.notnull(row_item), None).to_dict(),
+                            memo="퇴사/자산 일괄 반납 프로세스에 의해 처리됨"
+                        )
+                except Exception as log_err:
+                    logger.error(f"히스토리 로깅 실패: {log_err}")
+
                 return label
         return None
 

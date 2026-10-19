@@ -1,9 +1,10 @@
 import { NavLink } from 'react-router-dom'
-import { FaHome, FaSearch, FaLaptop, FaTabletAlt, FaPrint, FaDesktop, FaPhone, FaUserPlus, FaUserTimes, FaBoxOpen, FaCog, FaUpload, FaExternalLinkAlt, FaTimes, FaExchangeAlt } from 'react-icons/fa'
+import { FaHome, FaSearch, FaLaptop, FaTabletAlt, FaPrint, FaDesktop, FaPhone, FaUserPlus, FaUserTimes, FaBoxOpen, FaCog, FaUpload, FaExternalLinkAlt, FaTimes, FaExchangeAlt, FaHistory } from 'react-icons/fa'
 
 const Sidebar = ({ isOpen, onClose }) => {
     const assetItems = [
         { name: '대량 검색 (Bulk Search)', path: '/bulk-search', icon: <FaSearch /> },
+        { name: '변경 이력 로그 (History)', path: '/history', icon: <FaHistory /> },
         { name: '노트북 (Lease)', path: '/assets/Lease', icon: <FaLaptop /> },
         { name: '아이패드 (iPad)', path: '/assets/iPad', icon: <FaTabletAlt /> },
         { name: '모니터 (Monitor)', path: '/assets/Monitor', icon: <FaDesktop /> },
