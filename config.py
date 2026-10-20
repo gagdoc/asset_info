@@ -115,6 +115,8 @@ COLUMN_MAPPING = {
         "sn_options": ["S/N", "일련번호", "Serial"],
         "model_options": ["Model", "모델", "노트북모델"],
         "email_col": "email",
+        "contract_options": ["리스계번호", "리스계약번호", "계약번호", "Lease Contract No"],
+        "end_date_options": ["리스 종료 일자", "리스 종료일", "리스종료일", "Lease End Date"],
     },
     "iPad": {
         "sn_options": ["S/N", "일련번호", "Serial"],
@@ -162,7 +164,7 @@ RESIGNED_ROW_STYLE = "background-color: #FFD580; color: black; font-weight: bold
 # 기본 테이블 스키마 (테이블이 없을 때 사용)
 DEFAULT_SCHEMAS = {
     "All_User": ["NO", "NAME", "이름", "email", "ROLE", "BU", "SKL분류"],
-    "Lease": ["NO", "email", "S/N", "Model", "할당일"],
+    "Lease": ["S/N", "Model", "종류", "SNOW Tag", "Lease Date", "리스계번호", "리스 종료 일자", "BU", "User", "email", "Additional Information", "참고"],
     "iPad": ["NO", "email", "S/N", "Model", "할당일"],
     "Teams": ["NO", "email", "Number", "할당일"],
     "Printer": ["NO", "email", "Model", "할당일"],

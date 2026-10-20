@@ -6,6 +6,66 @@ import { useToast } from '../components/Toast'
 import SearchableSelect from '../components/SearchableSelect'
 import { exportToXLSX, todayStr } from '../utils/exportUtils'
 
+// 날짜 파싱 헬퍼 (YYYY-MM-DD, YYYY.MM.DD, YYYY/MM/DD, MM/DD/YY, MM/DD/YYYY, YYYYMMDD 지원)
+export const parseFlexibleDate = (dateStr) => {
+    if (!dateStr) return null
+    const s = String(dateStr).trim()
+    if (!s || s === '-' || s.toLowerCase() === 'nan' || s.toLowerCase() === 'none') return null
+
+    // 1) YYYY-MM-DD or YYYY.MM.DD or YYYY/MM/DD
+    const ymdMatch = s.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/)
+    if (ymdMatch) {
+        return new Date(parseInt(ymdMatch[1]), parseInt(ymdMatch[2]) - 1, parseInt(ymdMatch[3]))
+    }
+
+    // 2) MM/DD/YY or MM/DD/YYYY
+    const mdyMatch = s.match(/^(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})/)
+    if (mdyMatch) {
+        let yr = parseInt(mdyMatch[3])
+        if (yr < 100) yr += 2000
+        return new Date(yr, parseInt(mdyMatch[1]) - 1, parseInt(mdyMatch[2]))
+    }
+
+    // 3) YYYYMMDD (8자리 숫자)
+    if (/^\d{8}$/.test(s)) {
+        const yr = parseInt(s.substring(0, 4))
+        const mo = parseInt(s.substring(4, 6)) - 1
+        const da = parseInt(s.substring(6, 8))
+        return new Date(yr, mo, da)
+    }
+
+    const parsed = new Date(s)
+    return isNaN(parsed.getTime()) ? null : parsed
+}
+
+// 리스 종료 상태 판정 헬퍼
+export const getLeaseStatus = (endDateStr) => {
+    if (!endDateStr || String(endDateStr).trim() === '' || String(endDateStr).trim() === '-') {
+        return { status: 'none', label: '미등록', dDay: null, color: '#94a3b8', bg: '#f1f5f9' }
+    }
+    const targetDate = parseFlexibleDate(endDateStr)
+    if (!targetDate) {
+        return { status: 'invalid', label: String(endDateStr), dDay: null, color: '#64748b', bg: '#f8fafc' }
+    }
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    targetDate.setHours(0, 0, 0, 0)
+
+    const diffTime = targetDate.getTime() - today.getTime()
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+    if (diffDays < 0) {
+        return { status: 'expired', label: `만료 (D+${Math.abs(diffDays)})`, dDay: diffDays, color: '#dc2626', bg: '#fee2e2' }
+    } else if (diffDays <= 30) {
+        return { status: 'd30', label: `30일내 (D-${diffDays})`, dDay: diffDays, color: '#ea580c', bg: '#ffedd5' }
+    } else if (diffDays <= 60) {
+        return { status: 'd60', label: `60일내 (D-${diffDays})`, dDay: diffDays, color: '#ca8a04', bg: '#fef9c3' }
+    } else {
+        return { status: 'normal', label: `정상 (D-${diffDays})`, dDay: diffDays, color: '#16a34a', bg: '#dcfce7' }
+    }
+}
+
 const AssetList = () => {
     const { type } = useParams()
     const queryClient = useQueryClient()
@@ -30,6 +90,7 @@ const AssetList = () => {
     const [filterUser, setFilterUser] = useState('')
     const [excludeQuery, setExcludeQuery] = useState('')
     const [onlyWithEmail, setOnlyWithEmail] = useState(false)
+    const [filterLeaseStatus, setFilterLeaseStatus] = useState('') // 'expired' | 'd30' | 'd60' | 'normal' | 'none'
 
     // 상세 수정/신규 추가 모달 상태
     const [isModalOpen, setIsModalOpen] = useState(false)
@@ -65,6 +126,7 @@ const AssetList = () => {
         setMonthDropdownOpen(false)
         setIsUserSearchOpen(false)
         setUserSearchQuery('')
+        setFilterLeaseStatus('')
     }, [type])
 
     // 연도 및 월 드롭다운 외부 클릭 시 닫기
@@ -229,6 +291,14 @@ const AssetList = () => {
         } else {
             displayedAssets = displayedAssets?.filter(row => getUser(row) === filterUser)
         }
+    }
+
+    if (type === 'Lease' && filterLeaseStatus) {
+        displayedAssets = displayedAssets?.filter(row => {
+            const endVal = row['리스 종료 일자'] || row['리스 종료일'] || row['Lease End Date'] || ''
+            const st = getLeaseStatus(endVal)
+            return st.status === filterLeaseStatus
+        })
     }
 
     const buOptions = [
@@ -803,6 +873,26 @@ const AssetList = () => {
                                 <option value="">전체 Model</option>
                                 {uniqueModels.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
+                            <select
+                                className="form-input"
+                                style={{
+                                    width: 'auto',
+                                    maxWidth: '175px',
+                                    padding: '4px 8px',
+                                    borderColor: filterLeaseStatus ? '#f59e0b' : '#cbd5e1',
+                                    fontWeight: filterLeaseStatus ? 'bold' : 'normal',
+                                    backgroundColor: filterLeaseStatus ? '#fffbeb' : '#fff'
+                                }}
+                                value={filterLeaseStatus}
+                                onChange={e => setFilterLeaseStatus(e.target.value)}
+                            >
+                                <option value="">⏳ 리스 만료 (전체)</option>
+                                <option value="expired">🔴 만료됨</option>
+                                <option value="d30">🟠 30일 이내 만료</option>
+                                <option value="d60">🟡 60일 이내 만료</option>
+                                <option value="normal">🟢 정상 유지 중</option>
+                                <option value="none">⚪ 종료일 미등록</option>
+                            </select>
                         </div>
                     )}
                     {/* Printer: Model 필터 */}
@@ -908,7 +998,10 @@ const AssetList = () => {
                                                 const val = row[col] !== null ? String(row[col]) : '-'
                                                 const isEmailCol = col.toLowerCase() === 'email'
                                                 const isDuplicate = isEmailCol && val !== '-' && duplicateEmails.includes(val.trim().toLowerCase())
-                                                
+                                                const isLeaseEndDateCol = col === '리스 종료 일자' || col === '리스 종료일'
+                                                const isLeaseContractCol = col === '리스계번호' || col === '리스계약번호'
+                                                const leaseStatus = isLeaseEndDateCol && val !== '-' && val !== '' ? getLeaseStatus(val) : null
+
                                                 return (
                                                     <td
                                                         key={col}
@@ -919,7 +1012,28 @@ const AssetList = () => {
                                                             fontWeight: isDuplicate ? 'bold' : 'normal'
                                                         }}
                                                     >
-                                                        <span>{val}</span>
+                                                        {isLeaseEndDateCol && leaseStatus && leaseStatus.status !== 'none' ? (
+                                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                                <span style={{ fontWeight: '500' }}>{val}</span>
+                                                                <span style={{
+                                                                    padding: '2px 6px',
+                                                                    borderRadius: '4px',
+                                                                    fontSize: '0.73rem',
+                                                                    fontWeight: 'bold',
+                                                                    backgroundColor: leaseStatus.bg,
+                                                                    color: leaseStatus.color,
+                                                                    whiteSpace: 'nowrap'
+                                                                }}>
+                                                                    {leaseStatus.label}
+                                                                </span>
+                                                            </div>
+                                                        ) : isLeaseContractCol && val !== '-' && val !== '' ? (
+                                                            <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#0369a1', letterSpacing: '0.3px' }}>
+                                                                {val}
+                                                            </span>
+                                                        ) : (
+                                                            <span>{val}</span>
+                                                        )}
                                                     </td>
                                                 )
                                             })}
@@ -1028,16 +1142,35 @@ const AssetList = () => {
 
                         <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                                {columns.map(col => (
-                                    <div key={col} className="form-group">
-                                        <label className="form-label">{col}</label>
-                                        <input 
-                                            className="form-input"
-                                            value={modalData[col] !== null ? String(modalData[col]) : ''} 
-                                            onChange={e => setModalData({ ...modalData, [col]: e.target.value })}
-                                        />
-                                    </div>
-                                ))}
+                                {columns.map(col => {
+                                    let placeholder = ''
+                                    let helperText = ''
+                                    if (col === '리스계번호' || col === '리스계약번호') {
+                                        placeholder = '예: LC-2024-001 (리스 계약 번호)'
+                                    } else if (col === '리스 종료 일자' || col === '리스 종료일') {
+                                        placeholder = 'YYYY-MM-DD 또는 MM/DD/YY (예: 2026-12-31)'
+                                        helperText = '리스 계약 만료일 (만료 D-Day 자동 계산)'
+                                    } else if (col === 'Lease Date') {
+                                        placeholder = 'MM/DD/YY 또는 YYYY-MM-DD (리스 개시일)'
+                                    }
+
+                                    return (
+                                        <div key={col} className="form-group">
+                                            <label className="form-label">
+                                                {col}
+                                                {col === '리스계번호' && <span style={{ color: '#0284c7', fontSize: '0.8rem', marginLeft: '6px' }}>[계약번호]</span>}
+                                                {col === '리스 종료 일자' && <span style={{ color: '#ea580c', fontSize: '0.8rem', marginLeft: '6px' }}>[만료일]</span>}
+                                            </label>
+                                            <input 
+                                                className="form-input"
+                                                placeholder={placeholder}
+                                                value={modalData[col] !== null ? String(modalData[col]) : ''} 
+                                                onChange={e => setModalData({ ...modalData, [col]: e.target.value })}
+                                            />
+                                            {helperText && <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '3px' }}>{helperText}</div>}
+                                        </div>
+                                    )
+                                })}
                             </div>
                         </div>
                         <div style={{ padding: '1rem', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>

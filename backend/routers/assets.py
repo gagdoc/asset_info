@@ -465,7 +465,7 @@ def bulk_search_assets(req: BulkSearchRequest):
     else:
         dfs = load_from_db()
         search_targets = {
-            "Lease":    ["S/N", "SNOW Tag", "email", "User", "Model"],
+            "Lease":    ["S/N", "SNOW Tag", "email", "User", "Model", "리스계번호", "리스 종료 일자"],
             "iPad":     ["S/N", "전화 번호", "email", "User", "Model"],
             "Teams":    ["TeamsNumber", "Number", "email", "History"],
             "Monitor":  ["Model", "email", "User"],
