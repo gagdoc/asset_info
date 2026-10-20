@@ -61,6 +61,8 @@ export const getLeaseStatus = (endDateStr) => {
         return { status: 'd30', label: `30일내 (D-${diffDays})`, dDay: diffDays, color: '#ea580c', bg: '#ffedd5' }
     } else if (diffDays <= 60) {
         return { status: 'd60', label: `60일내 (D-${diffDays})`, dDay: diffDays, color: '#ca8a04', bg: '#fef9c3' }
+    } else if (diffDays <= 90) {
+        return { status: 'd90', label: `90일내 (D-${diffDays})`, dDay: diffDays, color: '#ca8a04', bg: '#fef9c3' }
     } else {
         return { status: 'normal', label: `정상 (D-${diffDays})`, dDay: diffDays, color: '#16a34a', bg: '#dcfce7' }
     }
@@ -85,12 +87,12 @@ const AssetList = () => {
     const [monthDropdownOpen, setMonthDropdownOpen] = useState(false)
     const yearDropdownRef = useRef(null)
     const monthDropdownRef = useRef(null)
-    const [filterBU, setFilterBU] = useState('')
+    const [filterContract, setFilterContract] = useState('')
     const [filterModel, setFilterModel] = useState('')
     const [filterUser, setFilterUser] = useState('')
     const [excludeQuery, setExcludeQuery] = useState('')
     const [onlyWithEmail, setOnlyWithEmail] = useState(false)
-    const [filterLeaseStatus, setFilterLeaseStatus] = useState('') // 'expired' | 'd30' | 'd60' | 'normal' | 'none'
+    const [filterLeaseStatus, setFilterLeaseStatus] = useState('') // '' | 'd90'
 
     // 상세 수정/신규 추가 모달 상태
     const [isModalOpen, setIsModalOpen] = useState(false)
@@ -114,7 +116,7 @@ const AssetList = () => {
         setFilterMonths([])
         setFilterYear('')
         setFilterMonth('')
-        setFilterBU('')
+        setFilterContract('')
         setFilterModel('')
         setFilterUser('')
         setSearchQuery('')
@@ -259,10 +261,12 @@ const AssetList = () => {
     )).sort((a,b) => parseInt(a) - parseInt(b))
 
     const getModel = (row) => row['MODEL'] || row['Model'] || row['기종'] || ''
-    const getBU = (row) => row['BU'] || row['소속'] || ''
     const getUser = (row) => row['USER'] || row['User'] || row['이름'] || row['NAME'] || ''
+    const getLeaseContractNo = (row) => row['리스계번호'] || row['리스계약번호'] || row['계약번호'] || row['Lease Contract No'] || ''
 
-    const uniqueBUs = Array.from(new Set(assets?.map(getBU).filter(v => v && v !== 'null' && v !== 'undefined' && v !== '-'))).sort()
+    const uniqueContracts = Array.from(new Set(
+        assets?.map(getLeaseContractNo).filter(v => v && v !== 'null' && v !== 'undefined' && v !== '-')
+    )).sort()
     const uniqueModels = Array.from(new Set(assets?.map(getModel).filter(v => v && v !== 'null' && v !== 'undefined' && v !== '-'))).sort()
     const uniqueUsers = Array.from(new Set(assets?.map(getUser).filter(v => v && v !== 'null' && v !== 'undefined' && v !== '-'))).sort((a,b) => String(a).localeCompare(String(b)))
 
@@ -282,7 +286,8 @@ const AssetList = () => {
         if (filterYear) displayedAssets = displayedAssets?.filter(row => getYear(row) === filterYear)
         if (filterMonth) displayedAssets = displayedAssets?.filter(row => getMonth(row) === filterMonth)
     }
-    if (filterBU) displayedAssets = displayedAssets?.filter(row => getBU(row) === filterBU)
+
+    if (filterContract) displayedAssets = displayedAssets?.filter(row => getLeaseContractNo(row) === filterContract)
 
     if (filterModel) displayedAssets = displayedAssets?.filter(row => getModel(row) === filterModel)
     if (filterUser) {
@@ -297,13 +302,16 @@ const AssetList = () => {
         displayedAssets = displayedAssets?.filter(row => {
             const endVal = row['리스 종료 일자'] || row['리스 종료일'] || row['Lease End Date'] || ''
             const st = getLeaseStatus(endVal)
+            if (filterLeaseStatus === 'd90') {
+                return st.dDay !== null && st.dDay >= 0 && st.dDay <= 90
+            }
             return st.status === filterLeaseStatus
         })
     }
 
-    const buOptions = [
-        { label: '전체 BU', value: '' },
-        ...uniqueBUs.map(bu => ({ label: bu, value: bu }))
+    const contractOptions = [
+        { label: '전체 계약번호', value: '' },
+        ...uniqueContracts.map(c => ({ label: c, value: c }))
     ]
 
     const userOptions = [
@@ -851,15 +859,17 @@ const AssetList = () => {
                                 </select>
                             )}
 
-                            <div style={{ width: '160px' }}>
-                                <SearchableSelect
-                                    options={buOptions}
-                                    value={filterBU}
-                                    onChange={setFilterBU}
-                                    placeholder="전체 BU"
-                                    width="100%"
-                                />
-                            </div>
+                            {(type === 'Lease' || uniqueContracts.length > 0) && (
+                                <div style={{ width: '160px' }}>
+                                    <SearchableSelect
+                                        options={contractOptions}
+                                        value={filterContract}
+                                        onChange={setFilterContract}
+                                        placeholder="전체 계약번호"
+                                        width="100%"
+                                    />
+                                </div>
+                            )}
                             <div style={{ width: '160px' }}>
                                 <SearchableSelect
                                     options={userOptions}
@@ -873,26 +883,24 @@ const AssetList = () => {
                                 <option value="">전체 Model</option>
                                 {uniqueModels.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
-                            <select
-                                className="form-input"
-                                style={{
-                                    width: 'auto',
-                                    maxWidth: '175px',
-                                    padding: '4px 8px',
-                                    borderColor: filterLeaseStatus ? '#f59e0b' : '#cbd5e1',
-                                    fontWeight: filterLeaseStatus ? 'bold' : 'normal',
-                                    backgroundColor: filterLeaseStatus ? '#fffbeb' : '#fff'
-                                }}
-                                value={filterLeaseStatus}
-                                onChange={e => setFilterLeaseStatus(e.target.value)}
-                            >
-                                <option value="">⏳ 리스 만료 (전체)</option>
-                                <option value="expired">🔴 만료됨</option>
-                                <option value="d30">🟠 30일 이내 만료</option>
-                                <option value="d60">🟡 60일 이내 만료</option>
-                                <option value="normal">🟢 정상 유지 중</option>
-                                <option value="none">⚪ 종료일 미등록</option>
-                            </select>
+                            {type === 'Lease' && (
+                                <select
+                                    className="form-input"
+                                    style={{
+                                        width: 'auto',
+                                        maxWidth: '175px',
+                                        padding: '4px 8px',
+                                        borderColor: filterLeaseStatus ? '#f59e0b' : '#cbd5e1',
+                                        fontWeight: filterLeaseStatus ? 'bold' : 'normal',
+                                        backgroundColor: filterLeaseStatus ? '#fffbeb' : '#fff'
+                                    }}
+                                    value={filterLeaseStatus}
+                                    onChange={e => setFilterLeaseStatus(e.target.value)}
+                                >
+                                    <option value="">전체 보기</option>
+                                    <option value="d90">90일 이내 만료일</option>
+                                </select>
+                            )}
                         </div>
                     )}
                     {/* Printer: Model 필터 */}
@@ -1028,7 +1036,21 @@ const AssetList = () => {
                                                                 </span>
                                                             </div>
                                                         ) : isLeaseContractCol && val !== '-' && val !== '' ? (
-                                                            <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#0369a1', letterSpacing: '0.3px' }}>
+                                                            <span
+                                                                style={{
+                                                                    fontFamily: 'monospace',
+                                                                    fontWeight: 'bold',
+                                                                    color: filterContract === val ? '#1d4ed8' : '#0369a1',
+                                                                    backgroundColor: filterContract === val ? '#dbeafe' : 'transparent',
+                                                                    padding: filterContract === val ? '2px 6px' : '0',
+                                                                    borderRadius: '4px',
+                                                                    letterSpacing: '0.3px',
+                                                                    cursor: 'pointer',
+                                                                    textDecoration: 'underline'
+                                                                }}
+                                                                title={`클릭하여 '${val}' 계약번호로 필터`}
+                                                                onClick={() => setFilterContract(prev => prev === val ? '' : val)}
+                                                            >
                                                                 {val}
                                                             </span>
                                                         ) : (
