@@ -256,6 +256,7 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
         records = _retry_sheets_op(lambda: ws.get_values("A2:F"))
         items = []
         all_item_names = set()  # 추적 여부와 무관하게 모든 품목 대상
+        images_map = get_item_images_map()
 
         for i, r in enumerate(records):
             if not r or not str(r[0]).strip(): continue
@@ -291,6 +292,7 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
                 "rented_qty": 0,
                 "dispatch_mode": dispatch_mode,
                 "dispatch_month": month,
+                "image": images_map.get(item_name, ""),
             })
 
         # 1.5단계: 대여 장부(Rental)에서 '대여중', '연체'인 품목 수량 합산
@@ -978,6 +980,10 @@ def save_item(data: dict) -> bool:
                 base_qty_str,
                 order_qty_str
             ]])
+
+        if "image" in data and target_item:
+            save_item_image(target_item, data.get("image", ""))
+
         invalidate_cache()
         # 데이터 변경 시 재고리스트 요약 시트 동기화
         sync_inventory_summary_sheet()
@@ -1001,6 +1007,7 @@ def delete_item(row_index: int, item_name: str) -> bool:
             return False
 
         ws.delete_rows(row_index)
+        delete_item_image(item_name)
         invalidate_cache()
         invalidate_cache("items_")  # "items_cumulative_all", "items_monthly_*" 등 모두 무효화
         sync_inventory_summary_sheet()
@@ -2620,3 +2627,195 @@ def _upsert_close_status(close_ws, month: str, status: str, confirmed_at: str, c
     except Exception as e:
         logger.error(f"마감 상태 기록 오류: {e}")
         raise
+
+
+# ── 품목 이미지 관리 ──────────────────────────────────────────────
+ITEM_IMAGES_SHEET = "품목이미지"
+ITEM_IMAGES_HEADERS = ["품목명", "이미지데이터", "수정일시"]
+
+
+def _ensure_item_images_worksheet(ss):
+    """품목이미지 워크시트를 안전하게 반환하고 없으면 생성합니다."""
+    ws = _get_worksheet_safe(ss, ITEM_IMAGES_SHEET)
+    if ws is not None:
+        return ws
+    try:
+        ws = ss.add_worksheet(title=ITEM_IMAGES_SHEET, rows=500, cols=3)
+        ws.update("A1:C1", [ITEM_IMAGES_HEADERS])
+        logger.info(f"Google Sheets '{ITEM_IMAGES_SHEET}' 워크시트 생성 완료")
+        return ws
+    except Exception as e:
+        logger.error(f"'{ITEM_IMAGES_SHEET}' 워크시트 생성 오류: {e}")
+        return None
+
+
+def _get_item_images_from_sqlite() -> dict:
+    try:
+        import sqlite3
+        conn = sqlite3.connect("consumables.db")
+        cur = conn.cursor()
+        cur.execute(
+            """CREATE TABLE IF NOT EXISTS item_images (
+                item_name TEXT PRIMARY KEY,
+                image_data TEXT,
+                updated_at TEXT
+            )"""
+        )
+        cur.execute("SELECT item_name, image_data FROM item_images")
+        data = {row[0]: row[1] for row in cur.fetchall() if row[0] and row[1]}
+        conn.close()
+        return data
+    except Exception as e:
+        logger.error(f"SQLite item_images 조회 실패: {e}")
+        return {}
+
+
+def _sync_item_images_to_sqlite(images_map: dict):
+    try:
+        import sqlite3
+        from datetime import datetime
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn = sqlite3.connect("consumables.db")
+        cur = conn.cursor()
+        cur.execute(
+            """CREATE TABLE IF NOT EXISTS item_images (
+                item_name TEXT PRIMARY KEY,
+                image_data TEXT,
+                updated_at TEXT
+            )"""
+        )
+        for name, img in images_map.items():
+            cur.execute(
+                "INSERT INTO item_images (item_name, image_data, updated_at) VALUES (?, ?, ?) ON CONFLICT(item_name) DO UPDATE SET image_data=excluded.image_data, updated_at=excluded.updated_at",
+                (name, img, now_str),
+            )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"SQLite item_images 동기화 실패: {e}")
+
+
+def _get_item_images_map_impl() -> dict:
+    """Google Sheets의 '품목이미지' 시트에서 모든 품목 이미지 맵을 읽어옵니다."""
+    _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+    if not ss_master:
+        return _get_item_images_from_sqlite()
+
+    try:
+        ws = _ensure_item_images_worksheet(ss_master)
+        if not ws:
+            return _get_item_images_from_sqlite()
+
+        rows = _retry_sheets_op(lambda: ws.get_all_values())
+        if not rows or len(rows) <= 1:
+            return _get_item_images_from_sqlite()
+
+        result = {}
+        for r in rows[1:]:
+            if len(r) >= 2 and r[0].strip() and r[1].strip():
+                result[r[0].strip()] = r[1].strip()
+
+        _sync_item_images_to_sqlite(result)
+        return result
+    except Exception as e:
+        logger.warning(f"Google Sheets 품목이미지 로드 오류 ({e}), SQLite 백업에서 로드합니다.")
+        return _get_item_images_from_sqlite()
+
+
+def get_item_images_map() -> dict:
+    """전체 품목 이미지 맵을 캐싱하여 반환합니다. { item_name: image_data }"""
+    return _get_cached("item_images_all", _get_item_images_map_impl)
+
+
+def save_item_image(item_name: str, image_data: str) -> bool:
+    """품목의 이미지를 저장(업데이트)합니다."""
+    item_name = str(item_name or "").strip()
+    if not item_name:
+        return False
+
+    from datetime import datetime
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 1. Google Sheets 저장
+    sheets_ok = False
+    try:
+        _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+        if ss_master:
+            ws = _ensure_item_images_worksheet(ss_master)
+            if ws:
+                col_A = ws.col_values(1)
+                row_idx = None
+                for i, val in enumerate(col_A):
+                    if val.strip() == item_name:
+                        row_idx = i + 1
+                        break
+
+                if row_idx:
+                    ws.update(f"A{row_idx}:C{row_idx}", [[item_name, image_data, now_str]])
+                else:
+                    ws.append_row([item_name, image_data, now_str], value_input_option="USER_ENTERED")
+                sheets_ok = True
+    except Exception as e:
+        logger.error(f"Google Sheets 이미지 저장 실패: {e}")
+
+    # 2. SQLite 백업 저장
+    try:
+        import sqlite3
+        conn = sqlite3.connect("consumables.db")
+        cur = conn.cursor()
+        cur.execute(
+            """CREATE TABLE IF NOT EXISTS item_images (
+                item_name TEXT PRIMARY KEY,
+                image_data TEXT,
+                updated_at TEXT
+            )"""
+        )
+        cur.execute(
+            "INSERT INTO item_images (item_name, image_data, updated_at) VALUES (?, ?, ?) ON CONFLICT(item_name) DO UPDATE SET image_data=excluded.image_data, updated_at=excluded.updated_at",
+            (item_name, image_data, now_str),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"SQLite 이미지 저장 실패: {e}")
+
+    invalidate_cache("item_images")
+    invalidate_cache("items_")
+    return sheets_ok or True
+
+
+def delete_item_image(item_name: str) -> bool:
+    """품목 이미지를 삭제합니다."""
+    item_name = str(item_name or "").strip()
+    if not item_name:
+        return False
+
+    # 1. Google Sheets에서 행 삭제
+    try:
+        _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+        if ss_master:
+            ws = _ensure_item_images_worksheet(ss_master)
+            if ws:
+                col_A = ws.col_values(1)
+                for i, val in enumerate(col_A):
+                    if val.strip() == item_name:
+                        ws.delete_rows(i + 1)
+                        break
+    except Exception as e:
+        logger.error(f"Google Sheets 이미지 삭제 실패: {e}")
+
+    # 2. SQLite 삭제
+    try:
+        import sqlite3
+        conn = sqlite3.connect("consumables.db")
+        cur = conn.cursor()
+        cur.execute("DELETE FROM item_images WHERE item_name = ?", (item_name,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"SQLite 이미지 삭제 실패: {e}")
+
+    invalidate_cache("item_images")
+    invalidate_cache("items_")
+    return True
+

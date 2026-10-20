@@ -14,6 +14,7 @@ from backend.services.consumables_service import (
     set_toner_stock_direct,
     get_individual_inbound_history, add_individual_inbound, delete_individual_inbound, update_individual_inbound,
     delete_outbound_batch,
+    get_item_images_map, save_item_image, delete_item_image,
     IS_PRODUCTION,
 )
 from typing import List, Dict, Any
@@ -213,6 +214,37 @@ def delete_item_endpoint(
     if not success:
         raise HTTPException(status_code=500, detail="품목 삭제에 실패했습니다. 행 정보를 확인하세요.")
     return {"status": "success"}
+
+
+# ── 품목 이미지 전용 엔드포인트 ─────────────────────────────────────
+@router.get("/images")
+def get_item_images():
+    """모든 품목의 이미지 맵을 반환합니다. { [item_name]: image_data }"""
+    images = get_item_images_map()
+    return {"images": images}
+
+
+@router.post("/images")
+def update_item_image(data: Dict[str, Any] = Body(...)):
+    """특정 품목의 이미지를 저장/수정합니다. { item_name: str, image_data: str }"""
+    item_name = data.get("item_name")
+    image_data = data.get("image_data", "")
+    if not item_name:
+        raise HTTPException(status_code=400, detail="품목명(item_name)은 필수입니다.")
+
+    success = save_item_image(item_name, image_data)
+    if not success:
+        raise HTTPException(status_code=500, detail="이미지 저장에 실패했습니다.")
+    return {"status": "success", "item_name": item_name}
+
+
+@router.delete("/images/{item_name}")
+def remove_item_image(item_name: str = Path(..., description="삭제할 품목명")):
+    """특정 품목의 이미지를 삭제합니다."""
+    success = delete_item_image(item_name)
+    if not success:
+        raise HTTPException(status_code=500, detail="이미지 삭제에 실패했습니다.")
+    return {"status": "success", "item_name": item_name}
 
 @router.put("/outbound")
 def update_outbound(data: Dict[str, Any] = Body(...)):

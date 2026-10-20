@@ -4,6 +4,8 @@ import axios from 'axios'
 import ConfirmModal from '../components/ConfirmModal'
 import SearchableSelect from '../components/SearchableSelect'
 import LoadingModal from '../components/LoadingModal'
+import ImageCropModal from '../components/ImageCropModal'
+import ImageViewerModal from '../components/ImageViewerModal'
 import { exportToXLSX, todayStr, ExportButton } from '../utils/exportUtils'
 
 const Consumables = () => {
@@ -1499,6 +1501,37 @@ const ItemsTab = () => {
     const [indivEditRow, setIndivEditRow] = useState(null)  // null | { row_index, date, quantity, note, item_name }
     const [indivEditForm, setIndivEditForm] = useState({ date: '', quantity: '', source: '한누리', note: '' })
 
+    // 제품 이미지 크롭/편집 및 뷰어 모달 상태
+    const [cropModalItem, setCropModalItem] = useState(null) // null | { item_name, image }
+    const [viewerModalItem, setViewerModalItem] = useState(null) // null | { item_name, image }
+
+    const handleSaveItemImage = async (dataUrl) => {
+        if (!cropModalItem?.item_name) return
+        try {
+            await axios.post('/api/consumables/images', {
+                item_name: cropModalItem.item_name,
+                image_data: dataUrl
+            })
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            setFormData(prev => prev.item_name === cropModalItem.item_name ? { ...prev, image: dataUrl } : prev)
+            alert('제품 이미지가 성공적으로 등록되었습니다.')
+        } catch (err) {
+            alert('이미지 저장 실패: ' + (err.response?.data?.detail || err.message))
+        }
+    }
+
+    const handleDeleteItemImage = async () => {
+        if (!cropModalItem?.item_name) return
+        try {
+            await axios.delete(`/api/consumables/images/${encodeURIComponent(cropModalItem.item_name)}`)
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            setFormData(prev => prev.item_name === cropModalItem.item_name ? { ...prev, image: '' } : prev)
+            alert('제품 이미지가 삭제되었습니다.')
+        } catch (err) {
+            alert('이미지 삭제 실패: ' + (err.response?.data?.detail || err.message))
+        }
+    }
+
     const itemsQueryKey = ['consumables-items', 'cumulative']
     const { data: items, isLoading } = useQuery({
         queryKey: itemsQueryKey,
@@ -1599,7 +1632,8 @@ const ItemsTab = () => {
             current_stock: item.current_stock ?? '',   // 실재고 수량 (토너 시트)
             _orig_stock: item.current_stock ?? null,   // 변경 여부 비교용
             base_qty: item.base_qty ?? 0,
-            order_qty: item.order_qty ?? 0
+            order_qty: item.order_qty ?? 0,
+            image: item.image || ''
         })
         setShowForm(true)
     }
@@ -1808,6 +1842,35 @@ const ItemsTab = () => {
                             </div>
                         </>
                     )}
+                    {/* 제품 이미지 등록 버튼 */}
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>제품 이미지 📷</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {formData.image && (
+                                <img
+                                    src={formData.image}
+                                    alt="미리보기"
+                                    onClick={() => setViewerModalItem({ item_name: formData.item_name || '미리보기', image: formData.image })}
+                                    style={{ width: '36px', height: '36px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', cursor: 'pointer', background: '#fff' }}
+                                    title="크게 보기"
+                                />
+                            )}
+                            <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                    if (!formData.item_name.trim()) {
+                                        alert('먼저 품목명을 입력해주세요.')
+                                        return
+                                    }
+                                    setCropModalItem({ item_name: formData.item_name, image: formData.image || null })
+                                }}
+                                style={{ padding: '7px 12px', fontSize: '0.85em', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                                📷 {formData.image ? '사진 변경' : '사진 등록/크롭'}
+                            </button>
+                        </div>
+                    </div>
                     <button type="submit" className="btn btn-primary" disabled={mutation.isPending} style={{ marginLeft: 'auto' }}>
                         저장하기
                     </button>
@@ -1840,11 +1903,12 @@ const ItemsTab = () => {
             <table className="data-table">
                 <thead>
                     <tr>
-                        <th style={{ width: '16%' }}>대분류 (Category)</th>
+                        <th style={{ width: '60px', textAlign: 'center' }}>이미지</th>
+                        <th style={{ width: '15%' }}>대분류 (Category)</th>
                         <th>{'소모품명 (Item Name)'}</th>
-                        <th style={{ textAlign: 'right', width: '15%' }}>정상 단가(₩)</th>
-                        <th style={{ textAlign: 'center', width: '16%', background: '#fff1f2', color: '#9f1239' }}>현재 수량 (실재고)</th>
-                        <th style={{ textAlign: 'center', width: '22%' }}>관리</th>
+                        <th style={{ textAlign: 'right', width: '13%' }}>정상 단가(₩)</th>
+                        <th style={{ textAlign: 'center', width: '15%', background: '#fff1f2', color: '#9f1239' }}>현재 수량 (실재고)</th>
+                        <th style={{ textAlign: 'center', width: '25%' }}>관리</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1877,12 +1941,70 @@ const ItemsTab = () => {
 
                         return (
                             <tr key={idx}>
+                                <td style={{ textAlign: 'center', padding: '6px', verticalAlign: 'middle' }}>
+                                    {item.image ? (
+                                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                                            <img
+                                                src={item.image}
+                                                alt={item.item_name}
+                                                onClick={() => setViewerModalItem({ item_name: item.item_name, image: item.image })}
+                                                style={{
+                                                    width: '40px',
+                                                    height: '40px',
+                                                    objectFit: 'contain',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid #cbd5e1',
+                                                    cursor: 'pointer',
+                                                    backgroundColor: '#ffffff',
+                                                    display: 'block',
+                                                    transition: 'transform 0.15s ease'
+                                                }}
+                                                onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.15)'}
+                                                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                                                title="클릭하여 크게 보기"
+                                            />
+                                        </div>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => setCropModalItem({ item_name: item.item_name, image: null })}
+                                            style={{
+                                                background: '#f8fafc',
+                                                border: '1px dashed #cbd5e1',
+                                                borderRadius: '6px',
+                                                width: '40px',
+                                                height: '40px',
+                                                cursor: 'pointer',
+                                                color: '#94a3b8',
+                                                fontSize: '1rem',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                margin: '0 auto',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            onMouseEnter={e => { e.currentTarget.style.borderColor = '#4f46e5'; e.currentTarget.style.color = '#4f46e5' }}
+                                            onMouseLeave={e => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.color = '#94a3b8' }}
+                                            title="제품 이미지 등록 및 크롭"
+                                        >
+                                            📷
+                                        </button>
+                                    )}
+                                </td>
                                 <EditableCell value={item.category} onSave={(val) => handleInlineUpdate('category', val)} />
                                 <EditableCell value={item.item_name} onSave={(val) => handleInlineUpdate('item_name', val)} bold={true} />
                                 <EditableCell value={item.price} onSave={(val) => handleInlineUpdate('price', val)} align="right" />
                                 {/* 현재 수량 (실재고) */}
                                 {currentStockCell}
                                 <td style={{ textAlign: 'center', display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                                    <button
+                                        className="btn btn-secondary"
+                                        style={{ padding: '2px 8px', fontSize: '0.8em', backgroundColor: item.image ? '#eef2ff' : '', color: item.image ? '#4f46e5' : '' }}
+                                        onClick={() => setCropModalItem({ item_name: item.item_name, image: item.image || null })}
+                                        title="제품 이미지 편집 및 크롭"
+                                    >
+                                        📷 {item.image ? '사진 수정' : '사진 등록'}
+                                    </button>
                                     <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => startEdit(item)}>상세 수정</button>
                                     <button
                                         className="btn btn-primary"
@@ -1899,7 +2021,7 @@ const ItemsTab = () => {
                             </tr>
                         )
                     }) : (
-                        <tr><td colSpan="5" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
+                        <tr><td colSpan="6" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
                             조건에 맞는 품목이 없습니다.
                         </td></tr>
                     )}
@@ -2051,6 +2173,24 @@ const ItemsTab = () => {
                 </div>
             )}
             </>}
+
+            {/* 제품 이미지 등록/편집 모달 (크롭/리사이즈/회전/용량최적화) */}
+            <ImageCropModal
+                isOpen={!!cropModalItem}
+                onClose={() => setCropModalItem(null)}
+                itemName={cropModalItem?.item_name || ''}
+                initialImage={cropModalItem?.image || null}
+                onSave={handleSaveItemImage}
+                onDelete={handleDeleteItemImage}
+            />
+
+            {/* 제품 이미지 확대 뷰어 모달 */}
+            <ImageViewerModal
+                isOpen={!!viewerModalItem}
+                onClose={() => setViewerModalItem(null)}
+                itemName={viewerModalItem?.item_name || ''}
+                imageUrl={viewerModalItem?.image || ''}
+            />
         </div>
     )
 }
