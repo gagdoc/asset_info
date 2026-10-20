@@ -1491,6 +1491,8 @@ const ItemsTab = () => {
         base_qty: 0,
         order_qty: 0
     })
+    const [isCustomCategory, setIsCustomCategory] = useState(false) // 대분류 직접 입력 모드 여부
+    const [isCustomItem, setIsCustomItem] = useState(false)         // 품목명 직접 입력 모드 여부
     const [searchTerm, setSearchTerm] = useState('')
     const [filterCategory, setFilterCategory] = useState('')
     // 개별 추가 모달
@@ -1548,6 +1550,8 @@ const ItemsTab = () => {
             queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
             setShowForm(false)
             setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, current_stock: '', base_qty: 0, order_qty: 0 })
+            setIsCustomCategory(false)
+            setIsCustomItem(false)
             alert("품목이 저장되었습니다.")
         },
         onError: () => alert("오류가 발생했습니다. 구글 시트를 확인하세요.")
@@ -1623,6 +1627,8 @@ const ItemsTab = () => {
     }
 
     const startEdit = (item) => {
+        setIsCustomCategory(false)
+        setIsCustomItem(false)
         setFormData({
             row_index: item.row_index,
             category: item.category,
@@ -1709,7 +1715,13 @@ const ItemsTab = () => {
     const allGeneral = items?.filter(it => !isTonnerItem(it.item_name, it.category)) || []
     const sourceItems = allGeneral
 
-    const categories = Array.from(new Set(sourceItems.map(it => it.category).filter(Boolean)))
+    const categories = Array.from(new Set(sourceItems.map(it => it.category).filter(Boolean))).sort()
+
+    // 현재 선택된 대분류에 속한 품목 목록 (대분류 미선택 시 전체 일반 소모품)
+    const itemsInSelectedCategory = useMemo(() => {
+        if (!formData.category) return sourceItems
+        return sourceItems.filter(it => it.category?.toLowerCase() === formData.category?.toLowerCase())
+    }, [sourceItems, formData.category])
 
     const filteredItems = sourceItems.filter(item => {
         const matchSearch = item.item_name.toLowerCase().includes(searchTerm.toLowerCase()) || item.category.toLowerCase().includes(searchTerm.toLowerCase())
@@ -1737,7 +1749,12 @@ const ItemsTab = () => {
                     }}
                         disabled={!filteredItems || filteredItems.length === 0}
                     />
-                    <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, current_stock: '', base_qty: 0, order_qty: 0 }); }}>
+                    <button className="btn btn-primary" onClick={() => {
+                        setShowForm(!showForm);
+                        setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, current_stock: '', base_qty: 0, order_qty: 0, image: '' });
+                        setIsCustomCategory(false);
+                        setIsCustomItem(false);
+                    }}>
                         {showForm ? '닫기' : '+ 품목 추가'}
                     </button>
                 </div>
@@ -1780,13 +1797,129 @@ const ItemsTab = () => {
             {/* 품목 추가 폼 */}
             {showForm && (
                 <form onSubmit={handleSubmit} style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>대분류 (Category)</label>
-                        <input type="text" placeholder="예: USB, Mouse..." value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} style={{ padding: '8px', width: '120px' }} required />
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px', gap: '8px' }}>
+                            <label style={{ fontSize: '0.9em', fontWeight: 'bold', color: '#334155' }}>대분류 (Category)</label>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const next = !isCustomCategory
+                                    setIsCustomCategory(next)
+                                    if (next) {
+                                        setFormData(prev => ({ ...prev, category: '' }))
+                                    }
+                                }}
+                                style={{
+                                    background: 'none', border: 'none', color: '#4f46e5', fontSize: '0.78em',
+                                    cursor: 'pointer', padding: 0, textDecoration: 'underline'
+                                }}
+                            >
+                                {isCustomCategory ? '📋 목록 선택' : '✏️ 직접 입력'}
+                            </button>
+                        </div>
+                        {isCustomCategory ? (
+                            <input
+                                type="text"
+                                placeholder="새 대분류명 입력"
+                                value={formData.category}
+                                onChange={e => setFormData({ ...formData, category: e.target.value })}
+                                style={{ padding: '8px', minWidth: '150px', borderColor: '#818cf8', backgroundColor: '#f5f3ff', borderRadius: '4px' }}
+                                required
+                                autoFocus
+                            />
+                        ) : (
+                            <select
+                                value={formData.category}
+                                onChange={e => {
+                                    const val = e.target.value
+                                    if (val === '__custom__') {
+                                        setIsCustomCategory(true)
+                                        setFormData({ ...formData, category: '' })
+                                    } else {
+                                        setFormData({ ...formData, category: val })
+                                    }
+                                }}
+                                style={{ padding: '8px', minWidth: '150px', borderRadius: '4px', borderColor: '#cbd5e1' }}
+                                required
+                            >
+                                <option value="">-- 대분류 선택 --</option>
+                                {categories.map(c => (
+                                    <option key={c} value={c}>{c}</option>
+                                ))}
+                                <option value="__custom__">➕ 신규 대분류 직접 입력...</option>
+                            </select>
+                        )}
                     </div>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>품목명</label>
-                        <input type="text" placeholder="로지텍 마우스 M185" value={formData.item_name} onChange={e => setFormData({...formData, item_name: e.target.value})} style={{ padding: '8px', minWidth: '200px' }} required />
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px', gap: '8px' }}>
+                            <label style={{ fontSize: '0.9em', fontWeight: 'bold', color: '#334155' }}>품목명</label>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const next = !isCustomItem
+                                    setIsCustomItem(next)
+                                    if (next) {
+                                        setFormData(prev => ({ ...prev, row_index: null }))
+                                    }
+                                }}
+                                style={{
+                                    background: 'none', border: 'none', color: '#4f46e5', fontSize: '0.78em',
+                                    cursor: 'pointer', padding: 0, textDecoration: 'underline'
+                                }}
+                            >
+                                {isCustomItem ? '📋 목록 선택' : '✏️ 신규 입력'}
+                            </button>
+                        </div>
+                        {isCustomItem ? (
+                            <input
+                                type="text"
+                                placeholder="신규 품목명 입력"
+                                value={formData.item_name}
+                                onChange={e => setFormData({ ...formData, item_name: e.target.value })}
+                                style={{ padding: '8px', minWidth: '220px', borderColor: '#818cf8', backgroundColor: '#f5f3ff', borderRadius: '4px' }}
+                                required
+                                autoFocus
+                            />
+                        ) : (
+                            <select
+                                value={formData.item_name}
+                                onChange={e => {
+                                    const val = e.target.value
+                                    if (val === '__custom__') {
+                                        setIsCustomItem(true)
+                                        setFormData(prev => ({ ...prev, row_index: null, item_name: '' }))
+                                    } else if (val) {
+                                        const selectedItem = sourceItems.find(it => it.item_name === val)
+                                        if (selectedItem) {
+                                            setFormData({
+                                                row_index: selectedItem.row_index,
+                                                category: selectedItem.category || formData.category,
+                                                item_name: selectedItem.item_name,
+                                                price: selectedItem.price,
+                                                is_tracked: selectedItem.is_tracked || false,
+                                                current_stock: selectedItem.current_stock ?? '',
+                                                _orig_stock: selectedItem.current_stock ?? null,
+                                                base_qty: selectedItem.base_qty ?? 0,
+                                                order_qty: selectedItem.order_qty ?? 0,
+                                                image: selectedItem.image || ''
+                                            })
+                                        }
+                                    } else {
+                                        setFormData(prev => ({ ...prev, row_index: null, item_name: '' }))
+                                    }
+                                }}
+                                style={{ padding: '8px', minWidth: '220px', borderRadius: '4px', borderColor: '#cbd5e1' }}
+                                required
+                            >
+                                <option value="">-- {formData.category ? `'${formData.category}' 품목 선택` : '기존 품목 선택'} ({itemsInSelectedCategory.length}개) --</option>
+                                {itemsInSelectedCategory.map(it => (
+                                    <option key={it.item_name} value={it.item_name}>
+                                        {it.item_name} {it.price ? `(${Number(String(it.price).replace(/,/g, '')).toLocaleString()}원)` : ''}
+                                    </option>
+                                ))}
+                                <option value="__custom__">➕ 신규 품목 직접 입력...</option>
+                            </select>
+                        )}
                     </div>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>단가 (원)</label>
@@ -1874,7 +2007,17 @@ const ItemsTab = () => {
                     <button type="submit" className="btn btn-primary" disabled={mutation.isPending} style={{ marginLeft: 'auto' }}>
                         저장하기
                     </button>
-                    <div style={{ fontSize: '0.8em', color: '#666', marginTop: '5px', width: '100%' }}>* 품목명이 같을 경우 수정되고, 다를 경우 덧붙여집니다.</div>
+                    <div style={{ fontSize: '0.82em', marginTop: '6px', width: '100%', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {formData.row_index ? (
+                            <span style={{ color: '#2563eb', fontWeight: '500' }}>
+                                ℹ️ 기존 등록 품목 [<strong>{formData.item_name}</strong>] 정보 수정 모드입니다. 저장 시 구글 시트에 즉시 반영됩니다.
+                            </span>
+                        ) : (
+                            <span style={{ color: '#16a34a' }}>
+                                ✨ 신규 품목 등록 모드입니다. (동일 품목명이 존재할 경우 수정되고, 새로운 품목명이면 추가됩니다.)
+                            </span>
+                        )}
+                    </div>
                 </form>
             )}
 
