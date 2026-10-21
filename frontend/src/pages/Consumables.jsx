@@ -2821,40 +2821,78 @@ const ItemDetailModal = ({ item, categories = [], onClose, onOpenCropModal, onOp
                                     </div>
                                 </div>
 
-                                {/* 재고 및 옵션 그리드 */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '8px 12px', borderRadius: '6px', border: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85em', color: '#1e293b', cursor: 'pointer', fontWeight: '600' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={formData.is_tracked}
-                                            onChange={e => setFormData({ ...formData, is_tracked: e.target.checked })}
-                                            style={{ cursor: 'pointer' }}
-                                        />
-                                        재고 추적 관리 여부 (is_tracked)
-                                    </label>
-                                    <div style={{ display: 'flex', gap: '14px', alignItems: 'center', fontSize: '0.82em', color: '#64748b' }}>
-                                        <span>기초재고(E열): <b style={{ color: '#0f172a' }}>{formData.base_qty}</b></span>
-                                        <span>추가수량(F열): <b style={{ color: '#16a34a' }}>+{formData.order_qty}</b></span>
-                                        {isTonner && (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                <span>토너 실재고:</span>
+                                {/* 재고 수량 직접 수정 및 추적 설정 그리드 */}
+                                <div style={{ background: '#fff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed #e2e8f0', paddingBottom: '6px' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85em', color: '#1e293b', cursor: 'pointer', fontWeight: 'bold' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={formData.is_tracked}
+                                                onChange={e => setFormData({ ...formData, is_tracked: e.target.checked })}
+                                                style={{ cursor: 'pointer' }}
+                                            />
+                                            재고 추적 관리 대상 품목 (is_tracked)
+                                        </label>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                            💡 실사 후 수량이 맞지 않거나 초기 재고 설정 시 수치를 직접 수정하세요.
+                                        </span>
+                                    </div>
+
+                                    {/* 재고 수량 직접 입력/수정 필드 */}
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                        {!isTonner ? (
+                                            <>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <label style={{ fontSize: '0.82em', fontWeight: 'bold', color: '#1d4ed8' }}>기초재고 (E열):</label>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        value={formData.base_qty}
+                                                        onChange={e => setFormData({ ...formData, base_qty: e.target.value })}
+                                                        style={{ width: '80px', padding: '5px 8px', borderRadius: '6px', border: '1px solid #93c5fd', fontSize: '0.88em', textAlign: 'center', fontWeight: 'bold', backgroundColor: '#eff6ff' }}
+                                                        title="품목리스트 E열에 반영되는 기초 구매재고 수량"
+                                                    />
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <label style={{ fontSize: '0.82em', fontWeight: 'bold', color: '#15803d' }}>추가수량 (F열):</label>
+                                                    <input
+                                                        type="number"
+                                                        value={formData.order_qty}
+                                                        onChange={e => setFormData({ ...formData, order_qty: e.target.value })}
+                                                        style={{ width: '80px', padding: '5px 8px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.88em', textAlign: 'center', fontWeight: 'bold', backgroundColor: '#f0fdf4' }}
+                                                        title="품목리스트 F열에 반영되는 입고/조정 추가수량"
+                                                    />
+                                                </div>
+                                                <div style={{ fontSize: '0.82em', color: '#475569', background: '#f8fafc', padding: '4px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                                    총 재고(E+F): <b style={{ color: '#0f172a' }}>{(parseInt(formData.base_qty) || 0) + (parseInt(formData.order_qty) || 0)}개</b>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <label style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#b91c1c' }}>토너 실재고 수량:</label>
                                                 <input
                                                     type="number"
+                                                    min="0"
                                                     value={formData.current_stock}
                                                     onChange={e => setFormData({ ...formData, current_stock: e.target.value })}
-                                                    style={{ width: '55px', padding: '2px 4px', fontSize: '0.85em', border: '1px solid #cbd5e1', borderRadius: '4px', textAlign: 'center' }}
+                                                    style={{ width: '90px', padding: '5px 8px', borderRadius: '6px', border: '1px solid #fca5a5', fontSize: '0.88em', textAlign: 'center', fontWeight: 'bold', backgroundColor: '#fef2f2' }}
+                                                    title="복합기 토너 재고 DB에 직접 반영되는 실시간 실재고"
                                                 />
+                                                <span style={{ fontSize: '0.75rem', color: '#991b1b' }}>개 (토너 DB 직접 반영)</span>
                                             </div>
                                         )}
+
+                                        <div style={{ marginLeft: 'auto' }}>
+                                            <button
+                                                type="submit"
+                                                className="btn btn-primary"
+                                                style={{ padding: '6px 16px', fontSize: '0.85em', fontWeight: 'bold' }}
+                                                disabled={updateMasterMutation.isPending}
+                                            >
+                                                {updateMasterMutation.isPending ? '저장 중...' : '💾 기본정보 & 재고수량 저장'}
+                                            </button>
+                                        </div>
                                     </div>
-                                    <button
-                                        type="submit"
-                                        className="btn btn-primary"
-                                        style={{ padding: '6px 14px', fontSize: '0.85em' }}
-                                        disabled={updateMasterMutation.isPending}
-                                    >
-                                        {updateMasterMutation.isPending ? '저장 중...' : '💾 기본정보 저장'}
-                                    </button>
                                 </div>
                             </form>
                         </div>
