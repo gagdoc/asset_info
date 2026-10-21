@@ -62,28 +62,27 @@ def _get_cached(key, func, *args):
             return _STALE_CACHE[key]
         raise
 
-    # 정상 호출 완료: 결과가 비어있지 않은 경우 stale 캐시 갱신
-    if not _is_empty_result(val):
-        _STALE_CACHE[key] = val
-    else:
-        # 정상 호출에서 빈 결과가 온 경우 stale 캐시도 제거하여 stale 부활 방지
-        _STALE_CACHE.pop(key, None)
+    # 내부 구현 함수가 API Rate Limit(429) 등의 예외를 삼키고 빈 리스트/빈 딕셔너리를 반환한 경우:
+    # 기존에 유효한 stale 데이터가 있다면 빈 결과로 덮어쓰지 않고 stale 데이터를 보존·반환
+    if _is_empty_result(val):
+        if key in _STALE_CACHE:
+            logger.warning(f"[캐시] '{key}' 조회 결과가 비어있어(Rate Limit 등 의심) 기존 stale 캐시를 반환합니다.")
+            return _STALE_CACHE[key]
+        return val
 
+    # 정상 호출 완료 및 유효 데이터 존재: stale 캐시 및 일반 캐시 갱신
+    _STALE_CACHE[key] = val
     _CACHE[key] = (val, now + _CACHE_TTL)
     return val
 
 def invalidate_cache(key_prefix: str = None):
-    """캐시 무효화. key_prefix 지정 시 해당 키만, 없으면 전체 삭제 (stale 캐시 포함)."""
+    """캐시 무효화. _CACHE만 만료시키고 _STALE_CACHE는 보존하여 재조회 시 API Rate Limit(429)이 발생해도 빈 화면이 뜨지 않도록 방어합니다."""
     if key_prefix is None:
         _CACHE.clear()
-        _STALE_CACHE.clear()
     else:
         for k in list(_CACHE.keys()):
             if k.startswith(key_prefix):
                 del _CACHE[k]
-        for k in list(_STALE_CACHE.keys()):
-            if k.startswith(key_prefix):
-                del _STALE_CACHE[k]
 
 def _retry_sheets_op(func, max_retries=3, initial_delay=1.0):
     """Google Sheets API 호출을 재시도합니다 (지수 백오프).
@@ -321,58 +320,58 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
             logger.warning(f"대여 데이터 합산 중 오류: {_e}")
 
         # 2단계: 모든 품목에 대해 출고 데이터 합산 (is_tracked 무관)
+        # 출고 시트 조회 중 일시적 Rate Limit 오류가 발생하더라도 1단계 마스터 품목 리스트 전체가 날아가지 않도록 try-except 격리
         if all_item_names:
-            _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
-            if not ss_outbound: return items
+            try:
+                _, ss_outbound = _get_consumables_client(CONSUMABLES_OUTBOUND_SPREADSHEET_ID)
+                if ss_outbound:
+                    if dispatch_mode == "monthly" and month:
+                        target_months = [month]
+                    else:
+                        # 롤오버(Rollover) 방식 적용: 
+                        # 마스터 시트의 구매수량에는 이미 과거 출고가 반영된 이월 재고가 들어가 있으므로,
+                        # 중복 차감을 방지하기 위해 '가장 최신(최근 개설된) 1개의 월' 시트만 대상(target)으로 삼습니다.
+                        available = get_available_months()
+                        target_months = [available[0]] if available else []
 
-            all_ws = ss_outbound.worksheets()
-            all_month_titles = [w.title for w in all_ws if "월" in w.title and w.title != "품목리스트"]
+                    if target_months:
+                        ranges = [f"{m}!A2:E" for m in target_months]
+                        batch_res = _retry_sheets_op(lambda: ss_outbound.values_batch_get(ranges))
+                        dispatched_agg = {name: 0 for name in all_item_names}
 
-            if dispatch_mode == "monthly" and month:
-                target_months = [m for m in all_month_titles if m == month]
-            else:
-                # 롤오버(Rollover) 방식 적용: 
-                # 마스터 시트의 구매수량에는 이미 과거 출고가 반영된 이월 재고가 들어가 있으므로,
-                # 중복 차감을 방지하기 위해 '가장 최신(최근 개설된) 1개의 월' 시트만 대상(target)으로 삼습니다.
-                available = get_available_months()
-                target_months = [available[0]] if available else []
+                        for res in batch_res.get('valueRanges', []):
+                            values = res.get('values', [])
+                            for row in values:
+                                if len(row) > 2:
+                                    i_name = str(row[1]).strip()
+                                    outbound_type = str(row[4]).strip() if len(row) > 4 else "일반"
+                                    if outbound_type == "위탁":
+                                        continue
+                                    if i_name in dispatched_agg:
+                                        try:
+                                            qty = int(str(row[2]).strip().replace(',', ''))
+                                            dispatched_agg[i_name] += qty
+                                        except ValueError:
+                                            pass
+                                    else:
+                                        # 마스터 리스트에 없는 품목 출고 기록 (경고)
+                                        if i_name and i_name not in ("==출고 내역 시작==", "품목 명", "날짜"):
+                                            logger.warning(f"[출고-마스터 불일치] 출고시트에만 존재하는 품목: '{i_name}' — 마스터리스트에 추가 필요")
 
-            if target_months:
-                ranges = [f"{m}!A2:E" for m in target_months]
-                batch_res = ss_outbound.values_batch_get(ranges)
-                dispatched_agg = {name: 0 for name in all_item_names}
+                        # 모든 품목의 출고량, 대여량 및 현재고 갱신
+                        for item in items:
+                            i_name = item["item_name"]
+                            d_qty = dispatched_agg.get(i_name, 0)
+                            r_qty = rented_agg.get(i_name, 0)
+                            item["dispatched_qty"] = d_qty
+                            item["rented_qty"] = r_qty
+                            item["current_stock"] = item["total_stock"] - d_qty - r_qty  # 현재고 = 총재고 - 출고 - 대여
+            except Exception as _oe:
+                logger.warning(f"출고 데이터 합산 중 일시적 오류 (마스터 기본 재고 유지): {_oe}")
 
-                for res in batch_res.get('valueRanges', []):
-                    values = res.get('values', [])
-                    for row in values:
-                        if len(row) > 2:
-                            i_name = str(row[1]).strip()
-                            outbound_type = str(row[4]).strip() if len(row) > 4 else "일반"
-                            if outbound_type == "위탁":
-                                continue
-                            if i_name in dispatched_agg:
-                                try:
-                                    qty = int(str(row[2]).strip().replace(',', ''))
-                                    dispatched_agg[i_name] += qty
-                                except ValueError:
-                                    pass
-                            else:
-                                # 마스터 리스트에 없는 품목 출고 기록 (경고)
-                                if i_name and i_name not in ("==출고 내역 시작==", "품목 명", "날짜"):
-                                    logger.warning(f"[출고-마스터 불일치] 출고시트에만 존재하는 품목: '{i_name}' — 마스터리스트에 추가 필요")
-
-                # 모든 품목의 출고량, 대여량 및 현재고 갱신
-                for item in items:
-                    i_name = item["item_name"]
-                    d_qty = dispatched_agg.get(i_name, 0)
-                    r_qty = rented_agg.get(i_name, 0)
-                    item["dispatched_qty"] = d_qty
-                    item["rented_qty"] = r_qty
-                    item["current_stock"] = item["total_stock"] - d_qty - r_qty  # 현재고 = 총재고 - 출고 - 대여
-
-        # 3단계: 복합기_토너_재고_DB 실재고를 해당 품목의 current_stock에 덮어쓰기
+        # 3단계: 복합기_토너_재고_DB 실재고를 해당 품목의 current_stock에 덮어쓰기 (캐시 활용으로 API 호출 절약)
         try:
-            toner_inv = _get_toner_inventory_impl()
+            toner_inv = get_toner_inventory()
             toner_items_list = toner_inv.get("items", [])
             if toner_items_list:
                 toner_stock_map = {}
@@ -393,8 +392,8 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
 
         return items
     except Exception as e:
-        print(f"Error reading items list: {e}")
-        return []
+        logger.error(f"Error reading items list: {e}")
+        raise
 
 
 # ──────────────────────────────────────────────────────────────
@@ -916,9 +915,9 @@ def update_outbound_history(month: str, row_index: int, data: dict) -> bool:
             data.get('staff', ''),
             data.get('delivery', ''),
         ]])
-        invalidate_cache(f"outbound_{month}")
+        invalidate_cache("outbound_")
         invalidate_cache("items_")  # "items_cumulative_all", "items_monthly_*" 등 모두 무효화
-        sync_inventory_summary_sheet()
+        # sync_inventory_summary_sheet() 는 출고 수정 시 호출 제거 (Rate Limit 유발 방지)
 
         # ── 토너 실재고 차액/품목 변경 반영 ──
         try:
@@ -1241,9 +1240,8 @@ def save_item(data: dict) -> bool:
         if img_val and target_item:
             save_item_image(target_item, img_val)
 
-        invalidate_cache()
-        # 데이터 변경 시 재고리스트 요약 시트 동기화
-        sync_inventory_summary_sheet()
+        invalidate_cache("items_")
+        # sync_inventory_summary_sheet() 는 품목 저장 시 자동 호출 제거 (무거운 이중 조회·쓰기로 Google Sheets API 429 Rate Limit 유발하여 직후 목록 조회가 0건이 되는 현상 원천 차단 — 상단 '시트 데이터 동기화' 버튼으로만 실행)
         return True
     except Exception as e:
         print(f"Error saving item: {e}")
@@ -1265,9 +1263,7 @@ def delete_item(row_index: int, item_name: str) -> bool:
 
         ws.delete_rows(row_index)
         delete_item_image(item_name)
-        invalidate_cache()
         invalidate_cache("items_")  # "items_cumulative_all", "items_monthly_*" 등 모두 무효화
-        sync_inventory_summary_sheet()
         logger.info(f"품목 삭제 완료: row={row_index}, item={item_name}")
         return True
     except Exception as e:
@@ -1772,7 +1768,6 @@ def adjust_general_item_order_qty(item_name: str, qty_diff: int) -> bool:
                 new_order_qty = max(0, current_order_qty + qty_diff)
                 ws.update_cell(row_num, 6, str(new_order_qty))  # 6번째 열 = F열
                 invalidate_cache("items_")
-                sync_inventory_summary_sheet()
                 logger.info(f"일반 소모품 추가 수량 조정: '{item_name}' {current_order_qty} -> {new_order_qty} ({qty_diff:+#})")
                 return True
         return False

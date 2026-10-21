@@ -2454,9 +2454,33 @@ const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenC
             return res.data
         },
         onSuccess: (_data, variables) => {
+            // 즉시 로컬 캐시(consumables-items)에 수정값 반영하여 Rate Limit 시에도 목록이 절대 비지 않고 즉시 갱신되도록 보장
+            queryClient.setQueryData(['consumables-items', 'cumulative'], (old) => {
+                if (!Array.isArray(old)) return old
+                return old.map(it => {
+                    if (it.row_index === variables.row_index || it.item_name === variables.item_name) {
+                        const updatedTotal = variables.order_qty ?? it.order_qty ?? 0
+                        const dispatched = it.dispatched_qty ?? 0
+                        const rented = it.rented_qty ?? 0
+                        const newCurrent = isTonner
+                            ? (variables.current_stock !== '' && variables.current_stock !== undefined ? Number(variables.current_stock) : it.current_stock)
+                            : (updatedTotal - dispatched - rented)
+                        return {
+                            ...it,
+                            ...variables,
+                            total_stock: updatedTotal,
+                            current_stock: newCurrent,
+                            image: variables.image || it.image || ''
+                        }
+                    }
+                    return it
+                })
+            })
             queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
             queryClient.invalidateQueries({ queryKey: ['item-price-history', item.item_name] })
-            queryClient.invalidateQueries({ queryKey: ['toner-inventory'] })
+            if (isTonner) {
+                queryClient.invalidateQueries({ queryKey: ['toner-inventory'] })
+            }
             refetch()
             setFormData(prev => ({ ...prev, ...variables }))
             if (onUpdateItem) onUpdateItem(variables)
