@@ -1714,13 +1714,11 @@ const ItemsTab = () => {
         onError: (err) => alert(`삭제 실패: ${err?.response?.data?.detail || err.message}`),
     })
 
-    if (isLoading) return <LoadingModal isOpen={isLoading} message="소모품 마스터 리스트를 불러오는 중입니다..." />
-
     // 일반 소모품만 (토너 제외)
-    const allGeneral = items?.filter(it => !isTonnerItem(it.item_name, it.category)) || []
+    const allGeneral = useMemo(() => items?.filter(it => !isTonnerItem(it.item_name, it.category)) || [], [items])
     const sourceItems = allGeneral
 
-    const categories = Array.from(new Set(sourceItems.map(it => it.category).filter(Boolean))).sort()
+    const categories = useMemo(() => Array.from(new Set(sourceItems.map(it => it.category).filter(Boolean))).sort(), [sourceItems])
 
     // 현재 선택된 대분류에 속한 품목 목록 (대분류 미선택 시 전체 일반 소모품)
     const itemsInSelectedCategory = useMemo(() => {
@@ -1728,11 +1726,15 @@ const ItemsTab = () => {
         return sourceItems.filter(it => it.category?.toLowerCase() === formData.category?.toLowerCase())
     }, [sourceItems, formData.category])
 
-    const filteredItems = sourceItems.filter(item => {
-        const matchSearch = item.item_name.toLowerCase().includes(searchTerm.toLowerCase()) || item.category.toLowerCase().includes(searchTerm.toLowerCase())
-        const matchCat = filterCategory ? item.category === filterCategory : true
-        return matchSearch && matchCat
-    })
+    const filteredItems = useMemo(() => {
+        return sourceItems.filter(item => {
+            const matchSearch = item.item_name.toLowerCase().includes(searchTerm.toLowerCase()) || item.category.toLowerCase().includes(searchTerm.toLowerCase())
+            const matchCat = filterCategory ? item.category === filterCategory : true
+            return matchSearch && matchCat
+        })
+    }, [sourceItems, searchTerm, filterCategory])
+
+    if (isLoading) return <LoadingModal isOpen={isLoading} message="소모품 마스터 리스트를 불러오는 중입니다..." />
 
     return (
         <div className="card">
