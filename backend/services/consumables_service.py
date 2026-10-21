@@ -1227,12 +1227,12 @@ def save_item(data: dict) -> bool:
         ]
 
         if row_idx:
-            # 존재하면 해당 행 A~G 덮어쓰기
-            ws.update(f"A{row_idx}:G{row_idx}", [row_values])
+            # 존재하면 해당 행 A~G 덮어쓰기 (gspread v6 호환 values, range_name 명시)
+            ws.update(values=[row_values], range_name=f"A{row_idx}:G{row_idx}")
         else:
             # 없으면 맨 아래(B열 비어있는 곳 기준) A~G 추가
             next_row = len(col_B) + 1
-            ws.update(f"A{next_row}:G{next_row}", [row_values])
+            ws.update(values=[row_values], range_name=f"A{next_row}:G{next_row}")
 
         if "image" in data and target_item:
             save_item_image(target_item, data.get("image", ""))

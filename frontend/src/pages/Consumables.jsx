@@ -2407,6 +2407,7 @@ const ItemsTab = () => {
                     item={detailModalItem}
                     categories={categories}
                     onClose={() => setDetailModalItem(null)}
+                    onUpdateItem={(updatedItem) => setDetailModalItem(prev => prev ? { ...prev, ...updatedItem } : null)}
                     onOpenCropModal={(targetItem) => setCropModalItem(targetItem)}
                     onOpenViewerModal={(targetItem) => setViewerModalItem(targetItem)}
                 />
@@ -2416,7 +2417,7 @@ const ItemsTab = () => {
 }
 
 // ─── 통합 상세 수정 모달 (기본정보 / 사진 / 입고 및 가격 이력 통합) ───────────
-const ItemDetailModal = ({ item, categories = [], onClose, onOpenCropModal, onOpenViewerModal }) => {
+const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenCropModal, onOpenViewerModal }) => {
     const queryClient = useQueryClient()
     const today = new Date().toISOString().slice(0, 10)
     const isTonner = isTonnerItem(item.item_name, item.category)
@@ -2486,12 +2487,14 @@ const ItemDetailModal = ({ item, categories = [], onClose, onOpenCropModal, onOp
             }
             return res.data
         },
-        onSuccess: () => {
+        onSuccess: (_data, variables) => {
             queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
             queryClient.invalidateQueries({ queryKey: ['item-price-history', item.item_name] })
             queryClient.invalidateQueries({ queryKey: ['toner-inventory'] })
             refetch()
-            alert('품목 기본 정보가 성공적으로 저장되었습니다.')
+            setFormData(prev => ({ ...prev, ...variables }))
+            if (onUpdateItem) onUpdateItem(variables)
+            alert('기본 정보 및 재고 수량이 성공적으로 저장되었습니다.')
         },
         onError: (err) => {
             alert('기본 정보 저장 실패: ' + (err.response?.data?.detail || err.message))
