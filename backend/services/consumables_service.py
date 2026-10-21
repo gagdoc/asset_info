@@ -443,7 +443,7 @@ def _get_purchase_history_impl():
         return []
 
 def add_purchase_record(data: dict) -> dict:
-    """구매 입고 내역 한 건 추가 (선택 시 마스터 기본 단가 및 구매사이트 동기화)"""
+    """구매 입고 내역 한 건 추가 (실재고 반영 및 마스터 기본 단가/구매사이트 동기화 지원)"""
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss_master:
         return {"success": False, "error": "Google Sheets 연결 실패"}
@@ -467,7 +467,28 @@ def add_purchase_record(data: dict) -> dict:
         ws.append_row(row, value_input_option="USER_ENTERED")
         invalidate_cache("purchase_history")
 
-        # 마스터 리스트 동기화 옵션 확인
+        # 실재고(추가 수량) 즉시 반영 (기본값 True)
+        update_stock = data.get("update_stock", True)
+        qty_int = 0
+        try:
+            qty_int = int(float(quantity_val.replace(",", "")))
+        except (ValueError, TypeError):
+            qty_int = 0
+
+        if update_stock and item_name and qty_int > 0:
+            try:
+                # 1. 토너 실재고 복구 시도
+                success = restore_toner_stock(item_name, qty_int)
+                # 2. 토너가 아닌 일반 소모품인 경우 품목리스트의 추가 수량(F열) 증가
+                if not success:
+                    adjust_general_item_order_qty(item_name, qty_int)
+                    logger.info(f"구매 입고 후 일반 소모품 추가 수량 반영: '{item_name}' +{qty_int}")
+                else:
+                    logger.info(f"구매 입고 후 토너 재고 추가: '{item_name}' +{qty_int}")
+            except Exception as se:
+                logger.warning(f"구매 입고 후 재고 반영 중 경고: {se}")
+
+        # 마스터 리스트 단가 / 구매사이트 동기화 옵션 확인
         update_master = data.get("update_master", False)
         if update_master and item_name:
             try:
@@ -492,18 +513,54 @@ def add_purchase_record(data: dict) -> dict:
         return {"success": False, "error": str(e)}
 
 def get_item_purchase_history(item_name: str) -> dict:
-    """특정 품목의 구매 가격 히스토리 및 통계 조회"""
+    """특정 품목의 구매 및 입고 가격 히스토리 및 통계 조회 (구매입고내역 + 개별입고내역 통합)"""
     target = item_name.strip()
-    all_history = get_purchase_history()
-    item_history = [r for r in all_history if r.get("item_name", "").strip() == target]
+    target_lower = target.lower()
+
+    # 1. 구매입고내역 조회
+    all_purchases = get_purchase_history()
+    item_purchases = []
+    for r in all_purchases:
+        if r.get("item_name", "").strip().lower() == target_lower:
+            rec = dict(r)
+            rec["source_type"] = "purchase"
+            item_purchases.append(rec)
+
+    # 2. 개별입고내역 조회 및 통합
+    indiv_records = []
+    try:
+        all_indiv = get_individual_inbound_history()
+        for r in all_indiv:
+            if str(r.get("item_name", "")).strip().lower() == target_lower:
+                note_str = str(r.get("note", ""))
+                is_deleted = "[삭제됨]" in note_str
+                indiv_records.append({
+                    "row_index": r.get("row_index"),
+                    "date": r.get("date", ""),
+                    "item_name": r.get("item_name", ""),
+                    "quantity": 0 if is_deleted else r.get("quantity", 0),
+                    "unit_price": "",
+                    "vendor": r.get("source") or "개별입고",
+                    "purchase_url": "",
+                    "staff": "",
+                    "note": note_str,
+                    "source_type": "individual",
+                    "is_deleted": is_deleted
+                })
+    except Exception as ie:
+        logger.warning(f"개별입고 조회 중 경고: {ie}")
+
+    # 두 내역 병합 및 최신 날짜순 정렬
+    combined_history = item_purchases + indiv_records
+    combined_history.sort(key=lambda x: str(x.get("date", "")), reverse=True)
 
     # 마스터 정보 조회
     items = get_items_list()
-    master_info = next((it for it in items if it.get("item_name", "").strip() == target), None)
+    master_info = next((it for it in items if it.get("item_name", "").strip().lower() == target_lower), None)
 
     prices = []
     total_qty = 0
-    for r in item_history:
+    for r in combined_history:
         p_raw = str(r.get("unit_price", "")).replace(",", "").strip()
         try:
             if p_raw:
@@ -519,26 +576,29 @@ def get_item_purchase_history(item_name: str) -> dict:
         except ValueError:
             pass
 
+    latest_purchase = next((r for r in item_purchases if r.get("purchase_url")), None)
+    latest_url = latest_purchase.get("purchase_url") if latest_purchase else ""
+
     stats = {
-        "count": len(item_history),
+        "count": len(combined_history),
         "total_quantity": total_qty,
         "latest_price": prices[0] if prices else None,
         "min_price": min(prices) if prices else None,
         "max_price": max(prices) if prices else None,
         "avg_price": round(sum(prices) / len(prices)) if prices else None,
-        "latest_vendor": item_history[0].get("vendor") if item_history else "",
-        "latest_purchase_url": item_history[0].get("purchase_url") if item_history else "",
+        "latest_vendor": combined_history[0].get("vendor") if combined_history else "",
+        "latest_purchase_url": latest_url,
     }
 
     return {
         "item_name": target,
         "master_info": master_info,
         "stats": stats,
-        "history": item_history
+        "history": combined_history
     }
 
-def delete_purchase_record(row_index: int) -> dict:
-    """구매 입고 내역 한 건 삭제 (행 번호 기준)"""
+def delete_purchase_record(row_index: int, item_name: str = "", quantity: int = 0, restore_stock: bool = False) -> dict:
+    """구매 입고 내역 한 건 삭제 (행 번호 기준, 실재고 복원 차감 옵션 지원)"""
     _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss_master:
         return {"success": False, "error": "Google Sheets 연결 실패"}
@@ -546,6 +606,25 @@ def delete_purchase_record(row_index: int) -> dict:
         ws = _ensure_purchase_sheet(ss_master)
         ws.delete_rows(row_index)
         invalidate_cache("purchase_history")
+
+        # 실재고 차감 복원
+        if restore_stock and item_name and quantity > 0:
+            try:
+                # 1. 토너인 경우 차감 시도
+                toner_success = False
+                try:
+                    toner_success = consume_toner_stock(item_name, quantity)
+                except Exception:
+                    toner_success = False
+
+                if not toner_success:
+                    adjust_general_item_order_qty(item_name, -quantity)
+                    logger.info(f"구매 내역 삭제 후 일반 소모품 추가수량 차감: '{item_name}' -{quantity}")
+                else:
+                    logger.info(f"구매 내역 삭제 후 토너 재고 차감: '{item_name}' -{quantity}")
+            except Exception as se:
+                logger.warning(f"구매 내역 삭제 후 재고 차감 경고: {se}")
+
         return {"success": True}
     except Exception as e:
         logger.error(f"구매입고내역 삭제 오류: {e}")

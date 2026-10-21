@@ -1510,6 +1510,8 @@ const ItemsTab = () => {
 
     // 품목 구매 가격 히스토리 & 사이트 상세 모달 상태
     const [priceHistoryModalItem, setPriceHistoryModalItem] = useState(null) // null | item_name
+    // 통합 상세 수정 모달 (기본정보 + 사진 + 가격이력 + 개별추가 통합)
+    const [detailModalItem, setDetailModalItem] = useState(null) // null | item
 
     const handleSaveItemImage = async (dataUrl) => {
         if (!cropModalItem?.item_name) return
@@ -1519,7 +1521,9 @@ const ItemsTab = () => {
                 image_data: dataUrl
             })
             queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            queryClient.invalidateQueries({ queryKey: ['item-price-history', cropModalItem.item_name] })
             setFormData(prev => prev.item_name === cropModalItem.item_name ? { ...prev, image: dataUrl } : prev)
+            setDetailModalItem(prev => (prev && prev.item_name === cropModalItem.item_name) ? { ...prev, image: dataUrl } : prev)
             alert('제품 이미지가 성공적으로 등록되었습니다.')
         } catch (err) {
             alert('이미지 저장 실패: ' + (err.response?.data?.detail || err.message))
@@ -1531,7 +1535,9 @@ const ItemsTab = () => {
         try {
             await axios.delete(`/api/consumables/images/${encodeURIComponent(cropModalItem.item_name)}`)
             queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            queryClient.invalidateQueries({ queryKey: ['item-price-history', cropModalItem.item_name] })
             setFormData(prev => prev.item_name === cropModalItem.item_name ? { ...prev, image: '' } : prev)
+            setDetailModalItem(prev => (prev && prev.item_name === cropModalItem.item_name) ? { ...prev, image: '' } : prev)
             alert('제품 이미지가 삭제되었습니다.')
         } catch (err) {
             alert('이미지 삭제 실패: ' + (err.response?.data?.detail || err.message))
@@ -2194,35 +2200,24 @@ const ItemsTab = () => {
                                         <span style={{ color: '#cbd5e1', fontSize: '0.85em' }}>-</span>
                                     )}
                                 </td>
-                                <td style={{ textAlign: 'center', display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                                    <button
-                                        className="btn btn-secondary"
-                                        style={{ padding: '2px 8px', fontSize: '0.8em', backgroundColor: item.image ? '#eef2ff' : '', color: item.image ? '#4f46e5' : '' }}
-                                        onClick={() => setCropModalItem({ item_name: item.item_name, image: item.image || null })}
-                                        title="제품 이미지 편집 및 크롭"
-                                    >
-                                        📷 {item.image ? '사진 수정' : '사진 등록'}
-                                    </button>
-                                    <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => startEdit(item)}>상세 수정</button>
-                                    <button
-                                        className="btn btn-secondary"
-                                        style={{ padding: '2px 8px', fontSize: '0.8em', backgroundColor: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe', fontWeight: 'bold' }}
-                                        onClick={() => setPriceHistoryModalItem(item.item_name)}
-                                        title="구매 사이트 및 실제 구매 가격 히스토리 조회"
-                                    >
-                                        📊 가격 이력
-                                    </button>
+                                <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                                     <button
                                         className="btn btn-primary"
-                                        style={{ padding: '2px 8px', fontSize: '0.8em', backgroundColor: '#16a34a', borderColor: '#16a34a' }}
-                                        onClick={() => { setIndivModal({ item_name: item.item_name, item }); setIndivForm({ date: today, quantity: '', source: '한누리', note: '' }) }}
-                                    >+ 개별추가</button>
+                                        style={{ padding: '4px 10px', fontSize: '0.82em', fontWeight: 'bold', marginRight: '6px' }}
+                                        onClick={() => setDetailModalItem(item)}
+                                        title="기본정보, 제품 사진, 가격 이력 및 입고 통합 관리"
+                                    >
+                                        ✏️ 상세 수정
+                                    </button>
                                     <button
                                         className="btn btn-danger"
-                                        style={{ padding: '2px 8px', fontSize: '0.8em' }}
+                                        style={{ padding: '4px 8px', fontSize: '0.8em' }}
                                         onClick={() => handleDelete(item)}
                                         disabled={deleteMutation.isPending}
-                                    >🗑️ 삭제</button>
+                                        title="품목 삭제"
+                                    >
+                                        🗑️ 삭제
+                                    </button>
                                 </td>
                             </tr>
                         )
@@ -2398,13 +2393,783 @@ const ItemsTab = () => {
                 imageUrl={viewerModalItem?.image || ''}
             />
 
-            {/* 품목 구매 가격 히스토리 & 사이트 상세 모달 */}
+            {/* 품목 구매 가격 히스토리 & 사이트 상세 모달 (레거시 지원) */}
             {priceHistoryModalItem && (
                 <PriceHistoryModal
                     itemName={priceHistoryModalItem}
                     onClose={() => setPriceHistoryModalItem(null)}
                 />
             )}
+
+            {/* 통합 상세 수정 모달 (기본정보 + 사진관리 + 가격이력/개별추가 통합) */}
+            {detailModalItem && (
+                <ItemDetailModal
+                    item={detailModalItem}
+                    categories={categories}
+                    onClose={() => setDetailModalItem(null)}
+                    onOpenCropModal={(targetItem) => setCropModalItem(targetItem)}
+                    onOpenViewerModal={(targetItem) => setViewerModalItem(targetItem)}
+                />
+            )}
+        </div>
+    )
+}
+
+// ─── 통합 상세 수정 모달 (기본정보 / 사진 / 입고 및 가격 이력 통합) ───────────
+const ItemDetailModal = ({ item, categories = [], onClose, onOpenCropModal, onOpenViewerModal }) => {
+    const queryClient = useQueryClient()
+    const today = new Date().toISOString().slice(0, 10)
+    const isTonner = isTonnerItem(item.item_name, item.category)
+
+    // ── 1. 품목 기본 정보 상태
+    const [isCustomCategory, setIsCustomCategory] = useState(false)
+    const [formData, setFormData] = useState({
+        row_index: item.row_index,
+        category: item.category || '',
+        item_name: item.item_name || '',
+        price: item.price ?? '',
+        purchase_url: item.purchase_url || '',
+        is_tracked: item.is_tracked ?? false,
+        current_stock: item.current_stock ?? '',
+        _orig_stock: item.current_stock ?? null,
+        base_qty: item.base_qty ?? 0,
+        order_qty: item.order_qty ?? 0,
+        image: item.image || ''
+    })
+
+    // ── 2. 통합 입고 & 구매 등록 폼 상태
+    const [showInboundForm, setShowInboundForm] = useState(true)
+    const [inboundForm, setInboundForm] = useState({
+        date: today,
+        quantity: '1',
+        unit_price: item.price ? String(item.price).replace(/,/g, '') : '',
+        vendor: '한누리',
+        purchase_url: item.purchase_url || '',
+        staff: '',
+        note: '',
+        update_stock: true,
+        update_master: true,
+    })
+
+    // ── 3. 통합 구매 & 입고 데이터 쿼리
+    const { data: priceData, isLoading, refetch } = useQuery({
+        queryKey: ['item-price-history', item.item_name],
+        queryFn: async () => {
+            const { data } = await axios.get(`/api/consumables/items/${encodeURIComponent(item.item_name)}/purchase-history`)
+            return data
+        },
+        enabled: !!item.item_name
+    })
+
+    // 최신 마스터 정보 및 통계
+    const master = priceData?.master_info || item
+    const stats = priceData?.stats || {}
+    const history = priceData?.history || []
+
+    // 실시간 이미지 (마스터 및 상위 전달값 연동)
+    const currentImage = master?.image || formData.image || item.image || ''
+
+    // ── 4. 기본 정보 저장 뮤테이션
+    const updateMasterMutation = useMutation({
+        mutationFn: async (payload) => {
+            const res = await axios.post('/api/consumables/items', payload)
+            // 토너 실재고 변경이 있는 경우
+            if (isTonner && payload.row_index) {
+                const newStock = payload.current_stock
+                const origStock = payload._orig_stock
+                if (newStock !== '' && newStock !== null && String(newStock) !== String(origStock ?? '')) {
+                    await axios.patch('/api/consumables/items/stock', {
+                        item_name: payload.item_name,
+                        stock: parseInt(String(newStock).replace(/,/g, '')) || 0,
+                    })
+                }
+            }
+            return res.data
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            queryClient.invalidateQueries({ queryKey: ['item-price-history', item.item_name] })
+            queryClient.invalidateQueries({ queryKey: ['toner-inventory'] })
+            refetch()
+            alert('품목 기본 정보가 성공적으로 저장되었습니다.')
+        },
+        onError: (err) => {
+            alert('기본 정보 저장 실패: ' + (err.response?.data?.detail || err.message))
+        }
+    })
+
+    // ── 5. 이미지 삭제 뮤테이션
+    const deleteImageMutation = useMutation({
+        mutationFn: async () => {
+            return axios.delete(`/api/consumables/images/${encodeURIComponent(item.item_name)}`)
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            queryClient.invalidateQueries({ queryKey: ['item-price-history', item.item_name] })
+            setFormData(prev => ({ ...prev, image: '' }))
+            refetch()
+            alert('제품 사진이 삭제되었습니다.')
+        },
+        onError: (err) => {
+            alert('사진 삭제 실패: ' + (err.response?.data?.detail || err.message))
+        }
+    })
+
+    // ── 6. 통합 입고 / 구매 등록 뮤테이션
+    const addInboundMutation = useMutation({
+        mutationFn: async (payload) => {
+            return axios.post('/api/consumables/purchase-history', {
+                ...payload,
+                item_name: item.item_name,
+                quantity: Number(payload.quantity) || 1
+            })
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['item-price-history', item.item_name] })
+            queryClient.invalidateQueries({ queryKey: ['purchase-history'] })
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            queryClient.invalidateQueries({ queryKey: ['toner-inventory'] })
+            queryClient.invalidateQueries({ queryKey: ['individual-inbound'] })
+            setInboundForm({
+                date: today,
+                quantity: '1',
+                unit_price: '',
+                vendor: '한누리',
+                purchase_url: formData.purchase_url || '',
+                staff: '',
+                note: '',
+                update_stock: true,
+                update_master: true,
+            })
+            refetch()
+            alert('입고 및 구매 내역이 성공적으로 등록되었습니다. (실재고 및 히스토리 자동 반영)')
+        },
+        onError: (err) => {
+            alert('입고 등록 실패: ' + (err.response?.data?.detail || err.message))
+        }
+    })
+
+    // ── 7. 입고 / 구매 내역 삭제 뮤테이션
+    const deleteInboundMutation = useMutation({
+        mutationFn: async ({ row_index, source_type, quantity }) => {
+            return axios.delete(`/api/consumables/purchase-history/${row_index}`, {
+                params: {
+                    item_name: item.item_name,
+                    quantity: quantity || 0,
+                    restore_stock: true,
+                    source_type: source_type || 'purchase'
+                }
+            })
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['item-price-history', item.item_name] })
+            queryClient.invalidateQueries({ queryKey: ['purchase-history'] })
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            queryClient.invalidateQueries({ queryKey: ['toner-inventory'] })
+            queryClient.invalidateQueries({ queryKey: ['individual-inbound'] })
+            refetch()
+            alert('내역이 삭제되었습니다. (실재고 복원 완료)')
+        },
+        onError: (err) => {
+            alert('삭제 실패: ' + (err.response?.data?.detail || err.message))
+        }
+    })
+
+    const handleMasterSubmit = (e) => {
+        e.preventDefault()
+        if (!formData.category || !formData.item_name) {
+            alert('대분류와 품목명은 필수 입력 항목입니다.')
+            return
+        }
+        const payload = {
+            ...formData,
+            price: formData.price ? parseInt(String(formData.price).replace(/,/g, '')) || 0 : '',
+            base_qty: isTonner ? 0 : (parseInt(String(formData.base_qty).replace(/,/g, '')) || 0),
+            order_qty: parseInt(String(formData.order_qty).replace(/,/g, '')) || 0
+        }
+        updateMasterMutation.mutate(payload)
+    }
+
+    const handleInboundSubmit = (e) => {
+        e.preventDefault()
+        if (!inboundForm.date || !inboundForm.quantity) {
+            alert('입고 일자와 수량은 필수입니다.')
+            return
+        }
+        addInboundMutation.mutate(inboundForm)
+    }
+
+    const formatPrice = (val) => {
+        if (val === null || val === undefined || val === '') return '-'
+        const num = Number(String(val).replace(/,/g, ''))
+        return isNaN(num) ? String(val) : num.toLocaleString() + '원'
+    }
+
+    const currentUrl = (formData.purchase_url || master?.purchase_url || stats.latest_purchase_url || '').trim()
+    const formattedUrl = currentUrl ? (currentUrl.startsWith('http://') || currentUrl.startsWith('https://') ? currentUrl : `https://${currentUrl}`) : ''
+
+    return (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1200, padding: '16px' }}>
+            <div className="card" style={{ width: '960px', maxWidth: '96vw', maxHeight: '92vh', display: 'flex', flexDirection: 'column', backgroundColor: '#fff', borderRadius: '12px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden', padding: 0 }}>
+                {/* 헤더 */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 22px', background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)', color: '#fff' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '1.35rem' }}>✏️</span>
+                        <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <h3 style={{ margin: 0, color: '#fff', fontSize: '1.2rem', fontWeight: 'bold' }}>{item.item_name}</h3>
+                                {formData.category && (
+                                    <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: '#475569', color: '#f1f5f9' }}>
+                                        {formData.category}
+                                    </span>
+                                )}
+                                {formData.is_tracked && (
+                                    <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: '#0284c7', color: '#fff' }}>
+                                        재고추적
+                                    </span>
+                                )}
+                            </div>
+                            <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
+                                소모품 마스터 상세 정보 수정 / 제품 사진 관리 / 통합 입고 및 구매 가격 이력 관리
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.5rem', cursor: 'pointer', lineHeight: '1', padding: '4px 8px' }}
+                        title="닫기"
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                {/* 모달 본문 (스크롤) */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    
+                    {/* ══════════════════════════════════════════════════════
+                        섹션 1: 품목 기본 정보 & 제품 사진 관리
+                    ══════════════════════════════════════════════════════ */}
+                    <div style={{ background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0', padding: '16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '1.1rem' }}>⚙️</span>
+                                <span style={{ fontWeight: 'bold', fontSize: '0.98rem', color: '#1e293b' }}>품목 마스터 기본 정보 & 제품 사진</span>
+                            </div>
+                            <span style={{ fontSize: '0.78rem', color: '#64748b' }}>품목 정보 및 기준 단가를 수정할 수 있습니다.</span>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap' }}>
+                            {/* 좌측: 제품 사진 관리 */}
+                            <div style={{ width: '160px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                                <div
+                                    onClick={() => currentImage && onOpenViewerModal({ item_name: item.item_name, image: currentImage })}
+                                    style={{
+                                        width: '140px',
+                                        height: '140px',
+                                        border: '1px solid #cbd5e1',
+                                        borderRadius: '8px',
+                                        backgroundColor: '#fff',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                        overflow: 'hidden',
+                                        cursor: currentImage ? 'zoom-in' : 'default',
+                                        boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)',
+                                        position: 'relative'
+                                    }}
+                                    title={currentImage ? '클릭 시 원본 크기로 확대 보기' : '등록된 사진 없음'}
+                                >
+                                    {currentImage ? (
+                                        <>
+                                            <img
+                                                src={currentImage}
+                                                alt={item.item_name}
+                                                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                            />
+                                            <div style={{ position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: '4px', fontSize: '0.7em', padding: '1px 4px' }}>
+                                                🔍
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div style={{ textAlign: 'center', color: '#94a3b8', padding: '10px' }}>
+                                            <div style={{ fontSize: '2rem', marginBottom: '4px' }}>📦</div>
+                                            <span style={{ fontSize: '0.75rem' }}>사진 없음</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div style={{ display: 'flex', gap: '4px', width: '140px' }}>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        style={{ flex: 1, padding: '5px 4px', fontSize: '0.78em', backgroundColor: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe', fontWeight: 'bold' }}
+                                        onClick={() => onOpenCropModal({ item_name: item.item_name, image: currentImage || null })}
+                                        title="사진 크롭/리사이즈 편집 및 등록"
+                                    >
+                                        📷 {currentImage ? '사진 변경' : '사진 등록'}
+                                    </button>
+                                    {currentImage && (
+                                        <button
+                                            type="button"
+                                            className="btn btn-danger"
+                                            style={{ padding: '5px 8px', fontSize: '0.78em' }}
+                                            onClick={() => {
+                                                if (window.confirm(`"${item.item_name}" 품목의 제품 사진을 삭제하시겠습니까?`)) {
+                                                    deleteImageMutation.mutate()
+                                                }
+                                            }}
+                                            disabled={deleteImageMutation.isPending}
+                                            title="사진 삭제"
+                                        >
+                                            🗑️
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* 우측: 기본 정보 폼 */}
+                            <form onSubmit={handleMasterSubmit} style={{ flex: 1, minWidth: '320px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                    <div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                            <label style={{ fontSize: '0.82em', fontWeight: 'bold', color: '#334155' }}>대분류 (Category) *</label>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsCustomCategory(v => !v)}
+                                                style={{ border: 'none', background: 'none', color: '#2563eb', fontSize: '0.75em', cursor: 'pointer', padding: 0 }}
+                                            >
+                                                {isCustomCategory ? '목록 선택' : '직접 입력'}
+                                            </button>
+                                        </div>
+                                        {isCustomCategory ? (
+                                            <input
+                                                type="text"
+                                                placeholder="대분류 직접 입력"
+                                                value={formData.category}
+                                                onChange={e => setFormData({ ...formData, category: e.target.value })}
+                                                style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.88em', boxSizing: 'border-box' }}
+                                                required
+                                            />
+                                        ) : (
+                                            <select
+                                                value={formData.category}
+                                                onChange={e => setFormData({ ...formData, category: e.target.value })}
+                                                style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.88em', boxSizing: 'border-box' }}
+                                                required
+                                            >
+                                                <option value="">대분류 선택</option>
+                                                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.82em', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>품목명 *</label>
+                                        <input
+                                            type="text"
+                                            value={formData.item_name}
+                                            onChange={e => setFormData({ ...formData, item_name: e.target.value })}
+                                            style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.88em', boxSizing: 'border-box', backgroundColor: '#f1f5f9' }}
+                                            required
+                                        />
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.82em', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>마스터 기준 단가(원)</label>
+                                        <input
+                                            type="text"
+                                            placeholder="예: 25,000"
+                                            value={formData.price}
+                                            onChange={e => setFormData({ ...formData, price: e.target.value })}
+                                            style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.88em', boxSizing: 'border-box' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.82em', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>구매 사이트 (URL)</label>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                            <input
+                                                type="text"
+                                                placeholder="https://... (공식/온라인 구매처 링크)"
+                                                value={formData.purchase_url}
+                                                onChange={e => setFormData({ ...formData, purchase_url: e.target.value })}
+                                                style={{ flex: 1, padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.88em', boxSizing: 'border-box' }}
+                                            />
+                                            {formattedUrl && (
+                                                <a
+                                                    href={formattedUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        padding: '6px 10px',
+                                                        backgroundColor: '#0284c7',
+                                                        color: '#fff',
+                                                        borderRadius: '6px',
+                                                        fontSize: '0.8em',
+                                                        fontWeight: 'bold',
+                                                        textDecoration: 'none',
+                                                        whiteSpace: 'nowrap'
+                                                    }}
+                                                    title="새 창으로 사이트 방문하기"
+                                                >
+                                                    바로가기 ↗
+                                                </a>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 재고 및 옵션 그리드 */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '8px 12px', borderRadius: '6px', border: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85em', color: '#1e293b', cursor: 'pointer', fontWeight: '600' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.is_tracked}
+                                            onChange={e => setFormData({ ...formData, is_tracked: e.target.checked })}
+                                            style={{ cursor: 'pointer' }}
+                                        />
+                                        재고 추적 관리 여부 (is_tracked)
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '14px', alignItems: 'center', fontSize: '0.82em', color: '#64748b' }}>
+                                        <span>기초재고(E열): <b style={{ color: '#0f172a' }}>{formData.base_qty}</b></span>
+                                        <span>추가수량(F열): <b style={{ color: '#16a34a' }}>+{formData.order_qty}</b></span>
+                                        {isTonner && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <span>토너 실재고:</span>
+                                                <input
+                                                    type="number"
+                                                    value={formData.current_stock}
+                                                    onChange={e => setFormData({ ...formData, current_stock: e.target.value })}
+                                                    style={{ width: '55px', padding: '2px 4px', fontSize: '0.85em', border: '1px solid #cbd5e1', borderRadius: '4px', textAlign: 'center' }}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <button
+                                        type="submit"
+                                        className="btn btn-primary"
+                                        style={{ padding: '6px 14px', fontSize: '0.85em' }}
+                                        disabled={updateMasterMutation.isPending}
+                                    >
+                                        {updateMasterMutation.isPending ? '저장 중...' : '💾 기본정보 저장'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    {/* ══════════════════════════════════════════════════════
+                        섹션 2: 📦 통합 입고 / 구매 내역 & 가격 히스토리 (통합)
+                    ══════════════════════════════════════════════════════ */}
+                    <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ fontSize: '1.2rem' }}>📦</span>
+                                    <h4 style={{ margin: 0, fontSize: '1.05rem', color: '#0f172a' }}>통합 입고 및 실제 구매 가격 히스토리</h4>
+                                </div>
+                                <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                                    가격 이력과 개별 추가가 통합되어, 입고 시 실재고와 단가 내역이 함께 안전하게 연동됩니다.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                className="btn btn-primary"
+                                style={{ padding: '5px 12px', fontSize: '0.82em', backgroundColor: showInboundForm ? '#64748b' : '#16a34a', borderColor: 'transparent' }}
+                                onClick={() => setShowInboundForm(v => !v)}
+                            >
+                                {showInboundForm ? '폼 접기 ▲' : '➕ 새 입고/구매 등록 ▼'}
+                            </button>
+                        </div>
+
+                        {/* 통계 요약 카드 4단 */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+                            <div style={{ padding: '12px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600', marginBottom: '2px' }}>마스터 기준 단가</div>
+                                <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#0f172a' }}>{formatPrice(master?.price || formData.price)}</div>
+                            </div>
+                            <div style={{ padding: '12px 14px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+                                <div style={{ fontSize: '0.75rem', color: '#1d4ed8', fontWeight: '600', marginBottom: '2px' }}>최근 구매 단가</div>
+                                <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#1e40af' }}>{formatPrice(stats.latest_price)}</div>
+                            </div>
+                            <div style={{ padding: '12px 14px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                                <div style={{ fontSize: '0.75rem', color: '#15803d', fontWeight: '600', marginBottom: '2px' }}>최저 / 최고 단가</div>
+                                <div style={{ fontSize: '0.98rem', fontWeight: 'bold', color: '#166534', marginTop: '2px' }}>
+                                    {stats.min_price != null ? `${Number(stats.min_price).toLocaleString()}원 ~ ${Number(stats.max_price).toLocaleString()}원` : '-'}
+                                </div>
+                            </div>
+                            <div style={{ padding: '12px 14px', background: '#fefce8', borderRadius: '8px', border: '1px solid #fef08a' }}>
+                                <div style={{ fontSize: '0.75rem', color: '#854d0e', fontWeight: '600', marginBottom: '2px' }}>누적 입고/구매 수량</div>
+                                <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#713f12' }}>
+                                    {(stats.total_quantity || 0).toLocaleString()}개 <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: '#a16207' }}>(총 {stats.count || 0}건)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 새 입고 / 구매 등록 폼 */}
+                        {showInboundForm && (
+                            <form onSubmit={handleInboundSubmit} style={{ padding: '14px 16px', background: '#f0fdf4', borderRadius: '10px', border: '1px solid #bbf7d0', marginBottom: '14px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span style={{ fontSize: '1rem' }}>⚡</span>
+                                        <h5 style={{ margin: 0, fontSize: '0.92rem', color: '#166534', fontWeight: 'bold' }}>새 입고 및 구매 내역 등록</h5>
+                                    </div>
+                                    <span style={{ fontSize: '0.78rem', color: '#15803d' }}>입고 시 실재고와 가격 히스토리가 자동으로 동기화됩니다.</span>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.78em', fontWeight: 'bold', color: '#166534', marginBottom: '3px' }}>입고 일자 *</label>
+                                        <input
+                                            type="date"
+                                            value={inboundForm.date}
+                                            onChange={e => setInboundForm({ ...inboundForm, date: e.target.value })}
+                                            style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.88em', boxSizing: 'border-box' }}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.78em', fontWeight: 'bold', color: '#166534', marginBottom: '3px' }}>입고 수량 *</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            placeholder="수량"
+                                            value={inboundForm.quantity}
+                                            onChange={e => setInboundForm({ ...inboundForm, quantity: e.target.value })}
+                                            style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.88em', boxSizing: 'border-box' }}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.78em', fontWeight: 'bold', color: '#166534', marginBottom: '3px' }}>실제 구매 단가(원)</label>
+                                        <input
+                                            type="text"
+                                            placeholder="예: 25,000 (선택)"
+                                            value={inboundForm.unit_price}
+                                            onChange={e => setInboundForm({ ...inboundForm, unit_price: e.target.value })}
+                                            style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.88em', boxSizing: 'border-box' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.78em', fontWeight: 'bold', color: '#166534', marginBottom: '3px' }}>구매처 / 출처</label>
+                                        <input
+                                            type="text"
+                                            list="vendor-suggestions"
+                                            placeholder="한누리, 쿠팡, 반납 등"
+                                            value={inboundForm.vendor}
+                                            onChange={e => setInboundForm({ ...inboundForm, vendor: e.target.value })}
+                                            style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.88em', boxSizing: 'border-box' }}
+                                        />
+                                        <datalist id="vendor-suggestions">
+                                            <option value="한누리" />
+                                            <option value="쿠팡" />
+                                            <option value="네이버스토어" />
+                                            <option value="사용자 반납" />
+                                            <option value="기타 거래처" />
+                                        </datalist>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px', marginTop: '8px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.78em', fontWeight: 'bold', color: '#166534', marginBottom: '3px' }}>구매 사이트 (URL)</label>
+                                        <input
+                                            type="text"
+                                            placeholder="https://... (상품 상세 링크)"
+                                            value={inboundForm.purchase_url}
+                                            onChange={e => setInboundForm({ ...inboundForm, purchase_url: e.target.value })}
+                                            style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.88em', boxSizing: 'border-box' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.78em', fontWeight: 'bold', color: '#166534', marginBottom: '3px' }}>담당자</label>
+                                        <input
+                                            type="text"
+                                            placeholder="담당자 이름"
+                                            value={inboundForm.staff}
+                                            onChange={e => setInboundForm({ ...inboundForm, staff: e.target.value })}
+                                            style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.88em', boxSizing: 'border-box' }}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div style={{ marginTop: '8px' }}>
+                                    <label style={{ display: 'block', fontSize: '0.78em', fontWeight: 'bold', color: '#166534', marginBottom: '3px' }}>비고 (메모)</label>
+                                    <input
+                                        type="text"
+                                        placeholder="비축용 입고, 특이사항, 할인 등 메모"
+                                        value={inboundForm.note}
+                                        onChange={e => setInboundForm({ ...inboundForm, note: e.target.value })}
+                                        style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.88em', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.82em', color: '#15803d', cursor: 'pointer', fontWeight: '600' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={inboundForm.update_stock}
+                                                onChange={e => setInboundForm({ ...inboundForm, update_stock: e.target.checked })}
+                                                style={{ cursor: 'pointer' }}
+                                            />
+                                            💡 실재고(추가 수량)에 즉시 반영 (+{inboundForm.quantity || 0}개)
+                                        </label>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.82em', color: '#1e40af', cursor: 'pointer', fontWeight: '500' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={inboundForm.update_master}
+                                                onChange={e => setInboundForm({ ...inboundForm, update_master: e.target.checked })}
+                                                style={{ cursor: 'pointer' }}
+                                            />
+                                            마스터 리스트 기준 단가 / 사이트도 함께 갱신
+                                        </label>
+                                    </div>
+                                    <button
+                                        type="submit"
+                                        className="btn btn-primary"
+                                        style={{ backgroundColor: '#16a34a', borderColor: '#16a34a', fontSize: '0.85em', padding: '6px 14px' }}
+                                        disabled={addInboundMutation.isPending}
+                                    >
+                                        {addInboundMutation.isPending ? '등록 중...' : '📥 입고/구매 등록'}
+                                    </button>
+                                </div>
+                            </form>
+                        )}
+
+                        {/* 통합 구매 및 입고 내역 테이블 */}
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                <h5 style={{ margin: 0, fontSize: '0.9rem', color: '#334155' }}>📋 과거 입고 및 구매 내역</h5>
+                                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>최신순 정렬 (총 {history.length}건)</span>
+                            </div>
+
+                            {isLoading ? (
+                                <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+                                    데이터를 불러오는 중입니다...
+                                </div>
+                            ) : history.length === 0 ? (
+                                <div style={{ padding: '2rem', textAlign: 'center', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1', color: '#94a3b8' }}>
+                                    등록된 입고 및 구매 내역이 없습니다.<br />
+                                    <span style={{ fontSize: '0.85em' }}>위의 '새 입고 및 구매 내역 등록' 폼에서 첫 입고 기록을 작성해보세요.</span>
+                                </div>
+                            ) : (
+                                <div className="table-wrapper" style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                                    <table className="data-table" style={{ fontSize: '0.85em' }}>
+                                        <thead>
+                                            <tr>
+                                                <th style={{ width: '13%' }}>일자</th>
+                                                <th style={{ width: '15%' }}>구분 / 출처</th>
+                                                <th style={{ width: '11%', textAlign: 'center' }}>수량</th>
+                                                <th style={{ width: '15%', textAlign: 'right' }}>실제 단가</th>
+                                                <th style={{ width: '13%', textAlign: 'center' }}>구매 사이트</th>
+                                                <th style={{ width: '11%' }}>담당자</th>
+                                                <th>비고</th>
+                                                <th style={{ width: '50px', textAlign: 'center' }}>삭제</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {history.map((row, idx) => {
+                                                const isIndividual = row.source_type === 'individual'
+                                                const isDeleted = row.is_deleted || (row.note && row.note.includes('[삭제됨]'))
+                                                const rowUrl = (row.purchase_url || '').trim()
+                                                const rowFormattedUrl = rowUrl ? (rowUrl.startsWith('http://') || rowUrl.startsWith('https://') ? rowUrl : `https://${rowUrl}`) : ''
+
+                                                return (
+                                                    <tr key={idx} style={{ backgroundColor: isDeleted ? '#f8fafc' : undefined }}>
+                                                        <td style={{ color: isDeleted ? '#94a3b8' : '#475569', textDecoration: isDeleted ? 'line-through' : 'none' }}>
+                                                            {row.date}
+                                                        </td>
+                                                        <td>
+                                                            <span style={{
+                                                                display: 'inline-block',
+                                                                padding: '1px 6px',
+                                                                borderRadius: '4px',
+                                                                fontSize: '0.78em',
+                                                                fontWeight: 'bold',
+                                                                marginRight: '4px',
+                                                                backgroundColor: isIndividual ? '#f0fdf4' : '#eff6ff',
+                                                                color: isIndividual ? '#15803d' : '#1d4ed8',
+                                                                border: isIndividual ? '1px solid #bbf7d0' : '1px solid #bfdbfe'
+                                                            }}>
+                                                                {isIndividual ? '개별입고' : '구매입고'}
+                                                            </span>
+                                                            <span style={{ textDecoration: isDeleted ? 'line-through' : 'none', color: isDeleted ? '#94a3b8' : 'inherit' }}>
+                                                                {row.vendor || '-'}
+                                                            </span>
+                                                        </td>
+                                                        <td style={{ textAlign: 'center', fontWeight: 'bold', color: isDeleted ? '#94a3b8' : '#166534' }}>
+                                                            {isDeleted ? '0개' : `+${Number(row.quantity || 0).toLocaleString()}개`}
+                                                        </td>
+                                                        <td style={{ textAlign: 'right', fontWeight: 'bold', color: isDeleted ? '#94a3b8' : '#0f172a' }}>
+                                                            {row.unit_price ? formatPrice(row.unit_price) : '-'}
+                                                        </td>
+                                                        <td style={{ textAlign: 'center' }}>
+                                                            {rowFormattedUrl ? (
+                                                                <a
+                                                                    href={rowFormattedUrl}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    style={{
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '2px',
+                                                                        padding: '1px 5px',
+                                                                        backgroundColor: '#eff6ff',
+                                                                        color: '#1d4ed8',
+                                                                        borderRadius: '4px',
+                                                                        fontSize: '0.8em',
+                                                                        textDecoration: 'none'
+                                                                    }}
+                                                                    title={rowFormattedUrl}
+                                                                >
+                                                                    링크 ↗
+                                                                </a>
+                                                            ) : (
+                                                                <span style={{ color: '#cbd5e1' }}>-</span>
+                                                            )}
+                                                        </td>
+                                                        <td style={{ color: '#475569' }}>{row.staff || '-'}</td>
+                                                        <td style={{ color: isDeleted ? '#ef4444' : '#64748b', fontSize: '0.85em' }}>{row.note || '-'}</td>
+                                                        <td style={{ textAlign: 'center' }}>
+                                                            {!isDeleted && (
+                                                                <button
+                                                                    className="btn btn-danger"
+                                                                    style={{ padding: '2px 5px', fontSize: '0.75em' }}
+                                                                    disabled={deleteInboundMutation.isPending}
+                                                                    onClick={() => {
+                                                                        if (window.confirm(`[${row.date}] ${item.item_name} (${row.quantity}개) 입고 내역을 삭제하시겠습니까?\n\n💡 실재고(추가 수량)에서도 ${row.quantity}개가 자동으로 복원 차감됩니다.`)) {
+                                                                            deleteInboundMutation.mutate({
+                                                                                row_index: row.row_index,
+                                                                                source_type: row.source_type,
+                                                                                quantity: Number(row.quantity) || 0
+                                                                            })
+                                                                        }
+                                                                    }}
+                                                                    title="내역 삭제 및 실재고 복원 차감"
+                                                                >
+                                                                    🗑️
+                                                                </button>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* 하단 닫기 바 */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 22px', backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                    <button className="btn btn-secondary" onClick={onClose}>✕ 닫기</button>
+                </div>
+            </div>
         </div>
     )
 }

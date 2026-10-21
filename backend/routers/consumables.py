@@ -195,9 +195,19 @@ def create_purchase_record(data: Dict[str, Any] = Body(...)):
     return {"status": "success"}
 
 @router.delete("/purchase-history/{row_index}")
-def remove_purchase_record(row_index: int = Path(..., description="삭제할 행 번호")):
-    """구매 입고 내역 삭제"""
-    result = delete_purchase_record(row_index)
+def remove_purchase_record(
+    row_index: int = Path(..., description="삭제할 행 번호"),
+    item_name: str = Query("", description="품목명"),
+    quantity: int = Query(0, description="수량"),
+    restore_stock: bool = Query(True, description="실재고 차감 복원 여부"),
+    source_type: str = Query("purchase", description="데이터 원본 구분 (purchase | individual)")
+):
+    """구매 입고 내역 삭제 (통합: 개별입고 또는 구매입고 분기 처리 및 실재고 복원)"""
+    if source_type == "individual":
+        result = delete_individual_inbound(row_index, item_name, quantity)
+    else:
+        result = delete_purchase_record(row_index, item_name, quantity, restore_stock)
+
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "삭제 실패"))
     return {"status": "success"}
