@@ -94,6 +94,18 @@ const AssetList = () => {
     const [onlyWithEmail, setOnlyWithEmail] = useState(false)
     const [filterLeaseStatus, setFilterLeaseStatus] = useState('') // '' | 'd90'
 
+    // 열(컬럼) 숨김/표시 상태 (type별 로컬 스토리지 유지)
+    const [hiddenColumns, setHiddenColumns] = useState(() => {
+        try {
+            const saved = localStorage.getItem(`hidden_columns_${type}`)
+            return saved ? JSON.parse(saved) : []
+        } catch {
+            return []
+        }
+    })
+    const [colDropdownOpen, setColDropdownOpen] = useState(false)
+    const colDropdownRef = useRef(null)
+
     // 상세 수정/신규 추가 모달 상태
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isCreateMode, setIsCreateMode] = useState(false)
@@ -110,7 +122,7 @@ const AssetList = () => {
     const [assetHistories, setAssetHistories] = useState([])
     const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
-    // type(경로 파라미터)가 변경될 때 필터 상태 초기화
+    // type(경로 파라미터)가 변경될 때 필터 상태 초기화 및 해당 type의 열 설정 로드
     useEffect(() => {
         setFilterYears([])
         setFilterMonths([])
@@ -129,9 +141,23 @@ const AssetList = () => {
         setIsUserSearchOpen(false)
         setUserSearchQuery('')
         setFilterLeaseStatus('')
+        setColDropdownOpen(false)
+        try {
+            const saved = localStorage.getItem(`hidden_columns_${type}`)
+            setHiddenColumns(saved ? JSON.parse(saved) : [])
+        } catch {
+            setHiddenColumns([])
+        }
     }, [type])
 
-    // 연도 및 월 드롭다운 외부 클릭 시 닫기
+    const updateHiddenColumns = (newHidden) => {
+        setHiddenColumns(newHidden)
+        try {
+            localStorage.setItem(`hidden_columns_${type}`, JSON.stringify(newHidden))
+        } catch {}
+    }
+
+    // 연도, 월 및 열 선택 드롭다운 외부 클릭 시 닫기
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (yearDropdownRef.current && !yearDropdownRef.current.contains(e.target)) {
@@ -139,6 +165,9 @@ const AssetList = () => {
             }
             if (monthDropdownRef.current && !monthDropdownRef.current.contains(e.target)) {
                 setMonthDropdownOpen(false)
+            }
+            if (colDropdownRef.current && !colDropdownRef.current.contains(e.target)) {
+                setColDropdownOpen(false)
             }
         }
         document.addEventListener('mousedown', handleClickOutside)
@@ -176,6 +205,9 @@ const AssetList = () => {
             return true
         })
         : []
+
+    // 사용자가 숨김 설정한 열을 제외한 실제 표시할 열 목록
+    const visibleColumns = columns.filter(col => !hiddenColumns.includes(col))
 
     // ── 연도/월 추출 및 데이터 필터링 ──
     const getYear = (row) => {
@@ -926,6 +958,92 @@ const AssetList = () => {
                     )}
                     <button className="btn btn-sm" onClick={handleDownload} style={{ backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #86efac', fontWeight: '600' }}>📥 필터 결과 내보내기</button>
                     <button className="btn btn-sm" onClick={handleDownloadAll}>📋 전체 다운로드</button>
+
+                    {/* 열 숨기기 / 표시 드롭다운 */}
+                    <div ref={colDropdownRef} style={{ position: 'relative' }}>
+                        <button
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={() => setColDropdownOpen(!colDropdownOpen)}
+                            style={{
+                                backgroundColor: hiddenColumns.length > 0 ? '#eff6ff' : '#fff',
+                                color: hiddenColumns.length > 0 ? '#1d4ed8' : '#374151',
+                                border: `1px solid ${hiddenColumns.length > 0 ? '#93c5fd' : '#cbd5e1'}`,
+                                fontWeight: hiddenColumns.length > 0 ? '600' : 'normal',
+                                display: 'flex', alignItems: 'center', gap: '5px'
+                            }}
+                            title="화면에서 숨기거나 표시할 열을 선택합니다"
+                        >
+                            <span>👁️ 열 숨기기/표시</span>
+                            {hiddenColumns.length > 0 && (
+                                <span style={{
+                                    backgroundColor: '#2563eb', color: '#fff', fontSize: '0.7rem',
+                                    padding: '1px 6px', borderRadius: '10px', fontWeight: 'bold'
+                                }}>
+                                    {hiddenColumns.length}개 숨김
+                                </span>
+                            )}
+                        </button>
+                        {colDropdownOpen && (
+                            <div style={{
+                                position: 'absolute', top: '100%', right: 0, zIndex: 1100,
+                                background: 'white', border: '1px solid #cbd5e1', borderRadius: '8px',
+                                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)', minWidth: '200px',
+                                maxHeight: '380px', overflowY: 'auto', padding: '10px', marginTop: '6px'
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px', marginBottom: '8px' }}>
+                                    <span style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#1e293b' }}>열 표시 설정</span>
+                                    {hiddenColumns.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => updateHiddenColumns([])}
+                                            style={{ background: 'none', border: 'none', color: '#4f46e5', fontSize: '0.75rem', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                                        >
+                                            모두 표시
+                                        </button>
+                                    )}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                    {columns.map(col => {
+                                        const isHidden = hiddenColumns.includes(col)
+                                        return (
+                                            <label
+                                                key={col}
+                                                style={{
+                                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                                    padding: '5px 8px', fontSize: '0.83rem', cursor: 'pointer',
+                                                    borderRadius: '4px', userSelect: 'none',
+                                                    backgroundColor: isHidden ? '#f8fafc' : 'transparent',
+                                                    color: isHidden ? '#94a3b8' : '#1e293b'
+                                                }}
+                                                onMouseEnter={e => e.currentTarget.style.backgroundColor = isHidden ? '#f1f5f9' : '#f8fafc'}
+                                                onMouseLeave={e => e.currentTarget.style.backgroundColor = isHidden ? '#f8fafc' : 'transparent'}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!isHidden}
+                                                    onChange={() => {
+                                                        if (isHidden) {
+                                                            updateHiddenColumns(hiddenColumns.filter(c => c !== col))
+                                                        } else {
+                                                            if (columns.length - hiddenColumns.length <= 1) {
+                                                                alert('최소 1개의 열은 표시되어야 합니다.')
+                                                                return
+                                                            }
+                                                            updateHiddenColumns([...hiddenColumns, col])
+                                                        }
+                                                    }}
+                                                    style={{ cursor: 'pointer' }}
+                                                />
+                                                <span style={{ textDecoration: isHidden ? 'line-through' : 'none' }}>{col}</span>
+                                            </label>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     <button className="btn btn-sm" onClick={() => queryClient.invalidateQueries(['assets', type])}>🔄 새로고침</button>
                 </div>
             </div>
@@ -982,7 +1100,7 @@ const AssetList = () => {
                                             <input type="checkbox" onChange={toggleSelectAll} checked={selectedRows.size === displayedAssets?.length && displayedAssets?.length > 0} />
                                         </th>
                                         <th style={{ width: '80px' }}>관리</th>
-                                        {columns.map(col => <th key={col}>{col}</th>)}
+                                        {visibleColumns.map(col => <th key={col}>{col}</th>)}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1002,7 +1120,7 @@ const AssetList = () => {
                                             <td style={{ textAlign: 'center' }}>
                                                 <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => openEditModal(row)}>상세 수정</button>
                                             </td>
-                                            {columns.map(col => {
+                                            {visibleColumns.map(col => {
                                                 const val = row[col] !== null ? String(row[col]) : '-'
                                                 const isEmailCol = col.toLowerCase() === 'email'
                                                 const isDuplicate = isEmailCol && val !== '-' && duplicateEmails.includes(val.trim().toLowerCase())

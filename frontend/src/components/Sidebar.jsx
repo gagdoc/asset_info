@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
-import { FaHome, FaSearch, FaLaptop, FaTabletAlt, FaPrint, FaDesktop, FaPhone, FaUserPlus, FaUserTimes, FaBoxOpen, FaCog, FaUpload, FaExternalLinkAlt, FaTimes, FaExchangeAlt, FaHistory } from 'react-icons/fa'
+import { FaHome, FaSearch, FaLaptop, FaTabletAlt, FaPrint, FaDesktop, FaPhone, FaUserPlus, FaUserTimes, FaBoxOpen, FaCog, FaUpload, FaExternalLinkAlt, FaTimes, FaExchangeAlt, FaHistory, FaAngleDoubleLeft } from 'react-icons/fa'
 
-const Sidebar = ({ isOpen, onClose }) => {
+const Sidebar = ({ isOpen, onClose, isCollapsed, onToggleCollapse }) => {
     const assetItems = [
         { name: '대량 검색 (Bulk Search)', path: '/bulk-search', icon: <FaSearch /> },
         { name: '변경 이력 로그 (History)', path: '/history', icon: <FaHistory /> },
@@ -27,15 +27,38 @@ const Sidebar = ({ isOpen, onClose }) => {
     return (
         <>
         {isOpen && <div className="sidebar-overlay" onClick={onClose}></div>}
-        <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
+        <aside className={`sidebar ${isOpen ? 'open' : ''} ${isCollapsed ? 'collapsed' : ''}`}>
             <div className="sidebar-logo" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                     <h2>📦 Asset Manager</h2>
                     <small>사내 자산 & 소모품 관리</small>
                 </div>
-                <button className="btn-icon mobile-close-btn" onClick={onClose} style={{ color: 'white', display: 'none' }}>
-                    <FaTimes size={20} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {onToggleCollapse && (
+                        <button
+                            type="button"
+                            className="btn-icon desktop-collapse-btn"
+                            onClick={onToggleCollapse}
+                            title="메뉴 접기 (화면 넓게 보기)"
+                            style={{
+                                color: '#cbd5e1',
+                                background: 'rgba(255, 255, 255, 0.08)',
+                                border: '1px solid rgba(255, 255, 255, 0.15)',
+                                borderRadius: '6px',
+                                padding: '4px 6px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}
+                        >
+                            <FaAngleDoubleLeft size={14} />
+                        </button>
+                    )}
+                    <button className="btn-icon mobile-close-btn" onClick={onClose} style={{ color: 'white', display: 'none' }}>
+                        <FaTimes size={20} />
+                    </button>
+                </div>
             </div>
 
             <NavLink to="/dashboard" onClick={onClose} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>

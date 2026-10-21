@@ -122,16 +122,38 @@ function DevEnvBanner() {
 
 function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('sidebar_collapsed') === 'true'
+    } catch {
+      return false
+    }
+  })
   const location = useLocation()
   const isRegisterPage = location.pathname === '/register'
   const isPublicConsumables = location.pathname === '/public-consumables'
   const isStandalonePage = isRegisterPage || isPublicConsumables
 
+  const toggleSidebarCollapse = useCallback(() => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev
+      try {
+        localStorage.setItem('sidebar_collapsed', String(next))
+      } catch {}
+      return next
+    })
+  }, [])
+
   return (
     <ToastProvider>
       <div className={`app-container ${isRegisterPage ? 'centered-layout' : ''}`}>
         {!isStandalonePage && (
-          <Sidebar isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
+          <Sidebar
+            isOpen={isMobileMenuOpen}
+            onClose={() => setIsMobileMenuOpen(false)}
+            isCollapsed={isSidebarCollapsed}
+            onToggleCollapse={toggleSidebarCollapse}
+          />
         )}
 
         <div className="main-wrapper">
@@ -139,12 +161,52 @@ function App() {
           {!isStandalonePage && <DevEnvBanner />}
 
           {!isStandalonePage && (
-            <div className="mobile-header">
-              <button className="btn-icon" onClick={() => setIsMobileMenuOpen(true)}>
-                <FaBars size={20} />
-              </button>
-              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>📦 Asset Manager</h2>
-            </div>
+            <>
+              {/* 모바일 헤더 */}
+              <div className="mobile-header">
+                <button className="btn-icon" onClick={() => setIsMobileMenuOpen(true)}>
+                  <FaBars size={20} />
+                </button>
+                <h2 style={{ margin: 0, fontSize: '1.2rem' }}>📦 Asset Manager</h2>
+              </div>
+
+              {/* 데스크톱: 사이드바 접혔을 때 상단 펼치기 바 */}
+              {isSidebarCollapsed && (
+                <div style={{
+                  padding: '6px 16px',
+                  background: '#ffffff',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+                }}>
+                  <button
+                    onClick={toggleSidebarCollapse}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 10px',
+                      background: '#f1f5f9',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      color: '#1e293b',
+                      cursor: 'pointer',
+                      fontWeight: '600',
+                      fontSize: '0.82rem'
+                    }}
+                    title="메뉴 펼치기"
+                  >
+                    <FaBars size={12} />
+                    <span>메뉴 펼치기</span>
+                  </button>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                    📦 Asset Manager <strong style={{ color: '#3b82f6' }}>(전체 화면 모드)</strong>
+                  </span>
+                </div>
+              )}
+            </>
           )}
 
           <main className="main-content">
