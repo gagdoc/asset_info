@@ -11,7 +11,8 @@ from backend.services.consumables_service import (
     get_month_close_status, confirm_month_snapshot, close_month,
     reopen_month, get_monthly_toner_report, reset_month_snapshot,
     get_purchase_history, add_purchase_record, delete_purchase_record,
-    set_toner_stock_direct,
+    get_item_purchase_history,
+    set_toner_stock_direct, clear_all_toner_records,
     get_individual_inbound_history, add_individual_inbound, delete_individual_inbound, update_individual_inbound,
     delete_outbound_batch,
     get_item_images_map, save_item_image, delete_item_image,
@@ -168,9 +169,18 @@ def reset_month(data: Dict[str, Any] = Body(...)):
 # ── 구매 입고 내역 ─────────────────────────────────────────────
 
 @router.get("/purchase-history")
-def list_purchase_history():
-    """구매 입고 내역 전체 조회"""
-    return get_purchase_history()
+def list_purchase_history(item_name: str = Query(None, description="품목명 필터")):
+    """구매 입고 내역 전체 조회 (품목명 필터 지원)"""
+    history = get_purchase_history()
+    if item_name:
+        target = item_name.strip()
+        history = [r for r in history if r.get("item_name", "").strip() == target]
+    return history
+
+@router.get("/items/{item_name}/purchase-history")
+def get_item_purchases(item_name: str = Path(..., description="품목명")):
+    """특정 품목의 구매 가격 히스토리 및 통계 조회"""
+    return get_item_purchase_history(item_name)
 
 @router.post("/purchase-history")
 def create_purchase_record(data: Dict[str, Any] = Body(...)):
@@ -270,13 +280,14 @@ def delete_outbound(
     verify_date: str = Query("", description="삭제 전 날짜 검증값"),
     verify_item: str = Query("", description="삭제 전 품목명 검증값"),
     verify_user: str = Query("", description="삭제 전 사용자명 검증값 (중복 행 오탐 방지)"),
+    force: bool = Query(False, description="마감된 월 강제 삭제 허용 여부"),
 ):
-    """월별 출고 개별 데이터 삭제 (날짜+품목+사용자 3중 검증, 마감된 월은 차단)"""
+    """월별 출고 개별 데이터 삭제 (날짜+품목+사용자 3중 검증)"""
     status_info = get_month_close_status(month)
-    if status_info.get("status") == "closed":
+    if not force and status_info.get("status") == "closed":
         raise HTTPException(status_code=403, detail=f"'{month}'은(는) 마감된 월입니다. 출고 내역을 삭제할 수 없습니다.")
 
-    success = delete_outbound_history(month, row_index, verify_date, verify_item, verify_user)
+    success = delete_outbound_history(month, row_index, verify_date, verify_item, verify_user, force=force)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete outbound record")
     return {"status": "success"}
@@ -286,16 +297,17 @@ def delete_outbound_batch_endpoint(data: Dict[str, Any] = Body(...)):
     """월별 출고 데이터 다중(선택) 일괄 삭제"""
     month = data.get("month")
     items = data.get("items", [])
+    force = data.get("force", False)
     if not month:
         raise HTTPException(status_code=400, detail="month는 필수입니다.")
     if not items:
         raise HTTPException(status_code=400, detail="삭제할 항목이 지정되지 않았습니다.")
 
     status_info = get_month_close_status(month)
-    if status_info.get("status") == "closed":
+    if not force and status_info.get("status") == "closed":
         raise HTTPException(status_code=403, detail=f"'{month}'은(는) 마감된 월입니다. 출고 내역을 삭제할 수 없습니다.")
 
-    result = delete_outbound_batch(month, items)
+    result = delete_outbound_batch(month, items, force=force)
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "일괄 삭제 실패"))
     return result
@@ -317,6 +329,14 @@ def sync_toner():
         "added": result["added"],
         "skipped_count": len(result["skipped"]),
     }
+
+@router.post("/toner/clear-all-records")
+def clear_toner_records_endpoint():
+    """모든 월별 출고 시트 및 입고 시트에서 토너 기록 일괄 삭제 및 정리"""
+    result = clear_all_toner_records()
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "토너 기록 삭제 실패"))
+    return result
 
 @router.get("/toner-inventory")
 def list_toner_inventory():

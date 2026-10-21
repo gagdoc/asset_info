@@ -1486,6 +1486,7 @@ const ItemsTab = () => {
         category: '',
         item_name: '',
         price: '',
+        purchase_url: '',
         is_tracked: false,
         current_stock: '',
         base_qty: 0,
@@ -1506,6 +1507,9 @@ const ItemsTab = () => {
     // 제품 이미지 크롭/편집 및 뷰어 모달 상태
     const [cropModalItem, setCropModalItem] = useState(null) // null | { item_name, image }
     const [viewerModalItem, setViewerModalItem] = useState(null) // null | { item_name, image }
+
+    // 품목 구매 가격 히스토리 & 사이트 상세 모달 상태
+    const [priceHistoryModalItem, setPriceHistoryModalItem] = useState(null) // null | item_name
 
     const handleSaveItemImage = async (dataUrl) => {
         if (!cropModalItem?.item_name) return
@@ -1549,7 +1553,7 @@ const ItemsTab = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
             setShowForm(false)
-            setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, current_stock: '', base_qty: 0, order_qty: 0 })
+            setFormData({ row_index: null, category: '', item_name: '', price: '', purchase_url: '', is_tracked: false, current_stock: '', base_qty: 0, order_qty: 0 })
             setIsCustomCategory(false)
             setIsCustomItem(false)
             alert("품목이 저장되었습니다.")
@@ -1634,6 +1638,7 @@ const ItemsTab = () => {
             category: item.category,
             item_name: item.item_name,
             price: item.price,
+            purchase_url: item.purchase_url || '',
             is_tracked: item.is_tracked || false,
             current_stock: item.current_stock ?? '',   // 실재고 수량 (토너 시트)
             _orig_stock: item.current_stock ?? null,   // 변경 여부 비교용
@@ -1742,16 +1747,17 @@ const ItemsTab = () => {
                         const rows = (filteredItems || []).map(r => ({
                             '대분류': r.category, '품목명': r.item_name,
                             '단가(원)': r.price, '현재 수량': r.current_stock ?? 0,
+                            '구매사이트': r.purchase_url || '',
                         }))
                         await exportToXLSX({ filename: `소모품마스터리스트_${todayStr()}`,
-                            columns: [{key:'대분류',label:'대분류'},{key:'품목명',label:'품목명'},{key:'단가(원)',label:'단가(원)'},{key:'현재 수량',label:'현재 수량'}],
+                            columns: [{key:'대분류',label:'대분류'},{key:'품목명',label:'품목명'},{key:'단가(원)',label:'단가(원)'},{key:'현재 수량',label:'현재 수량'},{key:'구매사이트',label:'구매사이트'}],
                             rows })
                     }}
                         disabled={!filteredItems || filteredItems.length === 0}
                     />
                     <button className="btn btn-primary" onClick={() => {
                         setShowForm(!showForm);
-                        setFormData({ row_index: null, category: '', item_name: '', price: '', is_tracked: false, current_stock: '', base_qty: 0, order_qty: 0, image: '' });
+                        setFormData({ row_index: null, category: '', item_name: '', price: '', purchase_url: '', is_tracked: false, current_stock: '', base_qty: 0, order_qty: 0, image: '' });
                         setIsCustomCategory(false);
                         setIsCustomItem(false);
                     }}>
@@ -1896,6 +1902,7 @@ const ItemsTab = () => {
                                                 category: selectedItem.category || formData.category,
                                                 item_name: selectedItem.item_name,
                                                 price: selectedItem.price,
+                                                purchase_url: selectedItem.purchase_url || '',
                                                 is_tracked: selectedItem.is_tracked || false,
                                                 current_stock: selectedItem.current_stock ?? '',
                                                 _orig_stock: selectedItem.current_stock ?? null,
@@ -1905,7 +1912,7 @@ const ItemsTab = () => {
                                             })
                                         }
                                     } else {
-                                        setFormData(prev => ({ ...prev, row_index: null, item_name: '' }))
+                                        setFormData(prev => ({ ...prev, row_index: null, item_name: '', purchase_url: '' }))
                                     }
                                 }}
                                 style={{ padding: '8px', minWidth: '220px', borderRadius: '4px', borderColor: '#cbd5e1' }}
@@ -1924,6 +1931,16 @@ const ItemsTab = () => {
                     <div>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px' }}>단가 (원)</label>
                         <input type="text" placeholder="18,000" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} style={{ padding: '8px', width: '100px' }} required />
+                    </div>
+                    <div style={{ flex: '1 1 200px' }}>
+                        <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#0369a1', fontWeight: 'bold' }}>구매 사이트 (URL) 🌐</label>
+                        <input
+                            type="text"
+                            placeholder="https://... (구매처 링크)"
+                            value={formData.purchase_url}
+                            onChange={e => setFormData({ ...formData, purchase_url: e.target.value })}
+                            style={{ padding: '8px', width: '100%', borderColor: '#7dd3fc', borderRadius: '4px' }}
+                        />
                     </div>
                     <div style={{ marginLeft: '10px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                         <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#1976d2', fontWeight: 'bold' }}>재고 추적 🎯</label>
@@ -2046,12 +2063,13 @@ const ItemsTab = () => {
             <table className="data-table">
                 <thead>
                     <tr>
-                        <th style={{ width: '60px', textAlign: 'center' }}>이미지</th>
-                        <th style={{ width: '15%' }}>대분류 (Category)</th>
+                        <th style={{ width: '50px', textAlign: 'center' }}>이미지</th>
+                        <th style={{ width: '13%' }}>대분류 (Category)</th>
                         <th>{'소모품명 (Item Name)'}</th>
-                        <th style={{ textAlign: 'right', width: '13%' }}>정상 단가(₩)</th>
-                        <th style={{ textAlign: 'center', width: '15%', background: '#fff1f2', color: '#9f1239' }}>현재 수량 (실재고)</th>
-                        <th style={{ textAlign: 'center', width: '25%' }}>관리</th>
+                        <th style={{ textAlign: 'right', width: '11%' }}>정상 단가(₩)</th>
+                        <th style={{ textAlign: 'center', width: '12%', background: '#fff1f2', color: '#9f1239' }}>현재 수량 (실재고)</th>
+                        <th style={{ textAlign: 'center', width: '14%' }}>구매 사이트</th>
+                        <th style={{ textAlign: 'center', width: '28%' }}>관리</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -2081,6 +2099,9 @@ const ItemsTab = () => {
                                 </td>
                             )
                         }
+
+                        const purchaseUrl = item.purchase_url ? item.purchase_url.trim() : ''
+                        const formattedUrl = purchaseUrl ? (purchaseUrl.startsWith('http://') || purchaseUrl.startsWith('https://') ? purchaseUrl : `https://${purchaseUrl}`) : ''
 
                         return (
                             <tr key={idx}>
@@ -2139,6 +2160,38 @@ const ItemsTab = () => {
                                 <EditableCell value={item.price} onSave={(val) => handleInlineUpdate('price', val)} align="right" />
                                 {/* 현재 수량 (실재고) */}
                                 {currentStockCell}
+                                {/* 구매 사이트 */}
+                                <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                    {formattedUrl ? (
+                                        <a
+                                            href={formattedUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={e => e.stopPropagation()}
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '4px',
+                                                padding: '4px 8px',
+                                                backgroundColor: '#f0f9ff',
+                                                color: '#0284c7',
+                                                border: '1px solid #bae6fd',
+                                                borderRadius: '6px',
+                                                fontSize: '0.82em',
+                                                fontWeight: 'bold',
+                                                textDecoration: 'none',
+                                                transition: 'background-color 0.15s'
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#e0f2fe'}
+                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f0f9ff'}
+                                            title={formattedUrl}
+                                        >
+                                            🌐 바로가기 ↗
+                                        </a>
+                                    ) : (
+                                        <span style={{ color: '#cbd5e1', fontSize: '0.85em' }}>-</span>
+                                    )}
+                                </td>
                                 <td style={{ textAlign: 'center', display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' }}>
                                     <button
                                         className="btn btn-secondary"
@@ -2149,6 +2202,14 @@ const ItemsTab = () => {
                                         📷 {item.image ? '사진 수정' : '사진 등록'}
                                     </button>
                                     <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => startEdit(item)}>상세 수정</button>
+                                    <button
+                                        className="btn btn-secondary"
+                                        style={{ padding: '2px 8px', fontSize: '0.8em', backgroundColor: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe', fontWeight: 'bold' }}
+                                        onClick={() => setPriceHistoryModalItem(item.item_name)}
+                                        title="구매 사이트 및 실제 구매 가격 히스토리 조회"
+                                    >
+                                        📊 가격 이력
+                                    </button>
                                     <button
                                         className="btn btn-primary"
                                         style={{ padding: '2px 8px', fontSize: '0.8em', backgroundColor: '#16a34a', borderColor: '#16a34a' }}
@@ -2164,7 +2225,7 @@ const ItemsTab = () => {
                             </tr>
                         )
                     }) : (
-                        <tr><td colSpan="6" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
+                        <tr><td colSpan="7" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
                             조건에 맞는 품목이 없습니다.
                         </td></tr>
                     )}
@@ -2334,6 +2395,432 @@ const ItemsTab = () => {
                 itemName={viewerModalItem?.item_name || ''}
                 imageUrl={viewerModalItem?.image || ''}
             />
+
+            {/* 품목 구매 가격 히스토리 & 사이트 상세 모달 */}
+            {priceHistoryModalItem && (
+                <PriceHistoryModal
+                    itemName={priceHistoryModalItem}
+                    onClose={() => setPriceHistoryModalItem(null)}
+                />
+            )}
+        </div>
+    )
+}
+
+// ─── 품목별 구매 사이트 & 실제 구매 가격 히스토리 모달 ───────────
+const PriceHistoryModal = ({ itemName, onClose }) => {
+    const queryClient = useQueryClient()
+    const today = new Date().toISOString().slice(0, 10)
+    const [showAddForm, setShowAddForm] = useState(false)
+    const [formData, setFormData] = useState({
+        date: today,
+        quantity: '1',
+        unit_price: '',
+        vendor: '',
+        purchase_url: '',
+        staff: '',
+        note: '',
+        update_master: true,
+    })
+
+    const { data: priceData, isLoading, refetch } = useQuery({
+        queryKey: ['item-price-history', itemName],
+        queryFn: async () => {
+            const { data } = await axios.get(`/api/consumables/items/${encodeURIComponent(itemName)}/purchase-history`)
+            return data
+        },
+        enabled: !!itemName
+    })
+
+    const addMutation = useMutation({
+        mutationFn: async (payload) => {
+            return axios.post('/api/consumables/purchase-history', {
+                ...payload,
+                item_name: itemName,
+                quantity: Number(payload.quantity) || 1
+            })
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['item-price-history', itemName] })
+            queryClient.invalidateQueries({ queryKey: ['purchase-history'] })
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            setShowAddForm(false)
+            setFormData({
+                date: today,
+                quantity: '1',
+                unit_price: '',
+                vendor: '',
+                purchase_url: '',
+                staff: '',
+                note: '',
+                update_master: true,
+            })
+            refetch()
+            alert('구매 및 가격 내역이 성공적으로 등록되었습니다.')
+        },
+        onError: (err) => {
+            alert('등록 실패: ' + (err.response?.data?.detail || err.message))
+        }
+    })
+
+    const deleteMutation = useMutation({
+        mutationFn: async (rowIndex) => {
+            return axios.delete(`/api/consumables/purchase-history/${rowIndex}`)
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['item-price-history', itemName] })
+            queryClient.invalidateQueries({ queryKey: ['purchase-history'] })
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            refetch()
+            alert('구매 내역이 삭제되었습니다.')
+        },
+        onError: (err) => {
+            alert('삭제 실패: ' + (err.response?.data?.detail || err.message))
+        }
+    })
+
+    const handleSubmit = (e) => {
+        e.preventDefault()
+        if (!formData.date || !formData.quantity) {
+            alert('날짜와 수량은 필수 입력 항목입니다.')
+            return
+        }
+        addMutation.mutate(formData)
+    }
+
+    const master = priceData?.master_info
+    const stats = priceData?.stats || {}
+    const history = priceData?.history || []
+
+    const currentUrl = (master?.purchase_url || stats.latest_purchase_url || '').trim()
+    const formattedUrl = currentUrl ? (currentUrl.startsWith('http://') || currentUrl.startsWith('https://') ? currentUrl : `https://${currentUrl}`) : ''
+
+    const formatPrice = (val) => {
+        if (val === null || val === undefined || val === '') return '-'
+        const num = Number(String(val).replace(/,/g, ''))
+        return isNaN(num) ? String(val) : num.toLocaleString() + '원'
+    }
+
+    return (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1200, padding: '16px' }}>
+            <div className="card" style={{ width: '900px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', backgroundColor: '#fff', borderRadius: '12px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden', padding: 0 }}>
+                {/* 헤더 */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)', color: '#fff' }}>
+                    <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontSize: '1.4rem' }}>📊</span>
+                            <h3 style={{ margin: 0, color: '#fff', fontSize: '1.25rem', fontWeight: 'bold' }}>{itemName}</h3>
+                            {master?.category && (
+                                <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: '#475569', color: '#e2e8f0' }}>
+                                    {master.category}
+                                </span>
+                            )}
+                        </div>
+                        <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: '#94a3b8' }}>
+                            구매 사이트 링크 및 실제 구매 단가 변동 히스토리 내역
+                        </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button
+                            className="btn btn-primary"
+                            style={{ padding: '6px 14px', fontSize: '0.85em', backgroundColor: showAddForm ? '#64748b' : '#2563eb', borderColor: 'transparent' }}
+                            onClick={() => setShowAddForm(v => !v)}
+                        >
+                            {showAddForm ? '닫기' : '+ 새 구매내역 등록'}
+                        </button>
+                        <button
+                            onClick={onClose}
+                            style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.5rem', cursor: 'pointer', lineHeight: '1', padding: '4px 8px' }}
+                            title="닫기"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </div>
+
+                {isLoading ? (
+                    <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
+                        <LoadingModal isOpen message="구매 가격 히스토리를 불러오는 중입니다..." />
+                    </div>
+                ) : (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+                        {/* 상단 통계 카드 그리드 */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+                            <div style={{ padding: '14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                                <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '600', marginBottom: '4px' }}>마스터 기준 단가</div>
+                                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#0f172a' }}>{formatPrice(master?.price)}</div>
+                            </div>
+                            <div style={{ padding: '14px', background: '#eff6ff', borderRadius: '10px', border: '1px solid #bfdbfe' }}>
+                                <div style={{ fontSize: '0.78rem', color: '#1d4ed8', fontWeight: '600', marginBottom: '4px' }}>최근 구매 단가</div>
+                                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#1e40af' }}>{formatPrice(stats.latest_price)}</div>
+                            </div>
+                            <div style={{ padding: '14px', background: '#f0fdf4', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
+                                <div style={{ fontSize: '0.78rem', color: '#15803d', fontWeight: '600', marginBottom: '4px' }}>최저 / 최고 단가</div>
+                                <div style={{ fontSize: '1.05rem', fontWeight: 'bold', color: '#166534', marginTop: '2px' }}>
+                                    {stats.min_price != null ? `${Number(stats.min_price).toLocaleString()}원 ~ ${Number(stats.max_price).toLocaleString()}원` : '-'}
+                                </div>
+                            </div>
+                            <div style={{ padding: '14px', background: '#fefce8', borderRadius: '10px', border: '1px solid #fef08a' }}>
+                                <div style={{ fontSize: '0.78rem', color: '#854d0e', fontWeight: '600', marginBottom: '4px' }}>누적 구매 수량 (총 {stats.count || 0}건)</div>
+                                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#713f12' }}>
+                                    {(stats.total_quantity || 0).toLocaleString()}개
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 구매 사이트 연결 배너 */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '240px' }}>
+                                <span style={{ fontSize: '1.2rem' }}>🌐</span>
+                                <div>
+                                    <span style={{ fontSize: '0.82rem', color: '#0369a1', fontWeight: 'bold' }}>구매처 공식/온라인 사이트</span>
+                                    <div style={{ fontSize: '0.9rem', color: formattedUrl ? '#0284c7' : '#94a3b8', wordBreak: 'break-all' }}>
+                                        {formattedUrl || '등록된 구매 사이트 URL이 없습니다.'}
+                                    </div>
+                                </div>
+                            </div>
+                            {formattedUrl ? (
+                                <a
+                                    href={formattedUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        padding: '7px 14px',
+                                        backgroundColor: '#0284c7',
+                                        color: '#fff',
+                                        borderRadius: '6px',
+                                        fontSize: '0.85em',
+                                        fontWeight: 'bold',
+                                        textDecoration: 'none',
+                                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                    }}
+                                >
+                                    구매 사이트 방문하기 ↗
+                                </a>
+                            ) : (
+                                <span style={{ fontSize: '0.8em', color: '#64748b' }}>
+                                    💡 아래 '새 구매내역 등록' 또는 마스터 리스트의 '상세 수정'에서 URL을 등록할 수 있습니다.
+                                </span>
+                            )}
+                        </div>
+
+                        {/* 신규 구매 입고 등록 폼 */}
+                        {showAddForm && (
+                            <form onSubmit={handleSubmit} style={{ padding: '16px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                    <h4 style={{ margin: 0, fontSize: '0.95rem', color: '#1e293b' }}>⚡ 새 구매 내역 등록</h4>
+                                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>등록 즉시 구매입고 시트에 추가됩니다.</span>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.8em', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>구매 일자 *</label>
+                                        <input
+                                            type="date"
+                                            value={formData.date}
+                                            onChange={e => setFormData({ ...formData, date: e.target.value })}
+                                            style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9em', boxSizing: 'border-box' }}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.8em', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>구매 수량 *</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            placeholder="수량"
+                                            value={formData.quantity}
+                                            onChange={e => setFormData({ ...formData, quantity: e.target.value })}
+                                            style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9em', boxSizing: 'border-box' }}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.8em', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>실제 구매 단가(원)</label>
+                                        <input
+                                            type="text"
+                                            placeholder="예: 25,000"
+                                            value={formData.unit_price}
+                                            onChange={e => setFormData({ ...formData, unit_price: e.target.value })}
+                                            style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9em', boxSizing: 'border-box' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.8em', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>구매처</label>
+                                        <input
+                                            type="text"
+                                            placeholder="예: 쿠팡, 한누리, 네이버스토어"
+                                            value={formData.vendor}
+                                            onChange={e => setFormData({ ...formData, vendor: e.target.value })}
+                                            style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9em', boxSizing: 'border-box' }}
+                                        />
+                                    </div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', marginTop: '10px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.8em', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>구매 사이트 (URL)</label>
+                                        <input
+                                            type="text"
+                                            placeholder="https://... (해당 상품 구매 상세 링크)"
+                                            value={formData.purchase_url}
+                                            onChange={e => setFormData({ ...formData, purchase_url: e.target.value })}
+                                            style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9em', boxSizing: 'border-box' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.8em', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>담당자</label>
+                                        <input
+                                            type="text"
+                                            placeholder="담당자 이름"
+                                            value={formData.staff}
+                                            onChange={e => setFormData({ ...formData, staff: e.target.value })}
+                                            style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9em', boxSizing: 'border-box' }}
+                                        />
+                                    </div>
+                                </div>
+                                <div style={{ marginTop: '10px' }}>
+                                    <label style={{ display: 'block', fontSize: '0.8em', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>비고 (메모)</label>
+                                    <input
+                                        type="text"
+                                        placeholder="특이사항, 할인 적용 여부 등"
+                                        value={formData.note}
+                                        onChange={e => setFormData({ ...formData, note: e.target.value })}
+                                        style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9em', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85em', color: '#1e40af', cursor: 'pointer', fontWeight: '500' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.update_master}
+                                            onChange={e => setFormData({ ...formData, update_master: e.target.checked })}
+                                            style={{ cursor: 'pointer' }}
+                                        />
+                                        💡 마스터 리스트의 기준 단가와 구매 사이트도 이 값으로 함께 갱신
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary"
+                                            style={{ fontSize: '0.85em' }}
+                                            onClick={() => setShowAddForm(false)}
+                                        >
+                                            취소
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="btn btn-primary"
+                                            style={{ fontSize: '0.85em' }}
+                                            disabled={addMutation.isPending}
+                                        >
+                                            {addMutation.isPending ? '등록 중...' : '저장하기'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        )}
+
+                        {/* 구매 내역 테이블 */}
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                <h4 style={{ margin: 0, fontSize: '0.95rem', color: '#1e293b' }}>📋 과거 구매 내역 목록</h4>
+                                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>최신순 정렬 (총 {history.length}건)</span>
+                            </div>
+                            {history.length === 0 ? (
+                                <div style={{ padding: '2.5rem', textAlign: 'center', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1', color: '#94a3b8' }}>
+                                    등록된 구매 가격 히스토리 내역이 없습니다.<br />
+                                    <span style={{ fontSize: '0.85em' }}>우측 상단의 '+ 새 구매내역 등록' 버튼으로 첫 구매 기록을 남겨보세요.</span>
+                                </div>
+                            ) : (
+                                <div className="table-wrapper" style={{ maxHeight: '350px', overflowY: 'auto' }}>
+                                    <table className="data-table" style={{ fontSize: '0.88em' }}>
+                                        <thead>
+                                            <tr>
+                                                <th style={{ width: '14%' }}>구매일자</th>
+                                                <th style={{ width: '12%', textAlign: 'center' }}>구매수량</th>
+                                                <th style={{ width: '16%', textAlign: 'right' }}>실제 구매단가</th>
+                                                <th style={{ width: '16%' }}>구매처</th>
+                                                <th style={{ width: '14%', textAlign: 'center' }}>구매 사이트</th>
+                                                <th style={{ width: '12%' }}>담당자</th>
+                                                <th>비고</th>
+                                                <th style={{ width: '60px', textAlign: 'center' }}>삭제</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {history.map((row, idx) => {
+                                                const rowUrl = (row.purchase_url || '').trim()
+                                                const rowFormattedUrl = rowUrl ? (rowUrl.startsWith('http://') || rowUrl.startsWith('https://') ? rowUrl : `https://${rowUrl}`) : ''
+
+                                                return (
+                                                    <tr key={idx}>
+                                                        <td style={{ color: '#475569', fontWeight: '500' }}>{row.date}</td>
+                                                        <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#166534' }}>
+                                                            {Number(row.quantity || 0).toLocaleString()}개
+                                                        </td>
+                                                        <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#0f172a' }}>
+                                                            {formatPrice(row.unit_price)}
+                                                        </td>
+                                                        <td style={{ color: '#334155' }}>{row.vendor || '-'}</td>
+                                                        <td style={{ textAlign: 'center' }}>
+                                                            {rowFormattedUrl ? (
+                                                                <a
+                                                                    href={rowFormattedUrl}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    style={{
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '2px',
+                                                                        padding: '2px 6px',
+                                                                        backgroundColor: '#eff6ff',
+                                                                        color: '#1d4ed8',
+                                                                        borderRadius: '4px',
+                                                                        fontSize: '0.82em',
+                                                                        textDecoration: 'none'
+                                                                    }}
+                                                                    title={rowFormattedUrl}
+                                                                >
+                                                                    링크 ↗
+                                                                </a>
+                                                            ) : (
+                                                                <span style={{ color: '#cbd5e1' }}>-</span>
+                                                            )}
+                                                        </td>
+                                                        <td style={{ color: '#475569' }}>{row.staff || '-'}</td>
+                                                        <td style={{ color: '#64748b', fontSize: '0.85em' }}>{row.note || '-'}</td>
+                                                        <td style={{ textAlign: 'center' }}>
+                                                            <button
+                                                                className="btn btn-danger"
+                                                                style={{ padding: '2px 6px', fontSize: '0.78em' }}
+                                                                disabled={deleteMutation.isPending}
+                                                                onClick={() => {
+                                                                    if (window.confirm(`[${row.date}] ${row.item_name} (${row.quantity}개) 구매 내역을 삭제하시겠습니까?`)) {
+                                                                        deleteMutation.mutate(row.row_index)
+                                                                    }
+                                                                }}
+                                                                title="내역 삭제"
+                                                            >
+                                                                🗑️
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* 하단 닫기 바 */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 24px', backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                    <button className="btn btn-secondary" onClick={onClose}>닫기</button>
+                </div>
+            </div>
         </div>
     )
 }
@@ -3064,6 +3551,26 @@ const TonnerInventoryTab = () => {
                     <button className="btn btn-secondary" onClick={handleSync} disabled={isFetching} style={{ fontSize: '0.9em' }}>
                         {isFetching ? '동기화 중...' : '🔄 시트 동기화'}
                     </button>
+                    <button
+                        className="btn btn-danger"
+                        style={{ fontSize: '0.88em', padding: '6px 12px', backgroundColor: '#dc2626', borderColor: '#b91c1c' }}
+                        onClick={async () => {
+                            if (!window.confirm('⚠️ [주의] 모든 월별 출고 시트와 입고 시트에서 토너 관련 기록을 완전히 일괄 삭제하시겠습니까?\n\n이 작업을 수행하면:\n1. 모든 월별 출고 시트(위탁/일반)의 토너 출고 행이 완전히 삭제됩니다.\n2. 입고 시트의 토너 기록이 정리됩니다.\n3. 재고 마감 및 스냅샷의 토너 출고 집계가 0으로 초기화됩니다.\n\n계속 진행하시겠습니까?')) return
+                            try {
+                                const { data } = await axios.post('/api/consumables/toner/clear-all-records')
+                                queryClient.invalidateQueries(['toner-inventory'])
+                                queryClient.invalidateQueries(['tonner-consignment'])
+                                queryClient.invalidateQueries(['consumables-items'])
+                                alert(`토너 입출고 기록이 정리되었습니다.\n- 총 출고 삭제: ${data.total_deleted_outbound}건\n- 입고 삭제: ${data.deleted_inbound + data.deleted_indiv}건`)
+                                refetch()
+                            } catch (err) {
+                                alert('토너 기록 삭제 실패: ' + (err.response?.data?.detail || err.message))
+                            }
+                        }}
+                        title="모든 월별 출고/입고 시트에서 토너 기록 일괄 삭제"
+                    >
+                        🗑️ 토너 입출고 전체 삭제
+                    </button>
                 </div>
             </div>
 
@@ -3244,7 +3751,17 @@ const PurchaseTab = ({ months }) => {
     const [searchTerm, setSearchTerm] = useState('')
     const [filterMonth, setFilterMonth] = useState('')
     const today = new Date().toISOString().slice(0, 10)
-    const emptyForm = { date: today, item_name: '', quantity: '', vendor: '', staff: '', note: '' }
+    const emptyForm = {
+        date: today,
+        item_name: '',
+        quantity: '',
+        unit_price: '',
+        vendor: '',
+        purchase_url: '',
+        staff: '',
+        note: '',
+        update_master: true
+    }
     const [formData, setFormData] = useState(emptyForm)
 
     // 품목 목록 (드롭다운용)
@@ -3288,6 +3805,16 @@ const PurchaseTab = ({ months }) => {
         onError: () => alert("삭제 중 오류가 발생했습니다.")
     })
 
+    const handleItemChange = (selectedName) => {
+        const found = allItems?.find(it => it.item_name === selectedName)
+        setFormData(prev => ({
+            ...prev,
+            item_name: selectedName,
+            unit_price: found?.price || prev.unit_price,
+            purchase_url: found?.purchase_url || prev.purchase_url,
+        }))
+    }
+
     const handleSubmit = (e) => {
         e.preventDefault()
         if (!formData.item_name || !formData.date || !formData.quantity) {
@@ -3322,6 +3849,12 @@ const PurchaseTab = ({ months }) => {
 
     const totalQty = filtered.reduce((s, h) => s + (Number(h.quantity) || 0), 0)
 
+    const formatPrice = (val) => {
+        if (val === null || val === undefined || val === '') return '-'
+        const num = Number(String(val).replace(/,/g, ''))
+        return isNaN(num) ? String(val) : num.toLocaleString() + '원'
+    }
+
     return (
         <div className="card">
             {/* 헤더 */}
@@ -3332,11 +3865,17 @@ const PurchaseTab = ({ months }) => {
                         onClick={async () => {
                         const rows = filtered.map(r => ({
                             '구매일자': r.date, '품목명': r.item_name,
-                            '수량': r.quantity, '구매처': r.vendor || '',
+                            '수량': r.quantity, '구매단가': r.unit_price || '',
+                            '구매처': r.vendor || '', '구매사이트': r.purchase_url || '',
                             '담당자': r.staff || '', '비고': r.note || r.memo || '',
                         }))
                         await exportToXLSX({ filename: `구매입고내역_${todayStr()}`,
-                            columns: [{key:'구매일자',label:'구매일자'},{key:'품목명',label:'품목명'},{key:'수량',label:'수량'},{key:'구매처',label:'구매처'},{key:'담당자',label:'담당자'},{key:'비고',label:'비고'}],
+                            columns: [
+                                {key:'구매일자',label:'구매일자'},{key:'품목명',label:'품목명'},
+                                {key:'수량',label:'수량'},{key:'구매단가',label:'구매단가'},
+                                {key:'구매처',label:'구매처'},{key:'구매사이트',label:'구매사이트'},
+                                {key:'담당자',label:'담당자'},{key:'비고',label:'비고'}
+                            ],
                             rows })
                     }}
                         disabled={!filtered.length}
@@ -3357,7 +3896,7 @@ const PurchaseTab = ({ months }) => {
                     </div>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '4px', fontWeight: 'bold', color: '#166534' }}>품목명 *</label>
-                        <select value={formData.item_name} onChange={e => setFormData({ ...formData, item_name: e.target.value })}
+                        <select value={formData.item_name} onChange={e => handleItemChange(e.target.value)}
                             style={{ padding: '7px 10px', border: '1px solid #86efac', borderRadius: '6px', minWidth: '180px' }} required>
                             <option value="">-- 품목 선택 --</option>
                             {itemNames.map(n => <option key={n} value={n}>{n}</option>)}
@@ -3369,23 +3908,44 @@ const PurchaseTab = ({ months }) => {
                             style={{ padding: '7px 10px', border: '1px solid #86efac', borderRadius: '6px', width: '80px' }} required />
                     </div>
                     <div>
+                        <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '4px', fontWeight: 'bold', color: '#166534' }}>구매단가 (원)</label>
+                        <input type="text" placeholder="예: 15,000" value={formData.unit_price} onChange={e => setFormData({ ...formData, unit_price: e.target.value })}
+                            style={{ padding: '7px 10px', border: '1px solid #86efac', borderRadius: '6px', width: '110px' }} />
+                    </div>
+                    <div>
                         <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '4px', color: '#555' }}>구매처</label>
-                        <input type="text" placeholder="예: 쿠팡, 영업팀" value={formData.vendor} onChange={e => setFormData({ ...formData, vendor: e.target.value })}
+                        <input type="text" placeholder="예: 쿠팡, 한누리" value={formData.vendor} onChange={e => setFormData({ ...formData, vendor: e.target.value })}
                             style={{ padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', width: '130px' }} />
+                    </div>
+                    <div style={{ flex: '1 1 200px' }}>
+                        <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '4px', color: '#0369a1', fontWeight: 'bold' }}>구매 사이트 (URL)</label>
+                        <input type="text" placeholder="https://..." value={formData.purchase_url} onChange={e => setFormData({ ...formData, purchase_url: e.target.value })}
+                            style={{ padding: '7px 10px', border: '1px solid #7dd3fc', borderRadius: '6px', width: '100%', boxSizing: 'border-box' }} />
                     </div>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '4px', color: '#555' }}>담당자</label>
                         <input type="text" placeholder="이름" value={formData.staff} onChange={e => setFormData({ ...formData, staff: e.target.value })}
                             style={{ padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', width: '100px' }} />
                     </div>
-                    <div>
+                    <div style={{ flex: '1 1 150px' }}>
                         <label style={{ display: 'block', fontSize: '0.85em', marginBottom: '4px', color: '#555' }}>비고</label>
                         <input type="text" placeholder="메모" value={formData.note} onChange={e => setFormData({ ...formData, note: e.target.value })}
-                            style={{ padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', width: '150px' }} />
+                            style={{ padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', width: '100%', boxSizing: 'border-box' }} />
                     </div>
-                    <button type="submit" className="btn btn-primary" disabled={addMutation.isPending} style={{ alignSelf: 'flex-end' }}>
-                        {addMutation.isPending ? '저장 중...' : '등록'}
-                    </button>
+                    <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap', gap: '8px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.83em', color: '#166534', cursor: 'pointer', fontWeight: 'bold' }}>
+                            <input
+                                type="checkbox"
+                                checked={formData.update_master}
+                                onChange={e => setFormData({ ...formData, update_master: e.target.checked })}
+                                style={{ cursor: 'pointer' }}
+                            />
+                            💡 마스터 리스트의 기준 단가와 구매 사이트도 이 값으로 자동 갱신
+                        </label>
+                        <button type="submit" className="btn btn-primary" disabled={addMutation.isPending}>
+                            {addMutation.isPending ? '저장 중...' : '등록'}
+                        </button>
+                    </div>
                 </form>
             )}
 
@@ -3429,35 +3989,70 @@ const PurchaseTab = ({ months }) => {
                                 <th>날짜</th>
                                 <th style={{ fontWeight: 'bold' }}>품목명</th>
                                 <th style={{ textAlign: 'center', color: '#166534' }}>수량</th>
+                                <th style={{ textAlign: 'right' }}>구매단가</th>
                                 <th>구매처</th>
+                                <th style={{ textAlign: 'center' }}>구매 사이트</th>
                                 <th>담당자</th>
                                 <th>비고</th>
                                 <th style={{ textAlign: 'center' }}>삭제</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {filtered.length > 0 ? filtered.map((h, idx) => (
-                                <tr key={idx}>
-                                    <td style={{ color: '#475569' }}>{h.date}</td>
-                                    <td style={{ fontWeight: 'bold' }}>{h.item_name}</td>
-                                    <td style={{ textAlign: 'center', color: '#166534', fontWeight: 'bold' }}>{Number(h.quantity).toLocaleString()}</td>
-                                    <td>{h.vendor || '-'}</td>
-                                    <td>{h.staff || '-'}</td>
-                                    <td style={{ color: '#64748b', fontSize: '0.9em' }}>{h.note || ''}</td>
-                                    <td style={{ textAlign: 'center' }}>
-                                        <button
-                                            className="btn btn-danger"
-                                            style={{ padding: '2px 8px', fontSize: '0.8em' }}
-                                            onClick={() => {
-                                                if (window.confirm(`"${h.item_name}" 입고 기록을 삭제하시겠습니까?`))
-                                                    deleteMutation.mutate(h.row_index)
-                                            }}
-                                            disabled={deleteMutation.isPending}
-                                        >🗑️</button>
-                                    </td>
-                                </tr>
-                            )) : (
-                                <tr><td colSpan="7" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
+                            {filtered.length > 0 ? filtered.map((h, idx) => {
+                                const hUrl = (h.purchase_url || '').trim()
+                                const hFormattedUrl = hUrl ? (hUrl.startsWith('http://') || hUrl.startsWith('https://') ? hUrl : `https://${hUrl}`) : ''
+
+                                return (
+                                    <tr key={idx}>
+                                        <td style={{ color: '#475569' }}>{h.date}</td>
+                                        <td style={{ fontWeight: 'bold' }}>{h.item_name}</td>
+                                        <td style={{ textAlign: 'center', color: '#166534', fontWeight: 'bold' }}>{Number(h.quantity).toLocaleString()}</td>
+                                        <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#0f172a' }}>{formatPrice(h.unit_price)}</td>
+                                        <td>{h.vendor || '-'}</td>
+                                        <td style={{ textAlign: 'center' }}>
+                                            {hFormattedUrl ? (
+                                                <a
+                                                    href={hFormattedUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '2px',
+                                                        padding: '3px 8px',
+                                                        backgroundColor: '#f0f9ff',
+                                                        color: '#0284c7',
+                                                        border: '1px solid #bae6fd',
+                                                        borderRadius: '4px',
+                                                        fontSize: '0.82em',
+                                                        fontWeight: 'bold',
+                                                        textDecoration: 'none'
+                                                    }}
+                                                    title={hFormattedUrl}
+                                                >
+                                                    링크 ↗
+                                                </a>
+                                            ) : (
+                                                <span style={{ color: '#cbd5e1' }}>-</span>
+                                            )}
+                                        </td>
+                                        <td>{h.staff || '-'}</td>
+                                        <td style={{ color: '#64748b', fontSize: '0.9em' }}>{h.note || ''}</td>
+                                        <td style={{ textAlign: 'center' }}>
+                                            <button
+                                                className="btn btn-danger"
+                                                style={{ padding: '2px 8px', fontSize: '0.8em' }}
+                                                onClick={() => {
+                                                    if (window.confirm(`"${h.item_name}" 입고 기록을 삭제하시겠습니까?`))
+                                                        deleteMutation.mutate(h.row_index)
+                                                }}
+                                                disabled={deleteMutation.isPending}
+                                            >🗑️</button>
+                                        </td>
+                                    </tr>
+                                )
+                            }) : (
+                                <tr><td colSpan="9" style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
                                     구매 입고 내역이 없습니다.
                                 </td></tr>
                             )}
