@@ -1236,8 +1236,10 @@ def save_item(data: dict) -> bool:
             next_row = len(col_B) + 1
             ws.update(values=[row_values], range_name=f"A{next_row}:G{next_row}")
 
-        if "image" in data and target_item:
-            save_item_image(target_item, data.get("image", ""))
+        # 빈 문자열("")이 전달될 때 기존에 등록된 이미지를 덮어써서 지우지 않도록 방어 (삭제는 전용 delete_item_image API 사용)
+        img_val = str(data.get("image") or "").strip()
+        if img_val and target_item:
+            save_item_image(target_item, img_val)
 
         invalidate_cache()
         # 데이터 변경 시 재고리스트 요약 시트 동기화
@@ -3037,9 +3039,10 @@ def get_item_images_map() -> dict:
 
 
 def save_item_image(item_name: str, image_data: str) -> bool:
-    """품목의 이미지를 저장(업데이트)합니다."""
+    """품목의 이미지를 저장(업데이트)합니다. 빈 이미지 문자열로 기존 이미지를 덮어쓰지 않도록 보호합니다."""
     item_name = str(item_name or "").strip()
-    if not item_name:
+    image_data = str(image_data or "").strip()
+    if not item_name or not image_data:
         return False
 
     from datetime import datetime
@@ -3060,7 +3063,7 @@ def save_item_image(item_name: str, image_data: str) -> bool:
                         break
 
                 if row_idx:
-                    ws.update(f"A{row_idx}:C{row_idx}", [[item_name, image_data, now_str]])
+                    ws.update(values=[[item_name, image_data, now_str]], range_name=f"A{row_idx}:C{row_idx}")
                 else:
                     ws.append_row([item_name, image_data, now_str], value_input_option="USER_ENTERED")
                 sheets_ok = True

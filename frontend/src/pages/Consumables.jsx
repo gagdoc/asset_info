@@ -1615,6 +1615,9 @@ const ItemsTab = () => {
             base_qty: isTonner ? 0 : (parseInt(String(formData.base_qty).replace(/,/g, '')) || 0),
             order_qty: parseInt(String(formData.order_qty).replace(/,/g, '')) || 0
         }
+        if (!payload.image) {
+            delete payload.image
+        }
         // 기본 품목 저장 (E열 base_qty, F열 order_qty 포함)
         mutation.mutate(payload)
         
@@ -1733,8 +1736,11 @@ const ItemsTab = () => {
     }, [sourceItems, formData.category])
 
     const filteredItems = useMemo(() => {
+        const search = (searchTerm || '').trim().toLowerCase()
         return sourceItems.filter(item => {
-            const matchSearch = item.item_name.toLowerCase().includes(searchTerm.toLowerCase()) || item.category.toLowerCase().includes(searchTerm.toLowerCase())
+            const name = (item.item_name || '').toLowerCase()
+            const cat = (item.category || '').toLowerCase()
+            const matchSearch = !search || name.includes(search) || cat.includes(search)
             const matchCat = filterCategory ? item.category === filterCategory : true
             return matchSearch && matchCat
         })
@@ -2469,7 +2475,15 @@ const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenC
     const history = priceData?.history || []
 
     // 실시간 이미지 (마스터 및 상위 전달값 연동)
-    const currentImage = master?.image || formData.image || item.image || ''
+    const currentImage = formData.image || item.image || master?.image || ''
+
+    // 상위에서 사진 등록 시(item.image 갱신) 또는 마스터 로드 시 formData.image 동기화
+    useEffect(() => {
+        const latestImg = item?.image || master?.image || ''
+        if (latestImg && latestImg !== formData.image) {
+            setFormData(prev => ({ ...prev, image: latestImg }))
+        }
+    }, [item?.image, master?.image])
 
     // ── 4. 기본 정보 저장 뮤테이션
     const updateMasterMutation = useMutation({
@@ -2589,7 +2603,11 @@ const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenC
             ...formData,
             price: formData.price ? parseInt(String(formData.price).replace(/,/g, '')) || 0 : '',
             base_qty: isTonner ? 0 : (parseInt(String(formData.base_qty).replace(/,/g, '')) || 0),
-            order_qty: parseInt(String(formData.order_qty).replace(/,/g, '')) || 0
+            order_qty: parseInt(String(formData.order_qty).replace(/,/g, '')) || 0,
+            image: currentImage || ''
+        }
+        if (!payload.image) {
+            delete payload.image
         }
         updateMasterMutation.mutate(payload)
     }
