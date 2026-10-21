@@ -1972,31 +1972,31 @@ const ItemsTab = () => {
                             </div>
                         )
                     ) : (
-                        // 일반 소모품인 경우: 추가/수정 모두 구매 수량(초기재고) 및 추가 수량 설정 가능
+                        // 일반 소모품인 경우: 기준(적정) 수량(E열) 및 실제 보유 초기재고(F열) 설정 가능
                         <>
                             <div>
-                                <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#2563eb', fontWeight: 'bold' }}>구매 수량 (초기재고) 📦</label>
+                                <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#2563eb', fontWeight: 'bold' }}>기준(적정) 수량 🎯</label>
                                 <input
                                     type="number"
                                     min="0"
-                                    placeholder="초기 구매수량"
+                                    placeholder="적정 기준수량"
                                     value={formData.base_qty}
                                     onChange={e => setFormData({...formData, base_qty: e.target.value})}
                                     style={{ padding: '8px', width: '100px', borderColor: '#93c5fd' }}
                                 />
-                                <div style={{ fontSize: '0.75em', color: '#94a3b8', marginTop: '3px' }}>품목리스트 E열 반영</div>
+                                <div style={{ fontSize: '0.75em', color: '#94a3b8', marginTop: '3px' }}>E열 (부족 경고 기준값)</div>
                             </div>
                             <div>
-                                <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#16a34a', fontWeight: 'bold' }}>추가 수량 (조정/기타) ➕</label>
+                                <label style={{ display: 'block', fontSize: '0.9em', marginBottom: '5px', color: '#16a34a', fontWeight: 'bold' }}>초기 재고 수량 📦</label>
                                 <input
                                     type="number"
                                     min="0"
-                                    placeholder="추가 수량"
+                                    placeholder="초기 재고수량"
                                     value={formData.order_qty}
                                     onChange={e => setFormData({...formData, order_qty: e.target.value})}
                                     style={{ padding: '8px', width: '100px', borderColor: '#bbf7d0' }}
                                 />
-                                <div style={{ fontSize: '0.75em', color: '#94a3b8', marginTop: '3px' }}>품목리스트 F열 반영</div>
+                                <div style={{ fontSize: '0.75em', color: '#94a3b8', marginTop: '3px' }}>F열 (실제 총재고)</div>
                             </div>
                         </>
                     )}
@@ -2838,7 +2838,7 @@ const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenC
                                             재고 추적 관리 대상 품목 (is_tracked)
                                         </label>
                                         <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                            💡 실사 후 수량이 맞지 않거나 초기 재고 설정 시 수치를 직접 수정하세요.
+                                            💡 E열은 부족 경고 기준수량(미포함)이며, F열이 실제 보유 총 재고 수량입니다.
                                         </span>
                                     </div>
 
@@ -2847,28 +2847,28 @@ const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenC
                                         {!isTonner ? (
                                             <>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                    <label style={{ fontSize: '0.82em', fontWeight: 'bold', color: '#1d4ed8' }}>기초재고 (E열):</label>
+                                                    <label style={{ fontSize: '0.82em', fontWeight: 'bold', color: '#1d4ed8' }}>기준(적정) 수량 (E열):</label>
                                                     <input
                                                         type="number"
                                                         min="0"
                                                         value={formData.base_qty}
                                                         onChange={e => setFormData({ ...formData, base_qty: e.target.value })}
                                                         style={{ width: '80px', padding: '5px 8px', borderRadius: '6px', border: '1px solid #93c5fd', fontSize: '0.88em', textAlign: 'center', fontWeight: 'bold', backgroundColor: '#eff6ff' }}
-                                                        title="품목리스트 E열에 반영되는 기초 구매재고 수량"
+                                                        title="재고 부족 여부를 판정하는 기준(적정) 수량 (재고 계산에 포함되지 않음)"
                                                     />
                                                 </div>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                    <label style={{ fontSize: '0.82em', fontWeight: 'bold', color: '#15803d' }}>추가수량 (F열):</label>
+                                                    <label style={{ fontSize: '0.82em', fontWeight: 'bold', color: '#15803d' }}>재고 수량 (F열):</label>
                                                     <input
                                                         type="number"
                                                         value={formData.order_qty}
                                                         onChange={e => setFormData({ ...formData, order_qty: e.target.value })}
                                                         style={{ width: '80px', padding: '5px 8px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.88em', textAlign: 'center', fontWeight: 'bold', backgroundColor: '#f0fdf4' }}
-                                                        title="품목리스트 F열에 반영되는 입고/조정 추가수량"
+                                                        title="실제 보유 총 재고 수량 (구매/입고 시 자동 가산되며 수기 수정 가능)"
                                                     />
                                                 </div>
                                                 <div style={{ fontSize: '0.82em', color: '#475569', background: '#f8fafc', padding: '4px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                                                    총 재고(E+F): <b style={{ color: '#0f172a' }}>{(parseInt(formData.base_qty) || 0) + (parseInt(formData.order_qty) || 0)}개</b>
+                                                    총 보유 재고: <b style={{ color: '#0f172a' }}>{(parseInt(formData.order_qty) || 0)}개</b>
                                                 </div>
                                             </>
                                         ) : (
@@ -3815,7 +3815,7 @@ const TrackedItemsTab = () => {
             {/* 상태 안내 배너 */}
             <div style={{ padding: '10px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', fontSize: '0.82em', color: '#475569' }}>
                 <div>
-                    💡 <strong>양호 / 부족 판정 기준</strong>: 각 품목의 <strong>'기초재고 (E열)'</strong>가 최소 유지 적정 기준 수량입니다. 현재 실재고가 기준치 이하로 내려가면 자동으로 🚨 <strong>부족</strong> 경고가 표시됩니다.
+                    💡 <strong>양호 / 부족 판정 기준</strong>: 각 품목의 <strong>'기준(적정) 수량 (E열)'</strong>이 최소 유지 적정 기준 수량입니다 (재고 계산 미포함). 현재 실재고(F열 - 출고량)가 기준치 이하로 내려가면 자동으로 🚨 <strong>부족</strong> 경고가 표시됩니다.
                 </div>
                 {filterStatus !== 'all' && (
                     <button
@@ -3836,8 +3836,8 @@ const TrackedItemsTab = () => {
                             <th>품목명</th>
                             <th style={{ width: '13%', textAlign: 'right' }}>기준 단가(₩)</th>
                             <th style={{ width: '13%', textAlign: 'center', color: '#1d4ed8' }}>
-                                기준(적정) 재고<br/>
-                                <small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>기초재고 E열</small>
+                                기준(적정) 수량<br/>
+                                <small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>부족판정 기준 E열</small>
                             </th>
                             <th style={{ width: '12%', textAlign: 'center', color: '#f59e0b' }}>
                                 총 누적출고<br/>

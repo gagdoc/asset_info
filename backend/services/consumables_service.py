@@ -276,7 +276,9 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
             except ValueError:
                 order_qty = 0
 
-            total_stock = base_qty + order_qty  # 총 재고 = 구매 + 추가
+            # v2.9: 기초 재고(E열)는 재고 부족 여부를 정하는 기준 수량으로, 재고 계산에 미포함
+            # 추가 수량(F열)이 실제 총 재고 수량임 (구매/입고 시 가산)
+            total_stock = order_qty
             purchase_url = str(r[6]).strip() if len(r) > 6 else ""
 
             items.append({
@@ -284,9 +286,9 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
                 "item_name": item_name,
                 "price": str(r[2]).strip() if len(r) > 2 else "",
                 "is_tracked": is_tracked,  # UI 표시용 유지 (별도 관리 여부 표시)
-                "base_qty": base_qty,        # E열: 구매 수량 (업체 구매)
-                "order_qty": order_qty,      # F열: 추가 수량 (개별 추가)
-                "total_stock": total_stock,  # 총 재고 = 구매 + 추가 (읽기전용 계산값)
+                "base_qty": base_qty,        # E열: 기준(적정) 수량 (재고 부족 경고 기준값, 재고 미포함)
+                "order_qty": order_qty,      # F열: 재고 수량 (실제 보유 재고, 구매/입고 시 자동 가산)
+                "total_stock": total_stock,  # 총 재고 = F열 (order_qty)
                 "current_stock": total_stock,  # 2단계에서 출고량 차감하여 갱신
                 "row_index": i + 2,
                 "dispatched_qty": 0,
@@ -2037,8 +2039,8 @@ def sync_inventory_summary_sheet():
                 it.get("price", ""),
                 is_tracked,
                 total_stock,
-                it.get("base_qty", ""),   # 구매 (E열)
-                it.get("order_qty", ""),  # 추가 (F열)
+                it.get("base_qty", ""),   # 기준(적정) 수량 (E열, 부족 판정용)
+                it.get("order_qty", ""),  # 재고 수량 (F열, 실제 총재고)
                 dispatched,
                 current,
                 status
