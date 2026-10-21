@@ -2012,11 +2012,24 @@ def sync_inventory_summary_sheet():
             current = it.get("current_stock", it.get("total_stock", 0))  # 모든 품목 현재고 반영
             total_stock = it.get("total_stock", 0)
 
-            # 현재고 기준 상태 표시 (모든 품목)
+            # 현재고 기준 상태 표시 (품목별 기초재고 이하 시 부족 경고)
+            threshold = 0
+            try:
+                threshold = int(str(it.get("base_qty", 0)).replace(',', ''))
+            except (ValueError, TypeError):
+                threshold = 0
+            if threshold <= 0:
+                threshold = 3
+
+            curr_val = current if current is not None else 0
             if total_stock == 0 and dispatched == 0:
                 status = "-"  # 미운용 품목
+            elif curr_val <= 0:
+                status = "🚨 품절"
+            elif curr_val <= threshold:
+                status = "⚠️ 부족"
             else:
-                status = "🚨 부족" if (current or 0) < 5 else "✅ 양호"
+                status = "✅ 양호"
 
             rows.append([
                 it.get("category", ""),
@@ -2037,7 +2050,7 @@ def sync_inventory_summary_sheet():
             logger.warning("'재고리스트' 시트가 없어 동기화를 건너뜁니다.")
             return False
         ws.clear()
-        ws.update("A1", rows)
+        ws.update(values=rows, range_name="A1")
         return True
     except Exception as e:
         logger.error(f"재고리스트 동기화 오류: {e}")

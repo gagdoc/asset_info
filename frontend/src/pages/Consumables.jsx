@@ -172,7 +172,7 @@ const Consumables = () => {
             {activeTab === 'outbound' && selectedMonth && <OutboundTab month={selectedMonth} isDev={isDev} />}
             {activeTab === 'create-month' && <CreateMonthTab />}
             {activeTab === 'items' && <ItemsTab />}
-            {activeTab === 'tracked' && <TrackedItemsTab month={selectedMonth} months={monthsData} />}
+            {activeTab === 'tracked' && <TrackedItemsTab />}
             {activeTab === 'purchase' && <PurchaseTab months={monthsData} items={undefined} />}
             {activeTab === 'tonner-consignment' && <TonnerConsignmentTab month={selectedMonth} months={monthsData} />}
             {activeTab === 'inventory' && <InventoryTab />}
@@ -2087,8 +2087,9 @@ const ItemsTab = () => {
                         }
                         const currentStock = item.current_stock ?? null
 
-                        // 실재고 수량 표시
-                        const isLow = currentStock !== null && currentStock < 5
+                        // 실재고 수량 표시 (품목별 기초/기준재고 이하 시 부족 경고)
+                        const threshold = (item.base_qty && Number(item.base_qty) > 0) ? Number(item.base_qty) : 3
+                        const isLow = currentStock !== null && currentStock <= threshold
                         const isNegative = currentStock !== null && currentStock < 0
                         let currentStockCell
                         if (currentStock === null) {
@@ -3680,226 +3681,250 @@ const ItemHistoryModal = ({ itemName, onClose }) => {
     )
 }
 
-const TrackedItemsTab = ({ month, months }) => {
+// ─── 재고 추적 관리 탭 (TrackedItemsTab) ──────────────────────────
+const TrackedItemsTab = () => {
     const queryClient = useQueryClient()
-    const [selectedHistoryItem, setSelectedHistoryItem] = useState(null)
-    const dispatchMode = 'monthly' // 항상 월별 모드
-    const [dispatchMonth, setDispatchMonth] = useState(month || '')
+    const [searchTerm, setSearchTerm] = useState('')
+    const [filterStatus, setFilterStatus] = useState('all') // 'all' | 'low' | 'good'
+    const [detailModalItem, setDetailModalItem] = useState(null) // null | item
 
-    // 개별 추가 내역 보기 모달 상태
-    const [indivModal, setIndivModal] = useState(null)  // null | { item_name, item }
-
-    useEffect(() => {
-        if (month && !dispatchMonth) setDispatchMonth(month)
-    }, [month])
-
-    const trackedQueryKey = ['consumables-items', 'monthly', dispatchMonth, 'tracked']
-    const { data: items, isLoading } = useQuery({
+    // 실시간 누적 실재고 조회 (마스터 리스트와 100% 동일한 cumulative 모드)
+    const trackedQueryKey = ['consumables-items', 'cumulative', 'tracked-tab']
+    const { data: allItems, isLoading } = useQuery({
         queryKey: trackedQueryKey,
         queryFn: async () => {
-            const params = new URLSearchParams({ dispatch_mode: 'monthly' })
-            if (dispatchMonth) params.append('month', dispatchMonth)
-            const { data } = await axios.get(`/api/consumables/items?${params}`)
+            const { data } = await axios.get('/api/consumables/items?dispatch_mode=cumulative')
             return data
         }
     })
 
-    // 개별 입고 내역 (선택 월 기준)
-    const { data: indivHistory } = useQuery({
-        queryKey: ['individual-inbound-tracked', dispatchMonth || 'all'],
-        queryFn: async () => {
-            const params = dispatchMonth ? `?month=${encodeURIComponent(dispatchMonth)}` : ''
-            const { data } = await axios.get(`/api/consumables/individual-inbound${params}`)
-            return data
-        },
-        staleTime: 60000,
-    })
-    const indivMap = useMemo(() => {
-        if (!indivHistory) return {}
-        const m = {}
-        indivHistory.forEach(rec => {
-            if (rec.item_name) {
-                const key = rec.item_name.toLowerCase()
-                m[key] = (m[key] || 0) + (rec.quantity || 0)
+    const trackedItems = useMemo(() => {
+        if (!allItems) return []
+        return allItems.filter(item => item.is_tracked)
+    }, [allItems])
+
+    // 각 품목별 적정 기준 재고 및 상태 판정
+    const processedItems = useMemo(() => {
+        return trackedItems.map(item => {
+            const current = item.current_stock ?? 0
+            const baseQty = Number(item.base_qty) || 0
+            // 기준 수량: 품목 마스터의 기초재고(base_qty)를 적정 유지 재고로 사용 (미설정 시 기본 3개)
+            const threshold = baseQty > 0 ? baseQty : 3
+            const isOutOfStock = current <= 0
+            const isLow = current <= threshold
+
+            return {
+                ...item,
+                threshold,
+                isOutOfStock,
+                isLow,
+                statusType: isOutOfStock ? 'out' : (isLow ? 'low' : 'good')
             }
         })
-        return m
-    }, [indivHistory])
+    }, [trackedItems])
 
-    // 개별 입고 전체 내역 (모달에서 해당 품목 내역 표시용)
-    const { data: indivAllHistory } = useQuery({
-        queryKey: ['individual-inbound-modal-tracked'],
-        queryFn: async () => {
-            const { data } = await axios.get('/api/consumables/individual-inbound')
-            return data
-        },
-        staleTime: 30000,
-        enabled: !!indivModal,
-    })
+    // 필터링 적용
+    const filteredItems = useMemo(() => {
+        return processedItems.filter(item => {
+            const matchesSearch = !searchTerm ||
+                item.item_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                item.category?.toLowerCase().includes(searchTerm.toLowerCase())
+            const matchesStatus =
+                filterStatus === 'all' ? true :
+                filterStatus === 'low' ? item.isLow :
+                filterStatus === 'good' ? !item.isLow : true
+            return matchesSearch && matchesStatus
+        })
+    }, [processedItems, searchTerm, filterStatus])
 
-    // 현재 모달 품목의 전체 입고 내역 (날짜 내림차순)
-    const indivModalHistory = useMemo(() => {
-        if (!indivAllHistory || !indivModal) return []
-        return indivAllHistory
-            .filter(r => r.item_name?.toLowerCase() === indivModal.item_name?.toLowerCase())
-            .sort((a, b) => b.date.localeCompare(a.date))
-    }, [indivAllHistory, indivModal])
+    // KPI 카운트
+    const totalCount = processedItems.length
+    const lowCount = processedItems.filter(it => it.isLow).length
+    const goodCount = processedItems.filter(it => !it.isLow).length
 
-    // 인라인 수정용 mutation
-    const mutation = useMutation({
-        mutationFn: async (newData) => axios.post('/api/consumables/items', newData),
-        onMutate: async (newData) => {
-            await queryClient.cancelQueries({ queryKey: trackedQueryKey })
-            const prev = queryClient.getQueryData(trackedQueryKey)
-            queryClient.setQueryData(trackedQueryKey, (old) =>
-                old?.map(it => it.row_index === newData.row_index ? { ...it, ...newData } : it)
-            )
-            return { prev }
-        },
-        onError: (err, newData, context) => {
-            queryClient.setQueryData(trackedQueryKey, context.prev)
-            alert("수정 중 오류가 발생했습니다.")
-        },
-        onSettled: () => {
-            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
-        }
-    })
-
-    if (isLoading) return <LoadingModal isOpen={isLoading} message="재고 추적 데이터를 불러오는 중입니다..." />
-
-    const trackedItems = items?.filter(item => item.is_tracked) || []
-    const dispatchLabel = `${dispatchMonth || '월 선택 필요'} 출고량`
+    if (isLoading) return <LoadingModal isOpen={isLoading} message="실시간 재고 추적 데이터를 불러오는 중입니다..." />
 
     return (
         <div className="card">
-            <h3 style={{ marginBottom: '0.75rem' }}>📍 재고 추적 관리 현황</h3>
-
-            {/* 출고 월 선택 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem', padding: '10px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 'bold', fontSize: '0.88em', color: '#475569' }}>📅 출고 기준 월:</span>
-                <select value={dispatchMonth} onChange={e => setDispatchMonth(e.target.value)} style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #4f46e5', fontSize: '0.88em', color: '#4f46e5', fontWeight: 'bold' }}>
-                    <option value="">-- 월 선택 --</option>
-                    {(months || []).map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-                <span style={{ fontSize: '0.8em', color: '#94a3b8' }}>
-                    {dispatchMonth ? `${dispatchMonth} 출고량 기준` : '월을 선택하면 해당 월 출고량으로 실재고를 계산합니다'}
-                </span>
+            {/* 상단 헤더 */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
+                <div>
+                    <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>📍</span> 재고 추적 관리 현황
+                    </h3>
+                    <p style={{ margin: '4px 0 0', fontSize: '0.85em', color: '#64748b' }}>
+                        소모품 마스터에서 <strong>'재고 추적'</strong>을 선택한 핵심 품목들의 실시간 실재고 및 기준재고 대비 상태를 모니터링합니다.
+                    </p>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                        type="text"
+                        placeholder="품목명 또는 대분류 검색..."
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.88em', width: '220px' }}
+                    />
+                </div>
             </div>
 
-            <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
-                💡 <strong>실재고 수량</strong>은 각 품목의 실시간 재고(구매+추가-출고 또는 토너DB)를 표시합니다.<br/>
-                실재고가 5개 미만이면 🚨 <strong>부족</strong> 경고가 표시됩니다.
-            </div>
-
-            <table className="data-table">
-                <thead>
-                    <tr>
-                        <th>품목명</th>
-                        <th style={{ textAlign: 'right' }}>정상 단가(₩)</th>
-                        <th style={{ textAlign: 'center', color: '#f59e0b' }}>출고량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>{dispatchMonth || '선택월'}</small></th>
-                        <th style={{ textAlign: 'center', color: '#2563eb' }}>추가 (조정)<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>누적</small></th>
-                        <th style={{ textAlign: 'center', color: '#3b82f6', fontSize: '1.1em' }}>실재고 수량<br/><small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>실재고</small></th>
-                        <th style={{ textAlign: 'center' }}>상태</th>
-                        <th style={{ textAlign: 'center' }}>상세 내역</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {trackedItems.length > 0 ? trackedItems.map((item, idx) => {
-                        const handleInlineUpdate = (field, newVal) => {
-                            const updatedData = { ...item, [field]: newVal }
-                            mutation.mutate(updatedData)
-                        }
-
-                        const current = item.current_stock ?? null
-                        const dispatched = item.dispatched_qty || 0
-                        const isLow = current !== null && current < 5
-                        const indivQty = indivMap[item.item_name?.toLowerCase()] ?? 0
-
-                        return (
-                            <tr key={idx} style={{ backgroundColor: isLow ? '#fff5f5' : 'transparent' }}>
-                                <td style={{ fontWeight: 'bold' }}>{item.item_name}</td>
-                                <EditableCell value={item.price} onSave={(val) => handleInlineUpdate('price', val)} align="right" />
-                                <td style={{ textAlign: 'center', color: '#f59e0b', fontWeight: 'bold' }}>{dispatched.toLocaleString()}</td>
-                                <td style={{ textAlign: 'center' }}>
-                                    {(item.order_qty || 0) !== 0
-                                        ? <span style={{ color: item.order_qty > 0 ? '#2563eb' : '#ef4444', fontWeight: 'bold' }}>{item.order_qty > 0 ? '+' : ''}{item.order_qty}</span>
-                                        : <span style={{ color: '#94a3b8' }}>-</span>}
-                                </td>
-                                <td style={{ textAlign: 'center', color: current !== null && !isLow ? '#3b82f6' : '#ef4444', fontWeight: 'bold', fontSize: '1.2em' }}>
-                                    {current !== null ? current.toLocaleString() : '-'}
-                                </td>
-                                <td style={{ textAlign: 'center' }}>
-                                    <span style={{
-                                        padding: '4px 10px', borderRadius: '12px', fontSize: '0.85em', fontWeight: 'bold', display: 'inline-block',
-                                        backgroundColor: isLow ? '#fee2e2' : '#dcfce7', color: isLow ? '#ef4444' : '#22c55e'
-                                    }}>
-                                        {isLow ? `🚨 부족` : `✅ 양호`}
-                                    </span>
-                                </td>
-                                <td style={{ textAlign: 'center' }}>
-                                    <button
-                                        className={indivQty > 0 ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
-                                        style={{ 
-                                            marginRight: '6px', 
-                                            color: indivQty > 0 ? '#ffffff' : '#475569', 
-                                            backgroundColor: indivQty > 0 ? '#2563eb' : '#f1f5f9', 
-                                            borderColor: indivQty > 0 ? '#2563eb' : '#e2e8f0',
-                                            fontWeight: indivQty > 0 ? 'bold' : 'normal'
-                                        }}
-                                        onClick={() => setIndivModal({ item_name: item.item_name, item })}
-                                    >📋 추가내역</button>
-                                    <button className="btn btn-secondary btn-sm" onClick={() => setSelectedHistoryItem(item.item_name)}>년-월별 출고조회</button>
-                                </td>
-                            </tr>
-                        )
-                    }) : (
-                        <tr><td colSpan="7" style={{ textAlign: 'center' }}>재고 추적 중인 품목이 없습니다.</td></tr>
-                    )}
-                </tbody>
-            </table>
-
-            {selectedHistoryItem && <ItemHistoryModal itemName={selectedHistoryItem} onClose={() => setSelectedHistoryItem(null)} />}
-
-            {/* 개별 추가 내역 조회 모달 */}
-            {indivModal && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }}>
-                    <div className="card" style={{ width: '560px', maxHeight: '85vh', overflowY: 'auto', padding: '1.5rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                            <h3 style={{ margin: 0 }}>📋 개별 추가 내역 조회</h3>
-                            <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.85em' }} onClick={() => setIndivModal(null)}>✕ 닫기</button>
-                        </div>
-                        <p style={{ margin: '0 0 1rem', fontWeight: 'bold', color: '#15803d', fontSize: '1.05em' }}>{indivModal.item_name}</p>
-
-                        {/* 기존 입고 내역 */}
-                        <div>
-                            <p style={{ margin: '0 0 8px', fontWeight: 'bold', fontSize: '0.9em', color: '#374151' }}>입고 내역 목록</p>
-                            {indivModalHistory.length === 0 ? (
-                                <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.88em', padding: '1rem 0' }}>등록된 개별 입고 내역이 없습니다.</p>
-                            ) : (
-                                <table className="data-table" style={{ fontSize: '0.88em' }}>
-                                    <thead>
-                                        <tr style={{ background: '#f8fafc' }}>
-                                            <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>날짜</th>
-                                            <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>수량</th>
-                                            <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>출처</th>
-                                            <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'left' }}>비고</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {indivModalHistory.map((rec, rIdx) => (
-                                            <tr key={rIdx}>
-                                                <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{rec.date}</td>
-                                                <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 'bold', color: '#15803d' }}>+{rec.quantity}</td>
-                                                <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', color: '#475569', fontSize: '0.9em' }}>{rec.source || '-'}</td>
-                                                <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', color: '#64748b' }}>{rec.note || '-'}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
-                        </div>
+            {/* KPI 요약 카드 그리드 */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '1.2rem' }}>
+                <div
+                    onClick={() => setFilterStatus('all')}
+                    style={{
+                        padding: '12px 16px', background: filterStatus === 'all' ? '#e0f2fe' : '#f8fafc',
+                        border: filterStatus === 'all' ? '2px solid #0284c7' : '1px solid #e2e8f0',
+                        borderRadius: '10px', cursor: 'pointer', transition: 'all 0.15s'
+                    }}
+                >
+                    <div style={{ fontSize: '0.78rem', color: '#0369a1', fontWeight: 'bold' }}>전체 추적 품목</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#0f172a', marginTop: '2px' }}>
+                        {totalCount} <span style={{ fontSize: '0.8rem', fontWeight: 'normal', color: '#64748b' }}>개 품목</span>
                     </div>
                 </div>
+
+                <div
+                    onClick={() => setFilterStatus('good')}
+                    style={{
+                        padding: '12px 16px', background: filterStatus === 'good' ? '#dcfce7' : '#f0fdf4',
+                        border: filterStatus === 'good' ? '2px solid #16a34a' : '1px solid #bbf7d0',
+                        borderRadius: '10px', cursor: 'pointer', transition: 'all 0.15s'
+                    }}
+                >
+                    <div style={{ fontSize: '0.78rem', color: '#15803d', fontWeight: 'bold' }}>✅ 재고 양호 (기준 초과)</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#166534', marginTop: '2px' }}>
+                        {goodCount} <span style={{ fontSize: '0.8rem', fontWeight: 'normal', color: '#64748b' }}>개 품목</span>
+                    </div>
+                </div>
+
+                <div
+                    onClick={() => setFilterStatus('low')}
+                    style={{
+                        padding: '12px 16px', background: filterStatus === 'low' ? '#fee2e2' : '#fff5f5',
+                        border: filterStatus === 'low' ? '2px solid #dc2626' : '1px solid #fecaca',
+                        borderRadius: '10px', cursor: 'pointer', transition: 'all 0.15s'
+                    }}
+                >
+                    <div style={{ fontSize: '0.78rem', color: '#b91c1c', fontWeight: 'bold' }}>🚨 재고 부족 (기준 이하)</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#991b1b', marginTop: '2px' }}>
+                        {lowCount} <span style={{ fontSize: '0.8rem', fontWeight: 'normal', color: '#b91c1c' }}>개 품목 (클릭 시 필터)</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* 상태 안내 배너 */}
+            <div style={{ padding: '10px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', fontSize: '0.82em', color: '#475569' }}>
+                <div>
+                    💡 <strong>양호 / 부족 판정 기준</strong>: 각 품목의 <strong>'기초재고 (E열)'</strong>가 최소 유지 적정 기준 수량입니다. 현재 실재고가 기준치 이하로 내려가면 자동으로 🚨 <strong>부족</strong> 경고가 표시됩니다.
+                </div>
+                {filterStatus !== 'all' && (
+                    <button
+                        onClick={() => setFilterStatus('all')}
+                        style={{ border: 'none', background: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 'bold', padding: 0 }}
+                    >
+                        전체 보기로 돌아가기 ↩
+                    </button>
+                )}
+            </div>
+
+            {/* 품목 테이블 */}
+            <div className="table-wrapper">
+                <table className="data-table">
+                    <thead>
+                        <tr>
+                            <th style={{ width: '14%' }}>대분류</th>
+                            <th>품목명</th>
+                            <th style={{ width: '13%', textAlign: 'right' }}>기준 단가(₩)</th>
+                            <th style={{ width: '13%', textAlign: 'center', color: '#1d4ed8' }}>
+                                기준(적정) 재고<br/>
+                                <small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>기초재고 E열</small>
+                            </th>
+                            <th style={{ width: '12%', textAlign: 'center', color: '#f59e0b' }}>
+                                총 누적출고<br/>
+                                <small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>전체기간</small>
+                            </th>
+                            <th style={{ width: '14%', textAlign: 'center', color: '#0f172a', fontSize: '1.05em' }}>
+                                현재 실재고<br/>
+                                <small style={{ fontWeight: 'normal', fontSize: '0.75em' }}>실물 잔여</small>
+                            </th>
+                            <th style={{ width: '13%', textAlign: 'center' }}>상태</th>
+                            <th style={{ width: '90px', textAlign: 'center' }}>관리</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredItems.length > 0 ? filteredItems.map((item, idx) => {
+                            const current = item.current_stock ?? 0
+                            const priceFormatted = item.price ? Number(String(item.price).replace(/,/g, '')).toLocaleString() + '원' : '-'
+
+                            return (
+                                <tr key={idx} style={{ backgroundColor: item.isLow ? '#fff5f5' : undefined }}>
+                                    <td style={{ color: '#64748b', fontSize: '0.88em' }}>{item.category || '-'}</td>
+                                    <td style={{ fontWeight: 'bold', color: '#1e293b' }}>
+                                        {item.item_name}
+                                    </td>
+                                    <td style={{ textAlign: 'right', color: '#334155' }}>{priceFormatted}</td>
+                                    <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#1d4ed8', backgroundColor: '#eff6ff' }}>
+                                        {item.threshold}개
+                                    </td>
+                                    <td style={{ textAlign: 'center', color: '#f59e0b', fontWeight: 'bold' }}>
+                                        {(item.dispatched_qty || 0).toLocaleString()}개
+                                    </td>
+                                    <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '1.15em', color: item.isLow ? '#dc2626' : '#15803d' }}>
+                                        {current.toLocaleString()}개
+                                    </td>
+                                    <td style={{ textAlign: 'center' }}>
+                                        <span style={{
+                                            padding: '4px 10px', borderRadius: '12px', fontSize: '0.82em', fontWeight: 'bold', display: 'inline-block',
+                                            backgroundColor: item.isOutOfStock ? '#fef2f2' : (item.isLow ? '#fff1f2' : '#dcfce7'),
+                                            color: item.isOutOfStock ? '#991b1b' : (item.isLow ? '#e11d48' : '#15803d'),
+                                            border: `1px solid ${item.isOutOfStock ? '#fca5a5' : (item.isLow ? '#fecdd3' : '#86efac')}`
+                                        }}>
+                                            {item.isOutOfStock ? `🚨 품절 (0개)` : (item.isLow ? `⚠️ 부족 (${current}/${item.threshold}개)` : `✅ 양호`)}
+                                        </span>
+                                    </td>
+                                    <td style={{ textAlign: 'center' }}>
+                                        <button
+                                            className="btn btn-primary"
+                                            style={{ padding: '3px 8px', fontSize: '0.8em', fontWeight: 'bold' }}
+                                            onClick={() => setDetailModalItem(item)}
+                                            title="기준재고 수정, 입고 등록, 사진 변경 등 상세 관리"
+                                        >
+                                            ✏️ 상세 수정
+                                        </button>
+                                    </td>
+                                </tr>
+                            )
+                        }) : (
+                            <tr>
+                                <td colSpan="8" style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>
+                                    {trackedItems.length === 0 ? (
+                                        <>
+                                            재고 추적 중인 품목이 없습니다.<br/>
+                                            <span style={{ fontSize: '0.85em' }}>[소모품 품목] 탭에서 원하는 품목의 '상세 수정'을 열어 <strong>'재고 추적 대상 품목'</strong>을 체크하세요.</span>
+                                        </>
+                                    ) : (
+                                        '조건에 일치하는 추적 품목이 없습니다.'
+                                    )}
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* 통합 상세 수정 모달 */}
+            {detailModalItem && (
+                <ItemDetailModal
+                    item={detailModalItem}
+                    categories={[]}
+                    onClose={() => setDetailModalItem(null)}
+                    onUpdateItem={() => {
+                        queryClient.invalidateQueries({ queryKey: trackedQueryKey })
+                        queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+                    }}
+                    onOpenCropModal={() => {}}
+                    onOpenViewerModal={() => {}}
+                />
             )}
         </div>
     )
