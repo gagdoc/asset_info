@@ -229,7 +229,7 @@ const AssetList = () => {
     // ── 연도/월 추출 및 데이터 필터링 ──
     const getYear = (row) => {
         if (type !== 'Lease' && type !== 'iPad' && (row['년'] || row['년도'])) return String(row['년'] || row['년도'])
-        const ld = row['Lease Date'] || row['Date']
+        const ld = row['Lease Date'] || row['Date'] || row['약정시작일']
         if (!ld) return ''
         const dateStr = String(ld)
         if (dateStr.includes('/')) {
@@ -248,7 +248,7 @@ const AssetList = () => {
 
     const getMonth = (row) => {
         if (type !== 'Lease' && type !== 'iPad' && row['월']) return String(row['월'])
-        const ld = row['Lease Date'] || row['Date']
+        const ld = row['Lease Date'] || row['Date'] || row['약정시작일']
         if (!ld) return ''
         const dateStr = String(ld)
         if (dateStr.includes('/')) {

@@ -440,9 +440,9 @@ export default function BulkSearch() {
                             ) : (
                               <>
                                 <div>{d.Model || d['History'] || d['프린터정보'] || '-'}</div>
-                                {item.table_key === 'iPad' && (d.Date || d.date) && (d.Date || d.date) !== '-' && (
+                                {item.table_key === 'iPad' && (d['약정시작일'] || d.Date || d.date) && (d['약정시작일'] || d.Date || d.date) !== '-' && (
                                   <div style={{ fontSize: '0.8rem', color: 'var(--primary-color)', marginTop: '2px' }}>
-                                    <span style={{ fontWeight: 'bold' }}>할당일:</span> {d.Date || d.date}
+                                    <span style={{ fontWeight: 'bold' }}>약정시작일:</span> {d['약정시작일'] || d.Date || d.date}
                                   </div>
                                 )}
                                 {item.table_key === 'Lease' && (d['Lease Date'] || d['lease date']) && (d['Lease Date'] || d['lease date']) !== '-' && (
