@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
@@ -38,14 +38,21 @@ export const parseFlexibleDate = (dateStr) => {
     return isNaN(parsed.getTime()) ? null : parsed
 }
 
-// 리스 종료 상태 판정 헬퍼
+// 리스 / 약정 종료 상태 판정 헬퍼 (노트북 리스 및 아이패드 통신 약정 공통)
 export const getLeaseStatus = (endDateStr) => {
     if (!endDateStr || String(endDateStr).trim() === '' || String(endDateStr).trim() === '-') {
         return { status: 'none', label: '미등록', dDay: null, color: '#94a3b8', bg: '#f1f5f9' }
     }
+    const trimmed = String(endDateStr).trim()
+    if (trimmed === '약정미가입상태' || trimmed === '미가입') {
+        return { status: 'unregistered', label: '미가입', dDay: null, color: '#64748b', bg: '#f1f5f9' }
+    }
+    if (trimmed === '찾지 못함' || trimmed === '확인불가') {
+        return { status: 'not_found', label: '확인불가', dDay: null, color: '#64748b', bg: '#f1f5f9' }
+    }
     const targetDate = parseFlexibleDate(endDateStr)
     if (!targetDate) {
-        return { status: 'invalid', label: String(endDateStr), dDay: null, color: '#64748b', bg: '#f8fafc' }
+        return { status: 'invalid', label: trimmed, dDay: null, color: '#64748b', bg: '#f8fafc' }
     }
 
     const today = new Date()
@@ -195,6 +202,16 @@ const AssetList = () => {
 
     const assetsWithIdx = assets?.map((row, idx) => ({ ...row, _originalIdx: idx })) || []
 
+    // iPad 60일(2달) 이내 만료 예정 단말 수 계산
+    const ipadExpiringCount = useMemo(() => {
+        if (type !== 'iPad' || !assets) return 0
+        return assets.filter(row => {
+            const endVal = row['약정만료일'] || ''
+            const st = getLeaseStatus(endVal)
+            return st.dDay !== null && st.dDay >= 0 && st.dDay <= 60
+        }).length
+    }, [type, assets])
+
     const PRINTER_HIDDEN_COLS_LOWER = ['date', '카트리지 사용 내역']
 
     const columns = assets?.length > 0
@@ -336,6 +353,23 @@ const AssetList = () => {
             const st = getLeaseStatus(endVal)
             if (filterLeaseStatus === 'd90') {
                 return st.dDay !== null && st.dDay >= 0 && st.dDay <= 90
+            }
+            return st.status === filterLeaseStatus
+        })
+    }
+
+    if (type === 'iPad' && filterLeaseStatus) {
+        displayedAssets = displayedAssets?.filter(row => {
+            const endVal = row['약정만료일'] || ''
+            const st = getLeaseStatus(endVal)
+            if (filterLeaseStatus === 'd60') {
+                return st.dDay !== null && st.dDay >= 0 && st.dDay <= 60
+            } else if (filterLeaseStatus === 'd30') {
+                return st.dDay !== null && st.dDay >= 0 && st.dDay <= 30
+            } else if (filterLeaseStatus === 'expired') {
+                return st.status === 'expired'
+            } else if (filterLeaseStatus === 'unregistered') {
+                return st.status === 'unregistered' || st.status === 'not_found' || st.status === 'none'
             }
             return st.status === filterLeaseStatus
         })
@@ -933,6 +967,27 @@ const AssetList = () => {
                                     <option value="d90">90일 이내 만료일</option>
                                 </select>
                             )}
+                            {type === 'iPad' && (
+                                <select
+                                    className="form-input"
+                                    style={{
+                                        width: 'auto',
+                                        maxWidth: '190px',
+                                        padding: '4px 8px',
+                                        borderColor: filterLeaseStatus ? '#f59e0b' : '#cbd5e1',
+                                        fontWeight: filterLeaseStatus ? 'bold' : 'normal',
+                                        backgroundColor: filterLeaseStatus ? '#fffbeb' : '#fff'
+                                    }}
+                                    value={filterLeaseStatus}
+                                    onChange={e => setFilterLeaseStatus(e.target.value)}
+                                >
+                                    <option value="">약정 상태 전체 보기</option>
+                                    <option value="d60">⏰ 60일(2달)내 만료 예정</option>
+                                    <option value="d30">⚠️ 30일(1달)내 만료 임박</option>
+                                    <option value="expired">🚨 이미 만료됨</option>
+                                    <option value="unregistered">➖ 약정 미가입/확인불가</option>
+                                </select>
+                            )}
                         </div>
                     )}
                     {/* Printer: Model 필터 */}
@@ -1057,6 +1112,42 @@ const AssetList = () => {
 
             {activeTab === 'list' && (
                 <div className="card" style={{ padding: 0 }}>
+                    {/* iPad 2달(60일) 이내 만료 예정 알림 배너 */}
+                    {type === 'iPad' && ipadExpiringCount > 0 && (
+                        <div style={{
+                            margin: '1rem',
+                            padding: '10px 16px',
+                            backgroundColor: '#fffbeb',
+                            border: '1px solid #fde68a',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: '8px'
+                        }}>
+                            <div style={{ fontSize: '0.9rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '1.2rem' }}>⏰</span>
+                                <span>
+                                    <strong>약정 만료 예정 알림</strong>: 향후 <strong>2달(60일) 이내</strong>에 약정이 만료되는 아이패드가 <strong>{ipadExpiringCount}대</strong> 있습니다.
+                                </span>
+                            </div>
+                            <button
+                                className="btn btn-sm"
+                                onClick={() => setFilterLeaseStatus(filterLeaseStatus === 'd60' ? '' : 'd60')}
+                                style={{
+                                    backgroundColor: filterLeaseStatus === 'd60' ? '#d97706' : '#fef3c7',
+                                    color: filterLeaseStatus === 'd60' ? '#fff' : '#b45309',
+                                    border: '1px solid #f59e0b',
+                                    fontWeight: 'bold',
+                                    padding: '4px 12px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                {filterLeaseStatus === 'd60' ? '전체 보기로 복귀 ↩' : `${ipadExpiringCount}대 만료 예정 단말만 모아보기 🔍`}
+                            </button>
+                        </div>
+                    )}
                     {duplicateEmails.length > 0 && (
                         <div className="alert alert-danger" style={{ margin: '1rem', borderRadius: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>🚨 <strong>중복 이메일 감지</strong>: 현재 리스트에 {duplicateEmails.length}개의 중복된 이메일 주소가 있습니다.</div>
@@ -1124,7 +1215,7 @@ const AssetList = () => {
                                                 const val = row[col] !== null ? String(row[col]) : '-'
                                                 const isEmailCol = col.toLowerCase() === 'email'
                                                 const isDuplicate = isEmailCol && val !== '-' && duplicateEmails.includes(val.trim().toLowerCase())
-                                                const isLeaseEndDateCol = col === '리스 종료 일자' || col === '리스 종료일'
+                                                const isLeaseEndDateCol = col === '리스 종료 일자' || col === '리스 종료일' || (type === 'iPad' && col === '약정만료일')
                                                 const isLeaseContractCol = col === '리스계번호' || col === '리스계약번호'
                                                 const leaseStatus = isLeaseEndDateCol && val !== '-' && val !== '' ? getLeaseStatus(val) : null
 
@@ -1290,6 +1381,9 @@ const AssetList = () => {
                                     } else if (col === '리스 종료 일자' || col === '리스 종료일') {
                                         placeholder = 'YYYY-MM-DD 또는 MM/DD/YY (예: 2026-12-31)'
                                         helperText = '리스 계약 만료일 (만료 D-Day 자동 계산)'
+                                    } else if (col === '약정만료일') {
+                                        placeholder = 'YYYY-MM-DD (예: 2026-11-03)'
+                                        helperText = '통신사 약정 만료일 (만료 D-Day 자동 계산, 2달 전부터 알림)'
                                     } else if (col === 'Lease Date') {
                                         placeholder = 'MM/DD/YY 또는 YYYY-MM-DD (리스 개시일)'
                                     }
@@ -1300,6 +1394,7 @@ const AssetList = () => {
                                                 {col}
                                                 {col === '리스계번호' && <span style={{ color: '#0284c7', fontSize: '0.8rem', marginLeft: '6px' }}>[계약번호]</span>}
                                                 {col === '리스 종료 일자' && <span style={{ color: '#ea580c', fontSize: '0.8rem', marginLeft: '6px' }}>[만료일]</span>}
+                                                {col === '약정만료일' && <span style={{ color: '#ea580c', fontSize: '0.8rem', marginLeft: '6px' }}>[만료일]</span>}
                                             </label>
                                             <input 
                                                 className="form-input"
