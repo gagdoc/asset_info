@@ -3229,7 +3229,7 @@ const TonnerConsignmentTab = ({ month, months }) => {
         mutationFn: async ({ month: m, row_index, date, item_name }) =>
             axios.delete(
                 `/api/consumables/outbound?month=${encodeURIComponent(m)}&row_index=${row_index}` +
-                `&verify_date=${encodeURIComponent(date || '')}&verify_item=${encodeURIComponent(item_name || '')}`
+                `&verify_date=${encodeURIComponent(date || '')}&verify_item=${encodeURIComponent(item_name || '')}&force=true`
             ),
         onSuccess: () => {
             queryClient.invalidateQueries(['tonner-consignment'])
@@ -3275,8 +3275,41 @@ const TonnerConsignmentTab = ({ month, months }) => {
                         위탁으로 출고된 Tonner 전용 내역 — 견적서 합산에서 제외되며 별도 재고 카운트에 반영됩니다.
                     </p>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <label style={{ fontWeight: 'bold', fontSize: '0.9em' }}>📅 월 필터:</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <ExportButton
+                        onClick={async () => {
+                            const rows = (history || []).map(r => ({
+                                '월': r.month, '출고날짜': r.date, '품목명': r.item_name,
+                                '수량': r.quantity, '사용/담당자': r.user_name
+                            }))
+                            await exportToXLSX({
+                                filename: `위탁토너출고내역_${todayStr()}`,
+                                columns: [{key:'월',label:'월'},{key:'출고날짜',label:'출고날짜'},{key:'품목명',label:'품목명'},{key:'수량',label:'수량'},{key:'사용/담당자',label:'사용/담당자'}],
+                                rows
+                            })
+                        }}
+                        disabled={!history || history.length === 0}
+                    />
+                    {history && history.length > 0 && (
+                        <button
+                            className="btn btn-danger"
+                            style={{ padding: '6px 12px', fontSize: '0.85em' }}
+                            onClick={async () => {
+                                if (!window.confirm('모든 위탁 토너 출고 내역을 완전히 일괄 삭제하시겠습니까?')) return
+                                try {
+                                    await axios.post('/api/consumables/toner/clear-all-records')
+                                    queryClient.invalidateQueries(['tonner-consignment'])
+                                    queryClient.invalidateQueries(['toner-inventory'])
+                                    alert('위탁 토너 내역이 모두 삭제되었습니다.')
+                                } catch (err) {
+                                    alert('삭제 실패: ' + (err.response?.data?.detail || err.message))
+                                }
+                            }}
+                        >
+                            🗑️ 전체 삭제
+                        </button>
+                    )}
+                    <label style={{ fontWeight: 'bold', fontSize: '0.9em', marginLeft: '6px' }}>📅 월 필터:</label>
                     <select
                         value={filterMonth}
                         onChange={e => setFilterMonth(e.target.value)}

@@ -1045,9 +1045,11 @@ def clear_all_toner_records(restore_stock: bool = False) -> dict:
                 if len(r) > 1:
                     i_name = str(r[1]).strip()
                     c_name = str(r[0]).strip() if len(r) > 0 else ""
+                    out_type = str(r[4]).strip() if len(r) > 4 else ""
                     is_t = (
+                        out_type == "위탁" or
                         i_name.lower() in toner_names or
-                        any(kw in i_name.lower() for kw in ['toner', 'tonner', '토너']) or
+                        any(kw in i_name.lower() for kw in ['toner', 'tonner', '토너', 'clt', 'sclt', 'tn-']) or
                         any(kw in c_name.lower() for kw in ['toner', 'tonner', '토너']) or
                         any(_match_toner_name(i_name, tn) for tn in toner_names)
                     )
