@@ -16,6 +16,7 @@ from backend.services.consumables_service import (
     get_individual_inbound_history, add_individual_inbound, delete_individual_inbound, update_individual_inbound,
     delete_outbound_batch,
     get_item_images_map, save_item_image, delete_item_image,
+    adjust_item_audit,
     IS_PRODUCTION,
 )
 from typing import List, Dict, Any
@@ -432,6 +433,28 @@ def inventory_report():
 
 
 # ── 실재고 직접 수정 ──────────────────────────────────────────────
+
+@router.post("/audit-adjust")
+def audit_adjust_item(data: Dict[str, Any] = Body(...)):
+    """[재고 실사 조정] 관리자가 실제 카운트한 실재고 수량을 입력받아 차액을 자동 조정하고 이력을 기록"""
+    item_name = (data.get("item_name") or "").strip()
+    actual_stock = data.get("actual_stock")
+    staff = (data.get("staff") or "").strip()
+    note = (data.get("note") or "").strip()
+
+    if not item_name or actual_stock is None:
+        raise HTTPException(status_code=400, detail="item_name과 actual_stock이 필요합니다.")
+    try:
+        actual_int = int(str(actual_stock).replace(',', ''))
+        if actual_int < 0:
+            raise HTTPException(status_code=400, detail="actual_stock은 0 이상의 정수여야 합니다.")
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="actual_stock은 정수여야 합니다.")
+
+    result = adjust_item_audit(item_name, actual_int, staff=staff, note=note)
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "실사 재고 조정 실패"))
+    return result
 
 @router.patch("/items/stock")
 def update_item_stock(data: Dict[str, Any] = Body(...)):

@@ -328,11 +328,19 @@ def _get_items_list_impl(month=None, dispatch_mode="cumulative"):
                     if dispatch_mode == "monthly" and month:
                         target_months = [month]
                     else:
-                        # 롤오버(Rollover) 방식 적용: 
-                        # 마스터 시트의 구매수량에는 이미 과거 출고가 반영된 이월 재고가 들어가 있으므로,
-                        # 중복 차감을 방지하기 위해 '가장 최신(최근 개설된) 1개의 월' 시트만 대상(target)으로 삼습니다.
+                        # 활성 월 출고 합산 방식:
+                        # 이미 'closed' 마감된 과거 월은 정산 완료 상태이므로,
+                        # 현재 아직 마감되지 않은 활성 월(open 또는 confirmed)들의 출고량을 합산하여
+                        # 새 월 시트 개설 시 과거 출고 누락으로 재고가 허수로 급증하는 결함을 원천 방지합니다.
                         available = get_available_months()
-                        target_months = [available[0]] if available else []
+                        active_months = []
+                        for m in available[:5]:  # 최근 5개 월 범위 탐색
+                            st = get_month_close_status(m).get("status")
+                            if st != "closed":
+                                active_months.append(m)
+                            else:
+                                break  # closed를 만나면 그 이전 월들은 이미 마감 완료된 것이므로 중단
+                        target_months = active_months if active_months else ([available[0]] if available else [])
 
                     if target_months:
                         ranges = [f"{m}!A2:E" for m in target_months]
@@ -776,24 +784,17 @@ def add_outbound(month: str, data: dict) -> bool:
         if not ws:
             logger.error(f"출고 등록 실패: '{month}' 시트 없음")
             return False
-        col_A = _retry_sheets_op(lambda: ws.col_values(1))  # A열 (날짜) 데이터들
-        next_row = len(col_A) + 1 # 최초로 빈 행
-
-        # E열: 출고유형 (일반/위탁), 기본값은 일반
-        outbound_type = data.get('outbound_type', '일반')
-        if not outbound_type or outbound_type.strip() == '':
-            outbound_type = '일반'
-
-        # update() 메서드를 활용하여 A~G 열에 값 대입
-        ws.update(f"A{next_row}:G{next_row}", [[
+        # append_row()를 활용하여 원자적으로 맨 아래 행에 추가 (동시 요청 시 행 번호 충돌 및 덮어쓰기 방지)
+        row_values = [
             data.get('date', ''),
             data.get('item_name', ''),
-            data.get('quantity', ''),
+            str(qty_int),
             data.get('user_name', ''),
             outbound_type,
             data.get('staff', ''),
             data.get('delivery', ''),
-        ]])
+        ]
+        _retry_sheets_op(lambda: ws.append_row(row_values, value_input_option="USER_ENTERED"))
         invalidate_cache(f"outbound_{month}")
         invalidate_cache("items_")  # "items_cumulative_all", "items_monthly_*" 등 모두 무효화
         # sync_inventory_summary_sheet() 는 출고 추가 시 호출 제거
@@ -1196,52 +1197,89 @@ def clear_all_toner_records(restore_stock: bool = False) -> dict:
 
 
 def save_item(data: dict) -> bool:
-    """품목리스트 시트 A~G열에 새로운 품목을 추가하거나 기존 품목(B열 기준)을 수정합니다."""
+    """품목리스트 시트 A~G열에 새로운 품목을 추가하거나 기존 품목(B열 기준)을 수정합니다.
+    - 품목명과 row_index를 교차 검증하여 엉뚱한 행을 덮어쓰는 오류를 원천 방지합니다.
+    - 재고 수량(F열)을 직접 변경하지 않은 기본정보 수정 시, 시트의 최신 F열(입고분)을 보존합니다.
+    """
     _, ss = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
     if not ss: return False
     try:
         ws = _get_worksheet_safe(ss, "품목리스트")
         if not ws: return False
         target_item = data.get('item_name', '').strip()
-        row_idx = data.get('row_index') # 만약 인라인 수정 등에서 행 번호를 직접 보낸다면 우선순위 가짐
-        col_B = ws.col_values(2) # B열 (품명) 기준
+        req_row_idx = data.get('row_index')
+        col_B = _retry_sheets_op(lambda: ws.col_values(2))  # B열 (품명) 기준
         
-        if not row_idx:
-            for i, val in enumerate(col_B):
-                if val.strip() == target_item:
-                    row_idx = i + 1
-                    break
-                
+        # 1. 대상 품목의 실제 행 번호 교차 검증 (B열 전체 탐색)
+        actual_row_idx = None
+        for i, val in enumerate(col_B):
+            if val.strip() == target_item:
+                actual_row_idx = i + 1
+                break
+
+        if actual_row_idx:
+            # 품목명이 일치하는 실제 행 우선 적용
+            row_idx = actual_row_idx
+        elif req_row_idx and req_row_idx <= len(col_B) and col_B[req_row_idx - 1].strip() == target_item:
+            row_idx = req_row_idx
+        else:
+            # 일치하는 품목명이 없으면 신규 추가 (다른 행 덮어쓰기 방지)
+            row_idx = None
+
         is_tracked_str = 'O' if data.get('is_tracked') else 'X'
         base_qty_str = str(data.get('base_qty', '0'))
-        order_qty_str = str(data.get('order_qty', '0'))
+        order_qty_input = data.get('order_qty')
+        orig_order_qty = data.get('_orig_order_qty')
         purchase_url_str = str(data.get('purchase_url', '') or '').strip()
 
-        row_values = [
-            data.get('category', ''), 
-            data.get('item_name', ''), 
-            data.get('price', ''),
-            is_tracked_str,
-            base_qty_str,
-            order_qty_str,
-            purchase_url_str
-        ]
-
         if row_idx:
-            # 존재하면 해당 행 A~G 덮어쓰기 (gspread v6 호환 values, range_name 명시)
+            # 2. 기존 행 수정 시: 시트의 최신 데이터 읽기
+            existing_row = _retry_sheets_op(lambda: ws.row_values(row_idx))
+            existing_order_qty = existing_row[5] if len(existing_row) > 5 else "0"
+
+            # 클라이언트가 재고를 직접 변경하지 않았거나 명시적으로 입고/실사 변경이 아닌 경우 시트의 최신 재고(F열) 보존
+            update_stock_flag = data.get('update_stock', True)
+            if not update_stock_flag or order_qty_input is None or order_qty_input == '':
+                order_qty_str = existing_order_qty
+            elif orig_order_qty is not None and str(order_qty_input).strip() == str(orig_order_qty).strip():
+                # 모달 열린 후 사용자가 재고 수량(F열)을 건드리지 않은 경우: 최신 시트 F열 보존 (입고분 증발 방어)
+                order_qty_str = existing_order_qty
+            else:
+                order_qty_str = str(order_qty_input).strip()
+
+            row_values = [
+                data.get('category', ''), 
+                target_item, 
+                data.get('price', ''),
+                is_tracked_str,
+                base_qty_str,
+                order_qty_str,
+                purchase_url_str
+            ]
             ws.update(values=[row_values], range_name=f"A{row_idx}:G{row_idx}")
+            logger.info(f"품목 수정 완료 (행 {row_idx}): '{target_item}' (F열 재고: {order_qty_str})")
         else:
-            # 없으면 맨 아래(B열 비어있는 곳 기준) A~G 추가
+            # 신규 품목 추가
+            order_qty_str = str(order_qty_input or '0').strip()
+            row_values = [
+                data.get('category', ''), 
+                target_item, 
+                data.get('price', ''),
+                is_tracked_str,
+                base_qty_str,
+                order_qty_str,
+                purchase_url_str
+            ]
             next_row = len(col_B) + 1
             ws.update(values=[row_values], range_name=f"A{next_row}:G{next_row}")
+            logger.info(f"신규 품목 추가 완료 (행 {next_row}): '{target_item}'")
 
-        # 빈 문자열("")이 전달될 때 기존에 등록된 이미지를 덮어써서 지우지 않도록 방어 (삭제는 전용 delete_item_image API 사용)
+        # 빈 문자열("")이 전달될 때 기존에 등록된 이미지를 덮어써서 지우지 않도록 방어
         img_val = str(data.get("image") or "").strip()
         if img_val and target_item:
             save_item_image(target_item, img_val)
 
         invalidate_cache("items_")
-        # sync_inventory_summary_sheet() 는 품목 저장 시 자동 호출 제거 (무거운 이중 조회·쓰기로 Google Sheets API 429 Rate Limit 유발하여 직후 목록 조회가 0건이 되는 현상 원천 차단 — 상단 '시트 데이터 동기화' 버튼으로만 실행)
         return True
     except Exception as e:
         print(f"Error saving item: {e}")
@@ -1448,18 +1486,30 @@ def _get_toner_inventory_impl():
 
 
 def update_toner_item(row_index: int, data: dict) -> bool:
-    """토너 재고 시트의 특정 행(row_index) 전체를 업데이트"""
+    """토너 재고 시트의 특정 행(row_index)을 안전하게 업데이트 (누락 필드는 기존 값 보존)"""
     ws = _get_toner_worksheet()
     if not ws:
         return False
     try:
-        headers = ws.row_values(1)
+        from gspread.utils import rowcol_to_a1
+        headers = _retry_sheets_op(lambda: ws.row_values(1))
         if not headers:
             return False
-        new_row = [str(data.get(h, "")) for h in headers]
-        end_col = chr(64 + len(headers))  # A=65 → chr(64+n)
-        ws.update(f"A{row_index}:{end_col}{row_index}", [new_row])
-        invalidate_cache()
+        
+        # 기존 행 데이터 조회하여 전달되지 않은 컬럼(숨겨진 열 등) 보존
+        existing_row = _retry_sheets_op(lambda: ws.row_values(row_index))
+        new_row = []
+        for idx, h in enumerate(headers):
+            if h in data:
+                new_row.append(str(data[h]))
+            else:
+                orig_val = existing_row[idx] if idx < len(existing_row) else ""
+                new_row.append(str(orig_val))
+
+        end_cell = rowcol_to_a1(row_index, len(headers))
+        ws.update(f"A{row_index}:{end_cell}", [new_row])
+        invalidate_cache("toner_inventory")
+        invalidate_cache("items_")
         return True
     except Exception as e:
         logger.error(f"토너 항목 수정 오류 (row {row_index}): {e}")
@@ -1628,12 +1678,13 @@ def set_toner_stock_direct(item_name: str, new_stock: int) -> bool:
     """
     토너 실재고를 지정한 값으로 직접 설정 (상세 수정 시 사용).
     deduct_toner_stock / restore_toner_stock 과 달리 절대값으로 덮어씀.
+    rowcol_to_a1 및 _match_toner_name 정규화 매칭을 적용하여 안전하게 갱신합니다.
     """
     ws = _get_toner_worksheet()
     if not ws:
         return False
     try:
-        all_values = ws.get_all_values()
+        all_values = _retry_sheets_op(lambda: ws.get_all_values())
         if not all_values:
             return False
 
@@ -1656,16 +1707,28 @@ def set_toner_stock_direct(item_name: str, new_stock: int) -> bool:
             logger.warning(f"토너 실재고 컬럼 없음 (직접 설정 불가). 헤더: {headers}")
             return False
 
-        item_name_lower = item_name.lower()
+        item_name_clean = item_name.strip()
+        from gspread.utils import rowcol_to_a1
+
+        # 1차: 정확한 일치(대소문자 무시), 2차: _match_toner_name 정규화 매칭
+        target_row_num = None
         for row_num, row in enumerate(all_values[1:], start=2):
             if name_col_idx >= len(row):
                 continue
-            if str(row[name_col_idx]).strip().lower() != item_name_lower:
-                continue
-            stock_cell = f"{chr(65 + stock_col_idx)}{row_num}"
+            row_val = str(row[name_col_idx]).strip()
+            if row_val.lower() == item_name_clean.lower():
+                target_row_num = row_num
+                break
+            if _match_toner_name(row_val, item_name_clean):
+                target_row_num = row_num
+                break
+
+        if target_row_num:
+            stock_cell = rowcol_to_a1(target_row_num, stock_col_idx + 1)
             ws.update(stock_cell, [[str(new_stock)]])
             invalidate_cache("toner_inventory")
-            logger.info(f"토너 실재고 직접 설정: '{item_name}' = {new_stock}")
+            invalidate_cache("items_")
+            logger.info(f"토너 실재고 직접 설정: '{item_name}' (셀: {stock_cell}) = {new_stock}")
             return True
 
         logger.warning(f"토너 재고 시트에서 품목 미발견 (직접 설정 불가): '{item_name}'")
@@ -1673,6 +1736,126 @@ def set_toner_stock_direct(item_name: str, new_stock: int) -> bool:
     except Exception as e:
         logger.error(f"토너 실재고 직접 설정 오류: {e}")
         return False
+
+
+def adjust_item_audit(item_name: str, actual_stock: int, staff: str = "", note: str = "") -> dict:
+    """
+    [재고 실사 수량 정밀 조정]
+    관리자가 현장에서 실사한 실제 수량(actual_stock)을 입력받아,
+    현재 시스템의 계산된 실재고와의 차액을 자동 산출하고 총 재고(F열) 또는 토너 실재고를 정확하게 일치시킵니다.
+    동시에 조정 이력을 개별입고/조정 내역에 투명하게 기록하여 데이터 유실 및 왜곡을 방지합니다.
+    """
+    from datetime import datetime
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    target_clean = item_name.strip()
+    
+    if actual_stock < 0:
+        return {"success": False, "error": "실사 수량은 0 이상이어야 합니다."}
+        
+    # 1. 마스터 품목 조회
+    items = get_items_list()
+    target_item = next((it for it in items if it.get("item_name", "").strip().lower() == target_clean.lower()), None)
+    
+    # 2. 토너 품목 여부 판별
+    is_toner = False
+    toner_inv = get_toner_inventory()
+    toner_item = None
+    if toner_inv and toner_inv.get("items"):
+        name_col = toner_inv.get("name_col", "품목명")
+        for t in toner_inv["items"]:
+            t_name = str(t.get(name_col) or t.get("품목명") or "").strip()
+            if t_name.lower() == target_clean.lower() or _match_toner_name(t_name, target_clean):
+                is_toner = True
+                toner_item = t
+                break
+
+    if is_toner:
+        # 토너 실사 조정
+        stock_col = toner_inv.get("stock_col", "실재고")
+        prev_stock = int(str(toner_item.get(stock_col, 0) or 0).replace(",", "")) if toner_item else 0
+        diff = actual_stock - prev_stock
+        
+        ok = set_toner_stock_direct(target_clean, actual_stock)
+        if not ok:
+            return {"success": False, "error": "토너 시트 실재고 업데이트에 실패했습니다."}
+            
+        # 개별 입고 시트에 실사 조정 기록 남기기 (이력 보존)
+        audit_note = f"[실사조정] 실재고 {prev_stock}개 → {actual_stock}개 ({'+' if diff >= 0 else ''}{diff}개)"
+        if note:
+            audit_note += f" | 사유: {note}"
+        add_individual_inbound({
+            "date": today_str,
+            "item_name": target_clean,
+            "quantity": diff,
+            "note": audit_note,
+            "source": f"실사({staff or '관리자'})"
+        })
+        return {
+            "success": True,
+            "item_name": target_clean,
+            "is_toner": True,
+            "prev_stock": prev_stock,
+            "actual_stock": actual_stock,
+            "diff": diff,
+            "message": f"토너 실재고가 {actual_stock}개로 정상 조정되었습니다."
+        }
+    else:
+        # 일반 소모품 실사 조정
+        if not target_item:
+            return {"success": False, "error": f"마스터 리스트에서 품목 '{target_clean}'을 찾을 수 없습니다."}
+            
+        prev_current = target_item.get("current_stock", 0)
+        curr_order_qty = target_item.get("order_qty", 0)
+        diff = actual_stock - prev_current
+        
+        # 새로운 F열 = 기존 F열 + diff (누적출고와 대여량이 차감되어도 실재고가 정확히 actual_stock이 됨)
+        new_order_qty = curr_order_qty + diff
+        if new_order_qty < 0:
+            new_order_qty = 0
+            
+        _, ss_master = _get_consumables_client(CONSUMABLES_MASTER_SPREADSHEET_ID)
+        if not ss_master:
+            return {"success": False, "error": "Google Sheets 연결 실패"}
+        ws = _get_worksheet_safe(ss_master, "품목리스트")
+        if not ws:
+            return {"success": False, "error": "품목리스트 시트를 찾을 수 없습니다."}
+            
+        col_B = _retry_sheets_op(lambda: ws.col_values(2))
+        actual_row = None
+        for i, val in enumerate(col_B):
+            if val.strip() == target_clean:
+                actual_row = i + 1
+                break
+                
+        if not actual_row:
+            return {"success": False, "error": "품목리스트 시트에서 대상 품목 행을 찾을 수 없습니다."}
+            
+        # F열만 단독 갱신하여 다른 열의 덮어쓰기 위험 원천 배제
+        _retry_sheets_op(lambda: ws.update(f"F{actual_row}", [[str(new_order_qty)]]))
+        invalidate_cache("items_")
+        
+        # 조정 이력 기록
+        audit_note = f"[실사조정] 실재고 {prev_current}개 → {actual_stock}개 ({'+' if diff >= 0 else ''}{diff}개, F열 {curr_order_qty}→{new_order_qty})"
+        if note:
+            audit_note += f" | 사유: {note}"
+        add_individual_inbound({
+            "date": today_str,
+            "item_name": target_clean,
+            "quantity": diff,
+            "note": audit_note,
+            "source": f"실사({staff or '관리자'})"
+        })
+        
+        return {
+            "success": True,
+            "item_name": target_clean,
+            "is_toner": False,
+            "prev_stock": prev_current,
+            "actual_stock": actual_stock,
+            "diff": diff,
+            "new_order_qty": new_order_qty,
+            "message": f"실재고가 {actual_stock}개로 정상 조정되었습니다. (총재고 F열: {new_order_qty}개)"
+        }
 
 
 # ── 개별 입고 (Individual Inbound) ─────────────────────────────────────────
@@ -1790,9 +1973,8 @@ def add_individual_inbound(data: dict) -> bool:
         note      = data.get('note', '')
         source    = data.get('source', '')
 
-        col_A    = _retry_sheets_op(lambda: ws.col_values(1))
-        next_row = len(col_A) + 1
-        ws.update(f"A{next_row}:E{next_row}", [[date, item_name, str(qty), note, source]])
+        # append_row()를 활용하여 원자적으로 새 행 추가 (동시 입고 시 행 번호 충돌 방지)
+        _retry_sheets_op(lambda: ws.append_row([date, item_name, str(qty), note, source], value_input_option="USER_ENTERED"))
         invalidate_cache("individual_inbound_")
 
         # 실재고에 수량 추가
@@ -2124,9 +2306,8 @@ def add_inbound(date: str, item_name: str, quantity: int, memo: str = "") -> boo
         ws = _ensure_inbound_sheet(ss)
         if not ws:
             return False
-        col_a = _retry_sheets_op(lambda: ws.col_values(1))
-        next_row = len(col_a) + 1
-        ws.update(f"A{next_row}:D{next_row}", [[date, item_name, str(quantity), memo]])
+        # append_row()를 활용하여 원자적으로 새 행 추가 (동시 입고 시 행 번호 충돌 방지)
+        _retry_sheets_op(lambda: ws.append_row([date, item_name, str(quantity), memo], value_input_option="USER_ENTERED"))
         invalidate_cache("inbound_")
         invalidate_cache("inventory_report")
         logger.info(f"입고 기록 추가: {date} / {item_name} / {quantity}")

@@ -2393,8 +2393,14 @@ const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenC
         _orig_stock: item.current_stock ?? null,
         base_qty: item.base_qty ?? 0,
         order_qty: item.order_qty ?? 0,
+        _orig_order_qty: item.order_qty ?? 0,
         image: item.image || ''
     })
+
+    // ── 1.5 실사 재고 조정 상태
+    const [showAuditBox, setShowAuditBox] = useState(false)
+    const [auditStock, setAuditStock] = useState('')
+    const [auditNote, setAuditNote] = useState('')
 
     // ── 2. 통합 입고 & 구매 등록 폼 상태
     const [showInboundForm, setShowInboundForm] = useState(true)
@@ -2482,7 +2488,12 @@ const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenC
                 queryClient.invalidateQueries({ queryKey: ['toner-inventory'] })
             }
             refetch()
-            setFormData(prev => ({ ...prev, ...variables }))
+            setFormData(prev => ({
+                ...prev,
+                ...variables,
+                _orig_order_qty: variables.order_qty ?? prev.order_qty,
+                _orig_stock: variables.current_stock ?? prev.current_stock
+            }))
             if (onUpdateItem) onUpdateItem(variables)
             alert('기본 정보 및 재고 수량이 성공적으로 저장되었습니다.')
         },
@@ -2517,7 +2528,16 @@ const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenC
                 quantity: Number(payload.quantity) || 1
             })
         },
-        onSuccess: () => {
+        onSuccess: (_data, variables) => {
+            const addedQty = Number(variables?.quantity) || 1
+            // 방금 입고된 수량을 formData에도 즉시 가산하여, 직후 기본정보 저장 시 입고분이 오래된 값으로 덮어써져 증발하는 현상 원천 차단
+            setFormData(prev => ({
+                ...prev,
+                order_qty: (Number(prev.order_qty) || 0) + addedQty,
+                _orig_order_qty: (Number(prev._orig_order_qty || prev.order_qty) || 0) + addedQty,
+                current_stock: prev.current_stock !== '' ? (Number(prev.current_stock) || 0) + addedQty : prev.current_stock,
+                _orig_stock: prev._orig_stock !== null ? (Number(prev._orig_stock) || 0) + addedQty : prev._orig_stock
+            }))
             queryClient.invalidateQueries({ queryKey: ['item-price-history', item.item_name] })
             queryClient.invalidateQueries({ queryKey: ['purchase-history'] })
             queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
@@ -2535,7 +2555,7 @@ const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenC
                 update_master: true,
             })
             refetch()
-            alert('입고 및 구매 내역이 성공적으로 등록되었습니다. (실재고 및 히스토리 자동 반영)')
+            alert(`입고 및 구매 내역이 성공적으로 등록되었습니다. (+${addedQty}개 실재고 자동 가산)`)
         },
         onError: (err) => {
             alert('입고 등록 실패: ' + (err.response?.data?.detail || err.message))
@@ -2565,6 +2585,39 @@ const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenC
         },
         onError: (err) => {
             alert('삭제 실패: ' + (err.response?.data?.detail || err.message))
+        }
+    })
+
+    // ── 7.5 실사 재고 정밀 조정 뮤테이션
+    const auditAdjustMutation = useMutation({
+        mutationFn: async ({ actual_stock, note }) => {
+            const res = await axios.post('/api/consumables/audit-adjust', {
+                item_name: item.item_name,
+                actual_stock: parseInt(String(actual_stock).replace(/,/g, ''), 10),
+                note: note || '현장 실사 조정'
+            })
+            return res.data
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['consumables-items'] })
+            queryClient.invalidateQueries({ queryKey: ['item-price-history', item.item_name] })
+            queryClient.invalidateQueries({ queryKey: ['toner-inventory'] })
+            queryClient.invalidateQueries({ queryKey: ['individual-inbound'] })
+            refetch()
+            setFormData(prev => ({
+                ...prev,
+                current_stock: data.actual_stock,
+                _orig_stock: data.actual_stock,
+                order_qty: data.new_order_qty !== undefined ? data.new_order_qty : prev.order_qty,
+                _orig_order_qty: data.new_order_qty !== undefined ? data.new_order_qty : prev._orig_order_qty
+            }))
+            setShowAuditBox(false)
+            setAuditStock('')
+            setAuditNote('')
+            alert(`✅ ${data.message || '실사 재고가 성공적으로 조정되었습니다.'}`)
+        },
+        onError: (err) => {
+            alert('실사 재고 조정 실패: ' + (err.response?.data?.detail || err.message))
         }
     })
 
@@ -2863,6 +2916,16 @@ const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenC
                                                 <div style={{ fontSize: '0.82em', color: '#475569', background: '#f8fafc', padding: '4px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                                     총 보유 재고: <b style={{ color: '#0f172a' }}>{(parseInt(formData.order_qty) || 0)}개</b>
                                                 </div>
+                                                <div style={{ fontSize: '0.82em', color: '#15803d', background: '#f0fdf4', padding: '4px 10px', borderRadius: '6px', border: '1px solid #bbf7d0' }}>
+                                                    현재 실재고: <b style={{ color: '#166534' }}>{(formData.current_stock ?? 0)}개</b>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowAuditBox(v => !v)}
+                                                    style={{ padding: '4px 10px', fontSize: '0.78rem', borderRadius: '6px', border: '1px solid #6366f1', backgroundColor: showAuditBox ? '#e0e7ff' : '#f5f3ff', color: '#4338ca', fontWeight: 'bold', cursor: 'pointer' }}
+                                                >
+                                                    🎯 현장 실사 수량 맞추기
+                                                </button>
                                             </>
                                         ) : (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -2876,6 +2939,13 @@ const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenC
                                                     title="복합기 토너 재고 DB에 직접 반영되는 실시간 실재고"
                                                 />
                                                 <span style={{ fontSize: '0.75rem', color: '#991b1b' }}>개 (토너 DB 직접 반영)</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowAuditBox(v => !v)}
+                                                    style={{ padding: '4px 10px', fontSize: '0.78rem', borderRadius: '6px', border: '1px solid #6366f1', backgroundColor: showAuditBox ? '#e0e7ff' : '#f5f3ff', color: '#4338ca', fontWeight: 'bold', cursor: 'pointer', marginLeft: '6px' }}
+                                                >
+                                                    🎯 실사 수량 맞추기
+                                                </button>
                                             </div>
                                         )}
 
@@ -2890,6 +2960,67 @@ const ItemDetailModal = ({ item, categories = [], onClose, onUpdateItem, onOpenC
                                             </button>
                                         </div>
                                     </div>
+
+                                    {/* 🎯 현장 실사(수량 맞추기) 서브 패널 */}
+                                    {showAuditBox && (
+                                        <div style={{ background: '#f8fafc', border: '1px dashed #6366f1', borderRadius: '8px', padding: '12px 14px', marginTop: '6px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                                <span style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#3730a3' }}>
+                                                    🎯 현장 실사(Audit) 재고 직접 맞추기
+                                                </span>
+                                                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                                    현재 실재고({formData.current_stock ?? 0}개)와의 차액을 자동 계산하여 정확히 맞춥니다.
+                                                </span>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <label style={{ fontSize: '0.8em', fontWeight: 'bold', color: '#1e293b' }}>실사 확인 수량:</label>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        placeholder="실제 센 개수"
+                                                        value={auditStock}
+                                                        onChange={e => setAuditStock(e.target.value)}
+                                                        style={{ width: '90px', padding: '4px 8px', borderRadius: '4px', border: '1px solid #6366f1', fontSize: '0.85em', textAlign: 'center', fontWeight: 'bold', backgroundColor: '#fff' }}
+                                                    />
+                                                    <span style={{ fontSize: '0.8em', color: '#475569' }}>개</span>
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: '160px' }}>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="실사 사유 (예: 10월 정기 실사 분실/차액 조정)"
+                                                        value={auditNote}
+                                                        onChange={e => setAuditNote(e.target.value)}
+                                                        style={{ width: '100%', padding: '4px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.82em', backgroundColor: '#fff' }}
+                                                    />
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    disabled={auditStock === '' || auditAdjustMutation.isPending}
+                                                    onClick={() => {
+                                                        if (auditStock === '') return
+                                                        const stockVal = parseInt(auditStock, 10)
+                                                        if (isNaN(stockVal) || stockVal < 0) {
+                                                            alert('올바른 0 이상의 수량을 입력해주세요.')
+                                                            return
+                                                        }
+                                                        if (!window.confirm(`품목 '${item.item_name}'의 실재고를 ${stockVal}개로 조정하시겠습니까?\n차액은 조정 이력으로 안전하게 기록됩니다.`)) return
+                                                        auditAdjustMutation.mutate({ actual_stock: stockVal, note: auditNote })
+                                                    }}
+                                                    style={{ padding: '5px 14px', borderRadius: '6px', border: 'none', backgroundColor: '#4f46e5', color: '#fff', fontSize: '0.82em', fontWeight: 'bold', cursor: 'pointer' }}
+                                                >
+                                                    {auditAdjustMutation.isPending ? '조정 중...' : '확인 및 실사재고 반영'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowAuditBox(false)}
+                                                    style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#fff', color: '#64748b', fontSize: '0.82em', cursor: 'pointer' }}
+                                                >
+                                                    취소
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </form>
                         </div>
