@@ -1266,18 +1266,8 @@ const AssetList = () => {
                                                     }}
                                                 />
                                             </td>
-                                            <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                            <td style={{ textAlign: 'center' }}>
                                                 <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => openEditModal(row)}>상세 수정</button>
-                                                {(!row.email || row.email === '-' || String(row.email).toLowerCase() === 'stock' || row.User === 'STOCK') && (
-                                                    <button 
-                                                        className="btn btn-primary" 
-                                                        style={{ padding: '2px 8px', fontSize: '0.8em', marginLeft: '4px', backgroundColor: '#2563eb', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer' }} 
-                                                        onClick={() => { openEditModal(row); setIsUserSearchOpen(true); }}
-                                                        title="이메일 검색으로 사용자 할당"
-                                                    >
-                                                        👤 할당
-                                                    </button>
-                                                )}
                                             </td>
                                             {visibleColumns.map(col => {
                                                 const val = row[col] !== null ? String(row[col]) : '-'
