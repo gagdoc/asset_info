@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { FaHome, FaSearch, FaLaptop, FaTabletAlt, FaPrint, FaDesktop, FaPhone, FaUserPlus, FaUserTimes, FaBoxOpen, FaCog, FaUpload, FaExternalLinkAlt, FaTimes, FaExchangeAlt, FaHistory, FaAngleDoubleLeft } from 'react-icons/fa'
+import { FaHome, FaSearch, FaLaptop, FaTabletAlt, FaPrint, FaDesktop, FaPhone, FaIdCard, FaUserPlus, FaUserTimes, FaBoxOpen, FaCog, FaUpload, FaExternalLinkAlt, FaTimes, FaExchangeAlt, FaHistory, FaAngleDoubleLeft } from 'react-icons/fa'
 
 const Sidebar = ({ isOpen, onClose, isCollapsed, onToggleCollapse }) => {
     const assetItems = [
@@ -10,6 +10,7 @@ const Sidebar = ({ isOpen, onClose, isCollapsed, onToggleCollapse }) => {
         { name: '모니터 (Monitor)', path: '/assets/Monitor', icon: <FaDesktop /> },
         { name: '프린터 (Printer)', path: '/assets/Printer', icon: <FaPrint /> },
         { name: 'Teams 번호', path: '/assets/Teams', icon: <FaPhone /> },
+        { name: '출입 카드 (Card)', path: '/assets/Card', icon: <FaIdCard /> },
     ]
 
     const personItems = [

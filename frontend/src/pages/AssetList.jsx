@@ -196,7 +196,7 @@ const AssetList = () => {
             const { data } = await axios.get('/api/assets/dashboard/search-candidates')
             return data
         },
-        enabled: isUserSearchOpen,
+        enabled: isUserSearchOpen || isModalOpen,
         staleTime: 60000 // Cache for 1 minute
     })
 
@@ -520,12 +520,15 @@ const AssetList = () => {
         
         if (updates.hasOwnProperty('email')) updates['email'] = '';
         if (updates.hasOwnProperty('EMAIL')) updates['EMAIL'] = '';
+        if (updates.hasOwnProperty('상태')) updates['상태'] = 'STOCK';
         
         const returnText = `${todayStr} / ${name} 반납`;
         if (updates.hasOwnProperty('Additional Information')) {
             updates['Additional Information'] = returnText;
         } else if (updates.hasOwnProperty('참고')) {
             updates['참고'] = returnText;
+        } else if (updates.hasOwnProperty('비고')) {
+            updates['비고'] = returnText;
         }
 
         setModalData(updates);
@@ -538,7 +541,7 @@ const AssetList = () => {
         try {
             // 현재 자산의 식별자(S/N 등) 및 이메일 추출
             let sn = '';
-            for (const key of ['S/N', 'Serial', 'Number', 'TeamsNumber', 'Model', 'SNOW Tag']) {
+            for (const key of ['카드번호', 'Card No', 'Card_No', 'S/N', 'Serial', 'Number', 'TeamsNumber', 'Model', 'SNOW Tag']) {
                 if (modalData[key] && String(modalData[key]).trim() && String(modalData[key]).trim() !== '-') {
                     sn = String(modalData[key]).trim();
                     break;
@@ -640,6 +643,7 @@ const AssetList = () => {
         const printer = String(u['Printer'] || '').toLowerCase()
         const monitor = String(u['Monitor'] || '').toLowerCase()
         const teams = String(u['TeamsNum'] || '').toLowerCase()
+        const cardList = String(u['Card_List'] || '').toLowerCase()
         
         // 이름과 이메일은 공통 검색
         if (name.includes(q) || email.includes(q)) return true
@@ -650,13 +654,15 @@ const AssetList = () => {
         if (type === 'Monitor' && monitor.includes(q)) return true
         if (type === 'Printer' && printer.includes(q)) return true
         if (type === 'TeamsNum' && teams.includes(q)) return true
+        if (type === 'Card' && cardList.includes(q)) return true
         
         return false
     }).slice(0, 50) // 성능을 위해 최대 50개까지만 표시
 
-    const handleCopyUserInfo = (user) => {
+    const handleCopyUserInfo = (user, skipConfirm = false) => {
         const userName = user['이름'] || user['NAME'] || user['email']
-        if (!confirm(`'${userName}' 님의 정보를 현재 입력 폼에 덮어씌우시겠습니까?`)) return
+        const userEmail = user['email'] || user['EMAIL'] || ''
+        if (!skipConfirm && !confirm(`'${userName}' (${userEmail || '이메일 미등록'}) 님의 정보를 현재 입력 폼에 할당하시겠습니까?`)) return
         
         const newModalData = { ...modalData }
         const colNames = Object.keys(newModalData)
@@ -669,7 +675,6 @@ const AssetList = () => {
         }
         
         for (const targetField of ['name', 'email', 'bu', 'role']) {
-            // 대소문자 무시하고 완벽 일치 찾기 위한 로직 (옵션)
             const matchedCol = colNames.find(c => mapping[targetField].some(m => m.toLowerCase() === c.toLowerCase()))
             if (matchedCol) {
                 let val = ''
@@ -681,11 +686,63 @@ const AssetList = () => {
                 newModalData[matchedCol] = val
             }
         }
+
+        if (newModalData.hasOwnProperty('상태')) {
+            newModalData['상태'] = '사용중'
+        }
+        if (newModalData.hasOwnProperty('발급일') && !newModalData['발급일']) {
+            newModalData['발급일'] = new Date().toISOString().slice(0, 10)
+        }
         
         setModalData(newModalData)
-        addToast('사용자 정보가 폼에 복사되었습니다.', 'success')
+        addToast(`'${userName}' 사용자 정보가 입력폼에 할당되었습니다.`, 'success')
         setIsUserSearchOpen(false)
         setUserSearchQuery('')
+    }
+
+    // 이메일 주소로 사용자 정보 즉시 조회 및 채우기
+    const handleLookupByEmail = async (targetEmail) => {
+        const cleanEmail = String(targetEmail || modalData.email || '').trim().toLowerCase()
+        if (!cleanEmail) {
+            addToast('조회할 이메일을 입력하세요.', 'warning')
+            return
+        }
+
+        // 1. 캐시된 dashboardData에서 우선 검색
+        if (dashboardData && dashboardData.length > 0) {
+            const match = dashboardData.find(u => String(u.email || '').trim().toLowerCase() === cleanEmail)
+            if (match) {
+                handleCopyUserInfo(match, true)
+                return
+            }
+        }
+
+        // 2. 백엔드 Lookup API 호출
+        try {
+            const { data } = await axios.get(`/api/assets/user/lookup/${encodeURIComponent(cleanEmail)}`)
+            if (data) {
+                const newModalData = { ...modalData }
+                const colNames = Object.keys(newModalData)
+                const nameCol = colNames.find(c => ['User', 'USER', '이름', 'NAME', '사용자'].includes(c))
+                const buCol = colNames.find(c => ['BU', '소속', '부서'].includes(c))
+                const roleCol = colNames.find(c => ['ROLE', 'Role', '직급', '직함'].includes(c))
+                const emailCol = colNames.find(c => ['email', 'EMAIL', '이메일'].includes(c))
+
+                if (emailCol) newModalData[emailCol] = cleanEmail
+                if (nameCol) newModalData[nameCol] = data.NAME || data.korean_name || ''
+                if (buCol) newModalData[buCol] = data.BU || ''
+                if (roleCol) newModalData[roleCol] = data.ROLE || ''
+                if (newModalData.hasOwnProperty('상태')) newModalData['상태'] = '사용중'
+                if (newModalData.hasOwnProperty('발급일') && !newModalData['발급일']) {
+                    newModalData['발급일'] = new Date().toISOString().slice(0, 10)
+                }
+
+                setModalData(newModalData)
+                addToast(`'${data.NAME || data.korean_name}' 사용자 정보를 찾았습니다.`, 'success')
+            }
+        } catch (err) {
+            addToast(`'${cleanEmail}'에 해당하는 사용자를 All_User에서 찾을 수 없습니다.`, 'warning')
+        }
     }
 
     const titleMap = {
@@ -694,6 +751,7 @@ const AssetList = () => {
         'Monitor': '🖥 모니터 (Monitor) 관리',
         'Printer': '🖨 프린터 (Printer) 관리',
         'Teams': '📞 Teams 번호 관리',
+        'Card': '🪪 출입 카드 (Card) 관리',
         'All_User': '👥 전체 사용자 관리',
         'Resign': '퇴사자 관리',
         'NewHire': '신규 입사자 관리',
@@ -704,7 +762,7 @@ const AssetList = () => {
             <div className="flex items-center justify-between mb-2 dashboard-header-action">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                     <h1 style={{ margin: 0 }}>{titleMap[type] || `${type} Management`}</h1>
-                    {['Lease', 'iPad', 'Monitor'].includes(type) && (
+                    {['Lease', 'iPad', 'Monitor', 'Card'].includes(type) && (
                         <div style={{ display: 'flex', gap: '8px' }}>
                             <div style={{ backgroundColor: '#f0fdf4', color: '#166534', padding: '4px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.9rem', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>
                                 📦 재고(STOCK): {stockCount}건
@@ -1208,8 +1266,18 @@ const AssetList = () => {
                                                     }}
                                                 />
                                             </td>
-                                            <td style={{ textAlign: 'center' }}>
+                                            <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                                                 <button className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '0.8em' }} onClick={() => openEditModal(row)}>상세 수정</button>
+                                                {(!row.email || row.email === '-' || String(row.email).toLowerCase() === 'stock' || row.User === 'STOCK') && (
+                                                    <button 
+                                                        className="btn btn-primary" 
+                                                        style={{ padding: '2px 8px', fontSize: '0.8em', marginLeft: '4px', backgroundColor: '#2563eb', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer' }} 
+                                                        onClick={() => { openEditModal(row); setIsUserSearchOpen(true); }}
+                                                        title="이메일 검색으로 사용자 할당"
+                                                    >
+                                                        👤 할당
+                                                    </button>
+                                                )}
                                             </td>
                                             {visibleColumns.map(col => {
                                                 const val = row[col] !== null ? String(row[col]) : '-'
@@ -1303,10 +1371,12 @@ const AssetList = () => {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '1rem', borderBottom: '1px solid #eee' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <h3 style={{ margin: 0 }}>
-                                    {isCreateMode ? `➕ ${type === 'Printer' ? '프린터 신규 등록' : '신규 추가'}` : '📍 상세 정보 수정'}
+                                    {isCreateMode 
+                                        ? (type === 'Card' ? '🪪 출입 카드 신규 등록' : type === 'Printer' ? '프린터 신규 등록' : '신규 추가') 
+                                        : (type === 'Card' ? '🪪 출입 카드 상세 정보 수정 및 할당' : '📍 상세 정보 수정')}
                                 </h3>
-                                <button className="btn btn-sm" onClick={() => setIsUserSearchOpen(!isUserSearchOpen)} style={{ backgroundColor: isUserSearchOpen ? '#eff6ff' : '#f3f4f6', color: isUserSearchOpen ? '#1d4ed8' : '#374151', border: `1px solid ${isUserSearchOpen ? '#bfdbfe' : '#d1d5db'}` }}>
-                                    🔍 {isUserSearchOpen ? '사용자/기기 검색 닫기' : '기존 사용자 정보 불러오기'}
+                                <button className="btn btn-sm" onClick={() => setIsUserSearchOpen(!isUserSearchOpen)} style={{ backgroundColor: isUserSearchOpen ? '#eff6ff' : '#f3f4f6', color: isUserSearchOpen ? '#1d4ed8' : '#374151', border: `1px solid ${isUserSearchOpen ? '#bfdbfe' : '#d1d5db'}`, fontWeight: '600' }}>
+                                    🔍 {isUserSearchOpen ? '사용자 검색 닫기' : '이메일/사용자 검색으로 즉시 할당'}
                                 </button>
                                 {!isCreateMode && (
                                     <>
@@ -1328,7 +1398,7 @@ const AssetList = () => {
                                     <input
                                         type="text"
                                         className="form-input"
-                                        placeholder="이름, 이메일, 기존 기기 S/N 등을 검색하세요..."
+                                        placeholder="할당할 사용자의 이메일 또는 이름을 입력하여 검색하세요..."
                                         value={userSearchQuery}
                                         onChange={(e) => setUserSearchQuery(e.target.value)}
                                         style={{ flex: 1 }}
@@ -1355,10 +1425,11 @@ const AssetList = () => {
                                                         {type === 'Monitor' && u['Monitor'] && u['Monitor'] !== '-' && ` | 모니터: ${u['Monitor']}`}
                                                         {type === 'Printer' && u['Printer'] && u['Printer'] !== '-' && ` | 프린터: ${u['Printer']}`}
                                                         {type === 'TeamsNum' && u['TeamsNum'] && u['TeamsNum'] !== '-' && ` | Teams: ${u['TeamsNum']}`}
+                                                        {type === 'Card' && u['Card_List'] && u['Card_List'] !== '-' && ` | 출입카드: ${u['Card_List']}`}
                                                     </div>
                                                 </div>
-                                                <button className="btn btn-sm" style={{ backgroundColor: '#e0e7ff', color: '#4338ca', border: 'none', padding: '4px 10px', fontSize: '0.8rem', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); handleCopyUserInfo(u); }}>
-                                                    복사
+                                                <button className="btn btn-sm" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '4px 12px', fontSize: '0.8rem', borderRadius: '4px', fontWeight: 'bold' }} onClick={(e) => { e.stopPropagation(); handleCopyUserInfo(u); }}>
+                                                    할당
                                                 </button>
                                             </div>
                                         ))}
@@ -1376,6 +1447,8 @@ const AssetList = () => {
                                 {columns.map(col => {
                                     let placeholder = ''
                                     let helperText = ''
+                                    const isEmailCol = col.toLowerCase() === 'email' || col.toLowerCase() === '이메일'
+
                                     if (col === '리스계번호' || col === '리스계약번호') {
                                         placeholder = '예: LC-2024-001 (리스 계약 번호)'
                                     } else if (col === '리스 종료 일자' || col === '리스 종료일') {
@@ -1386,6 +1459,20 @@ const AssetList = () => {
                                         helperText = '통신사 약정 만료일 (만료 D-Day 자동 계산, 2달 전부터 알림)'
                                     } else if (col === 'Lease Date') {
                                         placeholder = 'MM/DD/YY 또는 YYYY-MM-DD (리스 개시일)'
+                                    } else if (col === '카드번호' || col === 'Card No' || col === 'CardNo') {
+                                        placeholder = '예: CARD-2024-001 (출입 카드 고유 번호)'
+                                        helperText = '출입 카드의 고유 번호 또는 일련번호'
+                                    } else if (col === '종류' && type === 'Card') {
+                                        placeholder = '예: 정규직, 파견, 방문증, 임시 등'
+                                    } else if (col === '발급일') {
+                                        placeholder = 'YYYY-MM-DD (예: 2026-10-26)'
+                                        helperText = '카드 발급 일자'
+                                    } else if (col === '상태') {
+                                        placeholder = '예: 사용중, STOCK, 분실, 반납 등'
+                                        helperText = '카드 보유/사용 상태'
+                                    } else if (isEmailCol) {
+                                        placeholder = '사용자 이메일 (예: gildong.hong@stryker.com)'
+                                        helperText = '이메일 입력 또는 선택 시 사용자/부서 정보가 자동 연동됩니다.'
                                     }
 
                                     return (
@@ -1395,19 +1482,56 @@ const AssetList = () => {
                                                 {col === '리스계번호' && <span style={{ color: '#0284c7', fontSize: '0.8rem', marginLeft: '6px' }}>[계약번호]</span>}
                                                 {col === '리스 종료 일자' && <span style={{ color: '#ea580c', fontSize: '0.8rem', marginLeft: '6px' }}>[만료일]</span>}
                                                 {col === '약정만료일' && <span style={{ color: '#ea580c', fontSize: '0.8rem', marginLeft: '6px' }}>[만료일]</span>}
+                                                {col === '카드번호' && <span style={{ color: '#2563eb', fontSize: '0.8rem', marginLeft: '6px' }}>[식별번호]</span>}
+                                                {isEmailCol && <span style={{ color: '#16a34a', fontSize: '0.8rem', marginLeft: '6px' }}>[이메일 검색/할당]</span>}
                                             </label>
                                             <input 
                                                 className="form-input"
+                                                list={isEmailCol ? "all-user-emails-datalist" : undefined}
                                                 placeholder={placeholder}
                                                 value={modalData[col] !== null ? String(modalData[col]) : ''} 
-                                                onChange={e => setModalData({ ...modalData, [col]: e.target.value })}
+                                                onChange={e => {
+                                                    const val = e.target.value
+                                                    setModalData({ ...modalData, [col]: val })
+                                                    if (isEmailCol && val && dashboardData && dashboardData.length > 0) {
+                                                        const match = dashboardData.find(u => String(u.email || '').trim().toLowerCase() === val.trim().toLowerCase())
+                                                        if (match) {
+                                                            handleCopyUserInfo(match, true)
+                                                        }
+                                                    }
+                                                }}
                                             />
+                                            {isEmailCol && (
+                                                <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-sm"
+                                                        style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', fontSize: '0.76rem', padding: '3px 8px' }}
+                                                        onClick={() => handleLookupByEmail(modalData[col])}
+                                                    >
+                                                        🔍 이메일로 정보 자동 채우기
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-sm"
+                                                        style={{ backgroundColor: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1', fontSize: '0.76rem', padding: '3px 8px' }}
+                                                        onClick={() => { setIsUserSearchOpen(true); setUserSearchQuery(modalData[col] || ''); }}
+                                                    >
+                                                        👥 사용자 검색 목록 열기
+                                                    </button>
+                                                </div>
+                                            )}
                                             {helperText && <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '3px' }}>{helperText}</div>}
                                         </div>
                                     )
                                 })}
                             </div>
                         </div>
+                        <datalist id="all-user-emails-datalist">
+                            {(dashboardData || []).filter(u => u.email).map((u, i) => (
+                                <option key={i} value={u.email}>{`${u.이름 || u.NAME || ''} (${u.BU || ''})`}</option>
+                            ))}
+                        </datalist>
                         <div style={{ padding: '1rem', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                             <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)} disabled={isSaving}>취소</button>
                             <button className="btn btn-primary" onClick={handleModalSave} disabled={isSaving}>
@@ -1427,7 +1551,7 @@ const AssetList = () => {
                                     📜 해당 자산 변경 히스토리 이력
                                 </h3>
                                 <p style={{ margin: '0.25rem 0 0 0', color: '#64748b', fontSize: '0.82rem' }}>
-                                    식별자: <strong>{modalData['S/N'] || modalData.Model || modalData.Number || modalData.TeamsNumber || 'N/A'}</strong> | 현재 사용자: {modalData.User || modalData.NAME || modalData['이름'] || 'STOCK'} ({modalData.email || modalData.EMAIL || '-'})
+                                    식별자: <strong>{modalData['카드번호'] || modalData['Card No'] || modalData['S/N'] || modalData.Model || modalData.Number || modalData.TeamsNumber || 'N/A'}</strong> | 현재 사용자: {modalData.User || modalData.NAME || modalData['이름'] || 'STOCK'} ({modalData.email || modalData.EMAIL || '-'})
                                 </p>
                             </div>
                             <button className="btn btn-secondary" onClick={() => setIsHistoryModalOpen(false)}>✖</button>

@@ -312,7 +312,8 @@ def get_search_candidates():
                 "Ipad_List": "",
                 "Printer": "",
                 "Monitor": "",
-                "TeamsNum": ""
+                "TeamsNum": "",
+                "Card_List": ""
             })
             
     # Function to extract users from assets
@@ -344,7 +345,8 @@ def get_search_candidates():
                 "Ipad_List": sn if target_col == "Ipad_List" else "",
                 "Printer": sn if target_col == "Printer" else "",
                 "Monitor": sn if target_col == "Monitor" else "",
-                "TeamsNum": sn if target_col == "TeamsNum" else ""
+                "TeamsNum": sn if target_col == "TeamsNum" else "",
+                "Card_List": sn if target_col == "Card_List" else ""
             })
 
     extract_from_asset(dfs.get("Lease"), ["User"], ["S/N", "SNOW Tag"], "Lease_List")
@@ -352,6 +354,7 @@ def get_search_candidates():
     extract_from_asset(dfs.get("Monitor"), ["User"], ["Model"], "Monitor")
     extract_from_asset(dfs.get("Printer"), ["User"], ["Model"], "Printer")
     extract_from_asset(dfs.get("Teams"), ["User"], ["TeamsNumber", "Number", "전화번호"], "TeamsNum")
+    extract_from_asset(dfs.get("Card"), ["User", "이름"], ["카드번호", "Card No", "Card_No", "S/N"], "Card_List")
     
     # Merge them by Name + Email
     merged = {}
@@ -367,10 +370,11 @@ def get_search_candidates():
                 "Ipad_List": set(),
                 "Printer": set(),
                 "Monitor": set(),
-                "TeamsNum": set()
+                "TeamsNum": set(),
+                "Card_List": set()
             }
         
-        for f in ["Lease_List", "Ipad_List", "Printer", "Monitor", "TeamsNum"]:
+        for f in ["Lease_List", "Ipad_List", "Printer", "Monitor", "TeamsNum", "Card_List"]:
             if c[f]:
                 merged[key][f].add(c[f])
                 
@@ -382,7 +386,7 @@ def get_search_candidates():
     result = []
     for m in merged.values():
         res = {k: v for k, v in m.items() if k in ["이름", "email", "BU", "ROLE"]}
-        for f in ["Lease_List", "Ipad_List", "Printer", "Monitor", "TeamsNum"]:
+        for f in ["Lease_List", "Ipad_List", "Printer", "Monitor", "TeamsNum", "Card_List"]:
             res[f] = ", ".join(sorted(list(m[f]))) if m[f] else "-"
         result.append(res)
         

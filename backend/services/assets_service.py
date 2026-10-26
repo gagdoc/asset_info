@@ -191,10 +191,11 @@ def perform_bulk_search(search_input: str, search_type: str, search_target: str)
             "Teams": ["TeamsNumber", "Number", "email", "History"],
             "Monitor": ["Model", "email", "User"],
             "Printer": ["Model", "email", "프린터정보"],
+            "Card": ["카드번호", "Card No", "Card_No", "email", "User", "비고"],
             "All_User": ["email", "NAME", "이름"]
         }
         type_labels = {
-            "Lease": "노트북", "iPad": "아이패드", "Teams": "Teams", "Monitor": "모니터", "Printer": "복합기", "All_User": "대시보드"
+            "Lease": "노트북", "iPad": "아이패드", "Teams": "Teams", "Monitor": "모니터", "Printer": "복합기", "Card": "출입 카드", "All_User": "대시보드"
         }
         
         target_keys = list(search_targets.keys())
@@ -356,7 +357,8 @@ def return_asset(email: str, asset_type: Optional[str], name: Optional[str], bu:
         "iPad": ("iPad", "아이패드", {"User": "STOCK", "BU": "IT", "Role": "IT", "Additional Information": f"{today_str}/{email}/반납"}),
         "Teams": ("Teams", "팀즈 번호", {"History": f"{today_str}/{email}/반납 {teams_label}"}),
         "Monitor": ("Monitor", "모니터", {"Additional Information": f"{today_str}/{email}/반납"}),
-        "Printer": ("Printer", "복합기", {"Additional Information": f"{today_str}/{email}/반납"})
+        "Printer": ("Printer", "복합기", {"Additional Information": f"{today_str}/{email}/반납"}),
+        "Card": ("Card", "출입 카드", {"User": "STOCK", "상태": "STOCK/반납", "비고": f"{today_str}/{email}/반납"})
     }
 
     if asset_type:
@@ -391,6 +393,7 @@ EXPORT_SHEET_MAP = {
     "Monitor":   "모니터",
     "Printer":   "프린터",
     "Teams":     "Teams번호",
+    "Card":      "출입카드",
     "NewHire":   "신규입사자",
     "Resign":    "퇴사자",
     "Dashboard": "자산통합현황",

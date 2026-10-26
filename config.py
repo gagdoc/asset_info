@@ -107,10 +107,16 @@ SHEET_MAPPING = {
     "Dept_Config": "Dept_Config",
     "Rental": "Rental_List",
     "History": "Asset_History",
+    "Card": "Card_List",
 }
 
 # 자산 테이블별 주요 컬럼 매핑
 COLUMN_MAPPING = {
+    "Card": {
+        "card_no_options": ["카드번호", "출입카드번호", "Card No", "Card_No", "S/N", "일련번호"],
+        "email_col": "email",
+        "user_options": ["User", "이름", "NAME", "사용자"],
+    },
     "Lease": {
         "sn_options": ["S/N", "일련번호", "Serial"],
         "model_options": ["Model", "모델", "노트북모델"],
@@ -153,6 +159,7 @@ ASSET_TYPES = {
     "Teams": "Teams",
     "Monitor": "모니터",
     "Printer": "복합기",
+    "Card": "출입 카드",
 }
 
 # 퇴사자 판별 키워드
@@ -164,6 +171,7 @@ RESIGNED_ROW_STYLE = "background-color: #FFD580; color: black; font-weight: bold
 # 기본 테이블 스키마 (테이블이 없을 때 사용)
 DEFAULT_SCHEMAS = {
     "All_User": ["NO", "NAME", "이름", "email", "ROLE", "BU", "SKL분류"],
+    "Card": ["카드번호", "User", "email", "BU", "종류", "발급일", "상태", "비고"],
     "Lease": ["S/N", "Model", "종류", "SNOW Tag", "Lease Date", "리스계번호", "리스 종료 일자", "BU", "User", "email", "Additional Information", "참고"],
     "iPad": ["NO", "email", "S/N", "Model", "할당일"],
     "Teams": ["NO", "email", "Number", "할당일"],

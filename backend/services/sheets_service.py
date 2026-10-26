@@ -20,7 +20,7 @@ except ImportError:
     logger.warning("gspread 미설치: pip install gspread google-auth")
 
 try:
-    from config import SHEET_MAPPING, SPREADSHEET_ID, GOOGLE_CREDENTIALS_FILE, GOOGLE_CREDENTIALS_JSON
+    from config import SHEET_MAPPING, SPREADSHEET_ID, GOOGLE_CREDENTIALS_FILE, GOOGLE_CREDENTIALS_JSON, DEFAULT_SCHEMAS
 except ImportError:
     SHEET_MAPPING = {
         "All_User": "All_User",
@@ -32,7 +32,9 @@ except ImportError:
         "Resign": "퇴사자",
         "NewHire": "신규입사자",
         "Dept_Config": "Dept_Config",
+        "Card": "Card_List",
     }
+    DEFAULT_SCHEMAS = {}
     SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
     GOOGLE_CREDENTIALS_FILE = os.environ.get(
         "GOOGLE_CREDENTIALS_FILE",
@@ -180,16 +182,29 @@ def _load_sheets_internal() -> dict | None:
         return None
 
     data = {}
-    keys = list(SHEET_MAPPING.keys())
-    ranges = [f"{sheet_name}!A:Z" for sheet_name in SHEET_MAPPING.values()]
+    try:
+        existing_sheets = {ws.title for ws in spreadsheet.worksheets()}
+    except Exception as e:
+        logger.warning(f"워크시트 목록 조회 실패: {e}")
+        existing_sheets = set(SHEET_MAPPING.values())
+
+    keys_to_fetch = []
+    ranges_to_fetch = []
+    for key, sheet_name in SHEET_MAPPING.items():
+        if sheet_name in existing_sheets:
+            keys_to_fetch.append(key)
+            ranges_to_fetch.append(f"{sheet_name}!A:Z")
+        else:
+            default_cols = DEFAULT_SCHEMAS.get(key, [])
+            data[key] = pd.DataFrame(columns=default_cols)
 
     try:
-        # 단일 번들 요청(Batch Get)으로 9개 시트를 1~2초 내에 한꺼번에 가져옴
-        batch_results = spreadsheet.values_batch_get(ranges)
+        # 단일 번들 요청(Batch Get)으로 실존하는 시트들을 한꺼번에 가져옴
+        batch_results = spreadsheet.values_batch_get(ranges_to_fetch) if ranges_to_fetch else {}
         valueRanges = batch_results.get('valueRanges', [])
 
         for idx, res in enumerate(valueRanges):
-            key = keys[idx]
+            key = keys_to_fetch[idx]
             values = res.get('values', [])
             if values:
                 # 첫 번째 행을 컬럼명으로 취급 (공백 제거)
@@ -218,7 +233,8 @@ def _load_sheets_internal() -> dict | None:
                 df = pd.DataFrame(padded_values, columns=new_header)
                 data[key] = df
             else:
-                data[key] = pd.DataFrame()
+                default_cols = DEFAULT_SCHEMAS.get(key, [])
+                data[key] = pd.DataFrame(columns=default_cols)
 
         logger.info("Google Sheets 데이터 로드 완료 (Batch Get 최적화)")
         return data

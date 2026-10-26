@@ -30,6 +30,7 @@ except ImportError:
         "Resign": "퇴사자",
         "NewHire": "신규입사자",
         "Dept_Config": "Dept_Config",
+        "Card": "Card_List",
     }
 
 # Google Sheets 서비스 임포트
