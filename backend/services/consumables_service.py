@@ -784,6 +784,11 @@ def add_outbound(month: str, data: dict) -> bool:
         if not ws:
             logger.error(f"출고 등록 실패: '{month}' 시트 없음")
             return False
+        # E열: 출고유형 (일반/위탁), 기본값은 일반
+        outbound_type = str(data.get('outbound_type') or '일반').strip()
+        if not outbound_type:
+            outbound_type = '일반'
+
         # append_row()를 활용하여 원자적으로 맨 아래 행에 추가 (동시 요청 시 행 번호 충돌 및 덮어쓰기 방지)
         row_values = [
             data.get('date', ''),
