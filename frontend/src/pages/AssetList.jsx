@@ -133,6 +133,7 @@ const AssetList = () => {
     const [isBridgeReady, setIsBridgeReady] = useState(false)
     const [isSnowSyncing, setIsSnowSyncing] = useState(false)
     const [snowSyncStatus, setSnowSyncStatus] = useState(null)
+    const [isSnowOpenedForModal, setIsSnowOpenedForModal] = useState(false)
 
     useEffect(() => {
         const handleMsg = (e) => {
@@ -473,7 +474,7 @@ const AssetList = () => {
         })
     }
 
-    const handleOpenServiceNowPage = (sn, customData = null) => {
+    const handleOpenServiceNowPage = (sn, customData = null, isViewOnly = false) => {
         if (!sn) {
             alert('시리얼 번호(S/N)가 입력되지 않았습니다.')
             return
@@ -481,7 +482,8 @@ const AssetList = () => {
         const cleanSn = String(sn).trim()
         const targetUrl = `https://strykercorp.service-now.com/now/nav/ui/classic/params/target/alm_hardware.do%3Fsysparm_query%3Dserial_number%3D${encodeURIComponent(cleanSn)}`
         
-        const autoFill = customData || {
+        // isViewOnly 인 경우 autoFill을 전달하지 않고 페이지만 단순 열람 (수정/입력 없음)
+        const autoFill = isViewOnly ? null : (customData || {
             serial_number: cleanSn,
             state: modalData['State'] || 'In use',
             substate: modalData['Substate'] || '-- None --',
@@ -491,7 +493,7 @@ const AssetList = () => {
             location: modalData['Location'] || '',
             department: modalData['Department'] || modalData['BU'] || '',
             company: modalData['Company'] || 'Asia Pacific'
-        }
+        })
 
         // 확장 프로그램이 준비되어 있으면 열려있는 ServiceNow 탭을 해당 페이지로 즉시 이동하고 폼 자동채우기 예약
         if (isBridgeReady) {
@@ -499,7 +501,11 @@ const AssetList = () => {
                 type: 'SNOW_NAVIGATE_REQUEST',
                 payload: { url: targetUrl, autoFill }
             }, '*')
-            addToast(`🌐 ServiceNow '${cleanSn}' 페이지로 이동하며 사용자/정보를 자동 입력합니다.`, 'info')
+            if (isViewOnly) {
+                addToast(`🌐 ServiceNow '${cleanSn}' 자산 페이지를 조회 모드로 엽니다. (수정 없음)`, 'info')
+            } else {
+                addToast(`🌐 ServiceNow '${cleanSn}' 페이지로 이동하며 변경 정보를 자동 입력합니다.`, 'info')
+            }
         } else {
             // 확장이 없으면 브라우저 새 탭으로 열기
             window.open(targetUrl, '_blank')
@@ -522,6 +528,7 @@ const AssetList = () => {
         }
         setModalData(cleanRow)
         setSnowSyncStatus(null)
+        setIsSnowOpenedForModal(false)
         setIsModalOpen(true)
     }
 
@@ -592,36 +599,27 @@ const AssetList = () => {
                 } else if (!isBridgeReady) {
                     alert('⚠️ ServiceNow Bridge 확장 프로그램이 준비되지 않았습니다.\n1) Chrome 확장 프로그램이 로드되어 있는지 확인하세요.\n2) 새 탭에서 Stryker ServiceNow(strykercorp.service-now.com)에 로그인해 두어야 합니다.')
                 } else {
-                    setIsSnowSyncing(true)
-                    addToast('🌐 ServiceNow로 데이터 전송 중...', 'info')
                     const isStock = (modalData['State'] || '').toLowerCase() === 'in stock'
                     const userOrEmail = modalData['email'] || modalData['EMAIL'] || modalData['User'] || modalData['NAME'] || modalData['이름'] || ''
-                    const snowPayload = {
+                    const autoFillData = {
                         serial_number: String(sn).trim(),
-                        updates: {
-                            install_status: modalData['State'] || 'In use',
-                            substatus: modalData['Substate'] === '-- None --' ? '' : (modalData['Substate'] || ''),
-                            assigned_to: isStock ? '' : userOrEmail,
-                            stockroom: isStock ? (modalData['Stockroom'] || 'Korea Stock Room') : '',
-                            location: modalData['Location'] || '',
-                            department: modalData['Department'] || modalData['BU'] || '',
-                            company: modalData['Company'] || 'Asia Pacific'
-                        }
+                        state: modalData['State'] || 'In use',
+                        substate: modalData['Substate'] === '-- None --' ? '' : (modalData['Substate'] || ''),
+                        email: userOrEmail,
+                        user: userOrEmail,
+                        stockroom: isStock ? (modalData['Stockroom'] || 'Korea Stock Room') : '',
+                        location: modalData['Location'] || '',
+                        department: modalData['Department'] || modalData['BU'] || '',
+                        company: modalData['Company'] || 'Asia Pacific'
                     }
 
-                    const snowRes = await syncToServiceNowPromise(snowPayload)
-                    setIsSnowSyncing(false)
-                    if (snowRes && snowRes.success) {
-                        setSnowSyncStatus('success')
-                        addToast(`✅ ${snowRes.message || 'ServiceNow 자산 자동 반영 성공!'}`, 'success')
-                        const targetInfo = isStock ? `Stockroom: ${snowPayload.updates.stockroom}` : `Assigned to: ${userOrEmail}`
-                        alert(`🎉 구글 시트 저장 완료!\n- S/N: ${sn}\n- State: ${modalData['State']}\n- ${targetInfo}\n- Location: ${modalData['Location']}\n\nServiceNow 화면으로 이동하여 정보가 자동 입력됩니다.\n화면의 내용을 확인하신 후 상단 [Save / Update]를 눌러주세요!`)
-                    } else {
-                        setSnowSyncStatus('error')
-                        const errMsg = snowRes?.error || '알 수 없는 오류'
-                        addToast(`⚠️ ServiceNow 동기화 실패: ${errMsg}`, 'error')
-                        alert(`⚠️ 구글 시트에는 저장되었으나 ServiceNow 반영 실패:\n${errMsg}`)
-                    }
+                    // ServiceNow 화면으로 이동하여 자동 입력 수행
+                    handleOpenServiceNowPage(sn, autoFillData, false)
+                    setIsSnowOpenedForModal(true)
+                    setSnowSyncStatus('success')
+
+                    const targetInfo = isStock ? `Stockroom: ${autoFillData.stockroom}` : `Assigned to: ${userOrEmail}`
+                    alert(`🎉 구글 시트 저장 완료!\n- S/N: ${sn}\n- State: ${autoFillData.state}\n- ${targetInfo}\n- Location: ${autoFillData.location}\n\nServiceNow 탭으로 이동하여 해당 제품 화면에 변경 내용을 자동 입력했습니다.\nServiceNow 화면의 내용을 확인하신 후 상단 [Save / Update]를 눌러주세요!`)
                 }
             }
 
@@ -1481,20 +1479,10 @@ const AssetList = () => {
                                                                         cursor: 'pointer',
                                                                         fontWeight: 'bold'
                                                                     }}
-                                                                    title={`ServiceNow에서 시리얼번호 '${val}' 제품 열기`}
+                                                                    title={`ServiceNow에서 시리얼번호 '${val}' 제품 열기 (조회 모드)`}
                                                                     onClick={(e) => {
                                                                         e.stopPropagation()
-                                                                        handleOpenServiceNowPage(val, {
-                                                                            serial_number: val,
-                                                                            state: row['State'] || 'In use',
-                                                                            substate: row['Substate'] || '-- None --',
-                                                                            email: row['email'] || '',
-                                                                            user: row['User'] || row['NAME'] || '',
-                                                                            stockroom: row['Stockroom'] || 'Korea Stock Room',
-                                                                            location: row['Location'] || 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, ASEM Tower - SALES',
-                                                                            department: row['Department'] || row['BU'] || '',
-                                                                            company: row['Company'] || 'Asia Pacific'
-                                                                        })
+                                                                        handleOpenServiceNowPage(val, null, true)
                                                                     }}
                                                                 >
                                                                     🔗 SNOW
@@ -1708,7 +1696,7 @@ const AssetList = () => {
                                                 type="button"
                                                 className="btn btn-sm"
                                                 style={{
-                                                    backgroundColor: '#0284c7',
+                                                    backgroundColor: isSnowOpenedForModal ? '#059669' : '#0284c7',
                                                     color: '#fff',
                                                     border: 'none',
                                                     fontSize: '0.8rem',
@@ -1720,9 +1708,25 @@ const AssetList = () => {
                                                     fontWeight: 'bold',
                                                     cursor: 'pointer'
                                                 }}
-                                                onClick={() => handleOpenServiceNowPage(modalData['S/N'] || modalData['Serial'] || modalData['일련번호'])}
+                                                onClick={() => {
+                                                    const sn = modalData['S/N'] || modalData['Serial'] || modalData['일련번호']
+                                                    const isStock = (modalData['State'] || '').toLowerCase() === 'in stock'
+                                                    const userOrEmail = modalData['email'] || modalData['EMAIL'] || modalData['User'] || modalData['NAME'] || modalData['이름'] || ''
+                                                    handleOpenServiceNowPage(sn, {
+                                                        serial_number: sn,
+                                                        state: modalData['State'] || 'In use',
+                                                        substate: modalData['Substate'] || '-- None --',
+                                                        email: userOrEmail,
+                                                        user: userOrEmail,
+                                                        stockroom: isStock ? (modalData['Stockroom'] || 'Korea Stock Room') : '',
+                                                        location: modalData['Location'] || '',
+                                                        department: modalData['Department'] || modalData['BU'] || '',
+                                                        company: modalData['Company'] || 'Asia Pacific'
+                                                    }, false)
+                                                    setIsSnowOpenedForModal(true)
+                                                }}
                                             >
-                                                🔍 ServiceNow에서 이 제품 열기
+                                                {isSnowOpenedForModal ? '✅ ServiceNow 열림 (화면에서 확인 가능)' : '🔍 ServiceNow에서 이 제품 열기'}
                                             </button>
                                             {isBridgeReady ? (
                                                 <span style={{ fontSize: '0.75rem', backgroundColor: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: '9999px', fontWeight: 'bold' }}>

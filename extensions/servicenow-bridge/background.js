@@ -118,6 +118,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           request.autoFill.expiresAt = Date.now() + 120000;
           await chrome.storage.local.set({ pendingAutoFill: request.autoFill });
           console.log("[SNOW Bridge Background] NAVIGATE 오토필 예약 완료:", request.autoFill);
+        } else {
+          // 조회 전용 모드: 기존 예약된 오토필 데이터 완전 제거하여 수정 방지
+          await chrome.storage.local.remove("pendingAutoFill");
+          console.log("[SNOW Bridge Background] 조회 전용 모드 (오토필 미실행)");
         }
         const snowTab = await findServiceNowTab();
         if (snowTab) {
