@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Asset Info ➔ ServiceNow Bridge",
+  "version": "1.0.0",
+  "description": "ASSET_INFO 자산 관리 앱에서 Stryker ServiceNow로 노트북 하드웨어 정보를 브라우저 세션 기반으로 자동 동기화합니다.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "tabs",
+    "cookies",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://strykercorp.service-now.com/*",
+    "https://*.run.app/*",
+    "http://localhost:*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.run.app/*",
+        "http://localhost:*/*"
+      ],
+      "js": ["content_asset_info.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "https://strykercorp.service-now.com/*"
+      ],
+      "js": ["content_servicenow.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ServiceNow Bridge 상태"
+  }
+}

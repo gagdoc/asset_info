@@ -13,6 +13,7 @@ from backend.services.assets_service import (
     EXPORT_SHEET_MAP,
 )
 from backend.services.history_service import log_asset_change, get_asset_history
+from config import ENABLE_SERVICENOW_SYNC, APP_ENV
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from datetime import datetime
@@ -652,6 +653,14 @@ def download_asset_csv(asset_type: str):
         headers={"Content-Disposition": f"attachment; filename={asset_type}.csv"}
     )
 
+# ── System Feature Flags & Config ────────────────────
+@router.get("/features")
+def get_features():
+    return {
+        "enable_servicenow_sync": ENABLE_SERVICENOW_SYNC,
+        "app_env": APP_ENV,
+    }
+
 # ── Row Update (inline editing) ──────────────────────
 @router.put("/row/update")
 def update_row(req: RowUpdateRequest):
@@ -670,16 +679,17 @@ def update_row(req: RowUpdateRequest):
     is_return = False
     
     for col, val in req.updates.items():
-        if col in df.columns:
-            old_val = str(df.at[req.row_index, col] if pd.notnull(df.at[req.row_index, col]) else "").strip()
-            new_val = str(val if val is not None else "").strip()
-            if old_val != new_val:
-                diffs.append(f"{col}: '{old_val}' → '{new_val}'")
-                if col in ["User", "USER", "NAME", "이름"] and new_val.upper() == "STOCK":
-                    is_return = True
-                if ("반납" in new_val) or ("반납" in str(col)):
-                    is_return = True
-            df.at[req.row_index, col] = val
+        if col not in df.columns:
+            df[col] = ""
+        old_val = str(df.at[req.row_index, col] if pd.notnull(df.at[req.row_index, col]) else "").strip()
+        new_val = str(val if val is not None else "").strip()
+        if old_val != new_val:
+            diffs.append(f"{col}: '{old_val}' → '{new_val}'")
+            if col in ["User", "USER", "NAME", "이름"] and new_val.upper() == "STOCK":
+                is_return = True
+            if ("반납" in new_val) or ("반납" in str(col)):
+                is_return = True
+        df.at[req.row_index, col] = val
     
     try:
         update_db(req.asset_type, df)

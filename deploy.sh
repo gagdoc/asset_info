@@ -48,11 +48,13 @@ GITHUB_REPO=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get
 
 # ── 환경 지정 검증 ──────────────────────────────────────────────────
 TARGET_ENV=$1
+DEPLOY_BRANCH=${2:-"main"}
+
 if [ "$TARGET_ENV" != "prod" ] && [ "$TARGET_ENV" != "test" ]; then
   echo "❌ 오류: 배포 환경을 지정해야 합니다."
-  echo "사용법: ./deploy.sh [prod|test]"
+  echo "사용법: ./deploy.sh [prod|test] [branch]"
   echo "  - prod: 실제 운영 서버 ($SERVICE_NAME)에 배포"
-  echo "  - test: 테스트 서버 ($SERVICE_NAME-test)에 배포"
+  echo "  - test: 테스트 서버 ($SERVICE_NAME-test)에 배포 (선택: 브랜치명)"
   exit 1
 fi
 
@@ -107,9 +109,9 @@ else
 fi
 
 # 3. GitHub에서 최신 코드를 임시 디렉토리에 클론
-echo "📥 GitHub에서 최신 코드를 가져오는 중..."
+echo "📥 GitHub에서 최신 코드($DEPLOY_BRANCH 브랜치)를 가져오는 중..."
 DEPLOY_DIR=$(mktemp -d)
-git clone --depth=1 "$GITHUB_REPO" "$DEPLOY_DIR"
+git clone --depth=1 --branch "$DEPLOY_BRANCH" "$GITHUB_REPO" "$DEPLOY_DIR"
 echo "✅ 클론 완료: $DEPLOY_DIR"
 
 # 4. Deploy to Cloud Run using --source (GitHub 최신 코드 기준, 충돌 시 재시도)

@@ -89,6 +89,12 @@ TEST_SHEET_IDS = {
     "toner":                _TEST_TONER_ID,
 }
 
+# 기능 플래그 (Feature Flags)
+ENABLE_SERVICENOW_SYNC = os.environ.get(
+    "ENABLE_SERVICENOW_SYNC",
+    "true" if (IS_STAGING or APP_ENV == "development") else "false"
+).lower() == "true"
+
 # Service Account JSON 키 파일 (로컬용)
 GOOGLE_CREDENTIALS_FILE = "data/st-asset-project-8000c6bb9905.json"
 # Cloud Run 등 클라우드 배포용 환경 변수 (JSON 문자열)
@@ -123,6 +129,11 @@ COLUMN_MAPPING = {
         "email_col": "email",
         "contract_options": ["리스계번호", "리스계약번호", "계약번호", "Lease Contract No"],
         "end_date_options": ["리스 종료 일자", "리스 종료일", "리스종료일", "Lease End Date"],
+        "state_options": ["State", "상태", "자산상태", "install_status"],
+        "substate_options": ["Substate", "하위상태", "substatus"],
+        "location_options": ["Location", "위치", "지사"],
+        "department_options": ["Department", "부서"],
+        "company_options": ["Company", "회사", "법인"],
     },
     "iPad": {
         "sn_options": ["S/N", "일련번호", "Serial"],

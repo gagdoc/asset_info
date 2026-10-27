@@ -129,6 +129,21 @@ const AssetList = () => {
     const [assetHistories, setAssetHistories] = useState([])
     const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
+    // ServiceNow Chrome Extension 브릿지 상태
+    const [isBridgeReady, setIsBridgeReady] = useState(false)
+    const [isSnowSyncing, setIsSnowSyncing] = useState(false)
+    const [snowSyncStatus, setSnowSyncStatus] = useState(null)
+
+    useEffect(() => {
+        const handleMsg = (e) => {
+            if (e.data?.type === 'SNOW_BRIDGE_AVAILABLE') {
+                setIsBridgeReady(true)
+            }
+        }
+        window.addEventListener('message', handleMsg)
+        return () => window.removeEventListener('message', handleMsg)
+    }, [])
+
     // type(경로 파라미터)가 변경될 때 필터 상태 초기화 및 해당 type의 열 설정 로드
     useEffect(() => {
         setFilterYears([])
@@ -439,13 +454,40 @@ const AssetList = () => {
     
     const duplicateEmails = Object.keys(duplicateGroups)
 
+    const syncToServiceNowPromise = (payload) => {
+        return new Promise((resolve) => {
+            const timeoutId = setTimeout(() => {
+                window.removeEventListener('message', responseHandler)
+                resolve({ success: false, error: 'ServiceNow 응답 시간 초과 (15초). 확장이 설치되어 있고 ServiceNow 탭이 열려있는지 확인하세요.' })
+            }, 15000)
+
+            const responseHandler = (e) => {
+                if (e.data?.type === 'SNOW_SYNC_RESPONSE') {
+                    clearTimeout(timeoutId)
+                    window.removeEventListener('message', responseHandler)
+                    resolve(e.data.result)
+                }
+            }
+            window.addEventListener('message', responseHandler)
+            window.postMessage({ type: 'SNOW_SYNC_REQUEST', payload }, '*')
+        })
+    }
+
     // ── 상세 수정 / 신규 추가 모달 로직 ──
     const openEditModal = (row) => {
         setIsCreateMode(false)
         setEditingRowIdx(row._originalIdx)
         const cleanRow = { ...row }
         delete cleanRow._originalIdx // backend doesn't need this
+        if (type === 'Lease') {
+            if (!cleanRow['State']) cleanRow['State'] = cleanRow['install_status'] || 'In use'
+            if (!cleanRow['Substate']) cleanRow['Substate'] = cleanRow['substatus'] || '-- None --'
+            if (!cleanRow['Location']) cleanRow['Location'] = cleanRow['location'] || 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, Asem Tower'
+            if (!cleanRow['Department']) cleanRow['Department'] = cleanRow['department'] || cleanRow['BU'] || ''
+            if (!cleanRow['Company']) cleanRow['Company'] = cleanRow['company'] || 'Asia Pacific'
+        }
         setModalData(cleanRow)
+        setSnowSyncStatus(null)
         setIsModalOpen(true)
     }
 
@@ -456,11 +498,19 @@ const AssetList = () => {
         columns.forEach(col => {
             initialData[col] = ''
         })
+        if (type === 'Lease') {
+            initialData['State'] = 'In use'
+            initialData['Substate'] = '-- None --'
+            initialData['Location'] = 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, Asem Tower'
+            initialData['Department'] = ''
+            initialData['Company'] = 'Asia Pacific'
+        }
         setModalData(initialData)
+        setSnowSyncStatus(null)
         setIsModalOpen(true)
     }
 
-    const handleModalSave = async () => {
+    const handleModalSave = async (syncToSnow = false) => {
         setIsSaving(true)
         try {
             if (isCreateMode) {
@@ -470,7 +520,6 @@ const AssetList = () => {
                 })
                 queryClient.invalidateQueries(['assets', type])
                 addToast('신규 항목 추가 완료', 'success')
-                alert('신규 항목이 추가되었습니다.')
             } else {
                 await axios.put('/api/assets/row/update', {
                     asset_type: type,
@@ -478,9 +527,46 @@ const AssetList = () => {
                     updates: modalData
                 })
                 queryClient.invalidateQueries(['assets', type])
-                addToast('상세 수정 완료', 'success')
-                alert('상세 수정이 완료되었습니다.')
+                addToast('구글 시트 저장 완료', 'success')
             }
+
+            // ServiceNow 실시간 동기화 요청 (syncToSnow=true 인 경우)
+            if (syncToSnow && type === 'Lease') {
+                const sn = modalData['S/N'] || modalData['Serial'] || modalData['일련번호']
+                if (!sn) {
+                    alert('시리얼 번호(S/N)가 입력되지 않아 ServiceNow에 동기화할 수 없습니다.')
+                } else if (!isBridgeReady) {
+                    alert('⚠️ ServiceNow Bridge 확장 프로그램이 준비되지 않았습니다.\n1) Chrome 확장 프로그램이 로드되어 있는지 확인하세요.\n2) 새 탭에서 Stryker ServiceNow(strykercorp.service-now.com)에 로그인해 두어야 합니다.')
+                } else {
+                    setIsSnowSyncing(true)
+                    addToast('🌐 ServiceNow로 데이터 전송 중...', 'info')
+                    const snowPayload = {
+                        serial_number: String(sn).trim(),
+                        updates: {
+                            install_status: modalData['State'] || 'In use',
+                            substatus: modalData['Substate'] === '-- None --' ? '' : (modalData['Substate'] || ''),
+                            assigned_to: modalData['User'] || modalData['NAME'] || modalData['이름'] || modalData['email'] || '',
+                            location: modalData['Location'] || '',
+                            department: modalData['Department'] || modalData['BU'] || '',
+                            company: modalData['Company'] || 'Asia Pacific'
+                        }
+                    }
+
+                    const snowRes = await syncToServiceNowPromise(snowPayload)
+                    setIsSnowSyncing(false)
+                    if (snowRes && snowRes.success) {
+                        setSnowSyncStatus('success')
+                        addToast(`✅ ${snowRes.message || 'ServiceNow 자산 자동 반영 성공!'}`, 'success')
+                        alert(`🎉 구글 시트 저장 및 ServiceNow 자동 반영 성공!\n- S/N: ${sn}\n- State: ${modalData['State']}\n- Assigned to: ${snowPayload.updates.assigned_to}\n- Location: ${modalData['Location']}`)
+                    } else {
+                        setSnowSyncStatus('error')
+                        const errMsg = snowRes?.error || '알 수 없는 오류'
+                        addToast(`⚠️ ServiceNow 동기화 실패: ${errMsg}`, 'error')
+                        alert(`⚠️ 구글 시트에는 저장되었으나 ServiceNow 반영 실패:\n${errMsg}`)
+                    }
+                }
+            }
+
             setIsModalOpen(false)
         } catch (err) {
             const actionStr = isCreateMode ? '추가' : '수정'
@@ -488,6 +574,7 @@ const AssetList = () => {
             alert(`${actionStr} 실패: ` + (err.response?.data?.detail || err.message))
         } finally {
             setIsSaving(false)
+            setIsSnowSyncing(false)
         }
     }
 
@@ -1516,17 +1603,145 @@ const AssetList = () => {
                                     )
                                 })}
                             </div>
+
+                            {type === 'Lease' && (
+                                <div style={{ marginTop: '1.5rem', padding: '1.2rem', backgroundColor: '#f0f9ff', borderRadius: '10px', border: '1px solid #bae6fd' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                                        <h4 style={{ margin: 0, color: '#0369a1', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1rem' }}>
+                                            <span>🌐 ServiceNow (Stryker) 자산 연동 설정</span>
+                                        </h4>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            {isBridgeReady ? (
+                                                <span style={{ fontSize: '0.75rem', backgroundColor: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: '9999px', fontWeight: 'bold' }}>
+                                                    🟢 Chrome Bridge 연동 준비됨
+                                                </span>
+                                            ) : (
+                                                <span style={{ fontSize: '0.75rem', backgroundColor: '#fef3c7', color: '#92400e', padding: '3px 8px', borderRadius: '9999px', fontWeight: 'bold' }} title="Chrome 확장이 로드되어 있고 ServiceNow 탭이 열려있어야 합니다">
+                                                    ⚠️ Chrome Bridge 미감지 (확장 로드 필요)
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                        <div className="form-group">
+                                            <label className="form-label" style={{ fontWeight: '600', color: '#0f172a' }}>
+                                                State (자산 상태) <span style={{ color: '#ef4444' }}>*</span>
+                                            </label>
+                                            <select 
+                                                className="form-input"
+                                                value={modalData['State'] || 'In use'}
+                                                onChange={e => setModalData({ ...modalData, State: e.target.value })}
+                                            >
+                                                <option value="In use">In use (사용중)</option>
+                                                <option value="In stock">In stock (재고/보관)</option>
+                                                <option value="In transit">In transit (이동중)</option>
+                                                <option value="In maintenance">In maintenance (유지보수/수리)</option>
+                                                <option value="Retired">Retired (폐기/불용)</option>
+                                                <option value="Missing">Missing (분실)</option>
+                                            </select>
+                                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>ServiceNow install_status 필드에 반영됩니다.</div>
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label className="form-label" style={{ fontWeight: '600', color: '#0f172a' }}>
+                                                Substate (하위 상태)
+                                            </label>
+                                            <select 
+                                                className="form-input"
+                                                value={modalData['Substate'] || '-- None --'}
+                                                onChange={e => setModalData({ ...modalData, Substate: e.target.value })}
+                                            >
+                                                <option value="-- None --">-- None --</option>
+                                                <option value="Available">Available (출고 가능)</option>
+                                                <option value="Reserved">Reserved (예약됨)</option>
+                                                <option value="Pending install">Pending install (설치 대기)</option>
+                                                <option value="Defective">Defective (불량)</option>
+                                            </select>
+                                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>ServiceNow substatus 필드에 반영됩니다.</div>
+                                        </div>
+
+                                        <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                                            <label className="form-label" style={{ fontWeight: '600', color: '#0f172a' }}>
+                                                Location (자산 위치)
+                                            </label>
+                                            <input 
+                                                className="form-input"
+                                                placeholder="예: Seoul, Seoul 517 Yeongdong-daero, 6th Floor, Asem Tower"
+                                                value={modalData['Location'] !== undefined ? String(modalData['Location']) : 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, Asem Tower'}
+                                                onChange={e => setModalData({ ...modalData, Location: e.target.value })}
+                                            />
+                                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>ServiceNow location 필드에 반영됩니다.</div>
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label className="form-label" style={{ fontWeight: '600', color: '#0f172a' }}>
+                                                Department (부서)
+                                            </label>
+                                            <input 
+                                                className="form-input"
+                                                placeholder="예: Accounting, IT, Sales 등"
+                                                value={modalData['Department'] !== undefined ? String(modalData['Department']) : (modalData['BU'] || '')}
+                                                onChange={e => setModalData({ ...modalData, Department: e.target.value })}
+                                            />
+                                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>ServiceNow department 필드에 반영됩니다.</div>
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label className="form-label" style={{ fontWeight: '600', color: '#0f172a' }}>
+                                                Company (법인)
+                                            </label>
+                                            <input 
+                                                className="form-input"
+                                                placeholder="예: Asia Pacific"
+                                                value={modalData['Company'] !== undefined ? String(modalData['Company']) : 'Asia Pacific'}
+                                                onChange={e => setModalData({ ...modalData, Company: e.target.value })}
+                                            />
+                                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>ServiceNow company 필드에 반영됩니다.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <datalist id="all-user-emails-datalist">
                             {(dashboardData || []).filter(u => u.email).map((u, i) => (
                                 <option key={i} value={u.email}>{`${u.이름 || u.NAME || ''} (${u.BU || ''})`}</option>
                             ))}
                         </datalist>
-                        <div style={{ padding: '1rem', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                            <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)} disabled={isSaving}>취소</button>
-                            <button className="btn btn-primary" onClick={handleModalSave} disabled={isSaving}>
-                                {isSaving ? '⏳ 저장 중...' : (isCreateMode ? '💾 신규 항목 저장' : '💾 모든 변경사항 저장')}
+                        <div style={{ padding: '1rem', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px' }}>
+                            <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)} disabled={isSaving || isSnowSyncing}>
+                                취소
                             </button>
+                            {type === 'Lease' ? (
+                                <>
+                                    <button 
+                                        className="btn btn-secondary" 
+                                        onClick={() => handleModalSave(false)} 
+                                        disabled={isSaving || isSnowSyncing}
+                                        style={{ backgroundColor: '#f1f5f9', color: '#334155' }}
+                                    >
+                                        {isSaving && !isSnowSyncing ? '⏳ 저장 중...' : '💾 구글 시트만 저장'}
+                                    </button>
+                                    <button 
+                                        className="btn btn-primary" 
+                                        onClick={() => handleModalSave(true)} 
+                                        disabled={isSaving || isSnowSyncing}
+                                        style={{ 
+                                            backgroundColor: isBridgeReady ? '#0284c7' : '#0369a1', 
+                                            boxShadow: '0 2px 4px rgba(2, 132, 199, 0.3)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px'
+                                        }}
+                                    >
+                                        {isSnowSyncing ? '⏳ ServiceNow 반영 중...' : '🌐 구글 시트 + ServiceNow 동시 반영'}
+                                    </button>
+                                </>
+                            ) : (
+                                <button className="btn btn-primary" onClick={() => handleModalSave(false)} disabled={isSaving}>
+                                    {isSaving ? '⏳ 저장 중...' : (isCreateMode ? '💾 신규 항목 저장' : '💾 모든 변경사항 저장')}
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
