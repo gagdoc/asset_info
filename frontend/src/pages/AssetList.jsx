@@ -501,6 +501,7 @@ const AssetList = () => {
         if (type === 'Lease') {
             if (!cleanRow['State']) cleanRow['State'] = cleanRow['install_status'] || 'In use'
             if (!cleanRow['Substate']) cleanRow['Substate'] = cleanRow['substatus'] || '-- None --'
+            if (!cleanRow['Stockroom']) cleanRow['Stockroom'] = cleanRow['stockroom'] || 'Korea Stock Room'
             if (!cleanRow['Location']) cleanRow['Location'] = cleanRow['location'] || 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, ASEM Tower - SALES'
             if (!cleanRow['Department']) cleanRow['Department'] = cleanRow['department'] || cleanRow['BU'] || ''
             if (!cleanRow['Company']) cleanRow['Company'] = cleanRow['company'] || 'Asia Pacific'
@@ -520,6 +521,7 @@ const AssetList = () => {
         if (type === 'Lease') {
             initialData['State'] = 'In use'
             initialData['Substate'] = '-- None --'
+            initialData['Stockroom'] = 'Korea Stock Room'
             initialData['Location'] = 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, ASEM Tower - SALES'
             initialData['Department'] = ''
             initialData['Company'] = 'Asia Pacific'
@@ -527,6 +529,25 @@ const AssetList = () => {
         setModalData(initialData)
         setSnowSyncStatus(null)
         setIsModalOpen(true)
+    }
+
+    const handleStateChange = (newState) => {
+        const updated = { ...modalData, State: newState }
+        if (newState === 'In stock') {
+            if (!updated['Stockroom']) updated['Stockroom'] = 'Korea Stock Room'
+            updated['User'] = 'STOCK'
+            if (updated.hasOwnProperty('NAME')) updated['NAME'] = 'STOCK'
+            if (updated.hasOwnProperty('이름')) updated['이름'] = 'STOCK'
+            updated['Substate'] = '-- None --'
+        } else if (newState === 'In use') {
+            if (updated['User'] === 'STOCK') {
+                updated['User'] = ''
+            }
+            if (!updated['Substate'] || updated['Substate'] === '-- None --') {
+                updated['Substate'] = 'Staff'
+            }
+        }
+        setModalData(updated)
     }
 
     const handleModalSave = async (syncToSnow = false) => {
@@ -559,12 +580,14 @@ const AssetList = () => {
                 } else {
                     setIsSnowSyncing(true)
                     addToast('🌐 ServiceNow로 데이터 전송 중...', 'info')
+                    const isStock = (modalData['State'] || '').toLowerCase() === 'in stock'
                     const snowPayload = {
                         serial_number: String(sn).trim(),
                         updates: {
                             install_status: modalData['State'] || 'In use',
                             substatus: modalData['Substate'] === '-- None --' ? '' : (modalData['Substate'] || ''),
-                            assigned_to: modalData['User'] || modalData['NAME'] || modalData['이름'] || modalData['email'] || '',
+                            assigned_to: isStock ? '' : (modalData['User'] || modalData['NAME'] || modalData['이름'] || modalData['email'] || ''),
+                            stockroom: isStock ? (modalData['Stockroom'] || 'Korea Stock Room') : '',
                             location: modalData['Location'] || '',
                             department: modalData['Department'] || modalData['BU'] || '',
                             company: modalData['Company'] || 'Asia Pacific'
@@ -576,7 +599,8 @@ const AssetList = () => {
                     if (snowRes && snowRes.success) {
                         setSnowSyncStatus('success')
                         addToast(`✅ ${snowRes.message || 'ServiceNow 자산 자동 반영 성공!'}`, 'success')
-                        alert(`🎉 구글 시트 저장 및 ServiceNow 자동 반영 성공!\n- S/N: ${sn}\n- State: ${modalData['State']}\n- Assigned to: ${snowPayload.updates.assigned_to}\n- Location: ${modalData['Location']}`)
+                        const targetInfo = isStock ? `Stockroom: ${snowPayload.updates.stockroom}` : `Assigned to: ${snowPayload.updates.assigned_to}`
+                        alert(`🎉 구글 시트 저장 및 ServiceNow 자동 반영 성공!\n- S/N: ${sn}\n- State: ${modalData['State']}\n- ${targetInfo}\n- Location: ${modalData['Location']}`)
                     } else {
                         setSnowSyncStatus('error')
                         const errMsg = snowRes?.error || '알 수 없는 오류'
@@ -1695,7 +1719,7 @@ const AssetList = () => {
                                             <select 
                                                 className="form-input"
                                                 value={modalData['State'] || 'In use'}
-                                                onChange={e => setModalData({ ...modalData, State: e.target.value })}
+                                                onChange={e => handleStateChange(e.target.value)}
                                             >
                                                 <option value="On order">On order</option>
                                                 <option value="In stock">In stock</option>
@@ -1724,6 +1748,81 @@ const AssetList = () => {
                                             </select>
                                             <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>ServiceNow substatus 필드에 반영됩니다.</div>
                                         </div>
+
+                                        {/* State가 In stock일 때: Stockroom 필드 노출 */}
+                                        {modalData['State'] === 'In stock' && (
+                                            <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: '#fefce8', padding: '12px', borderRadius: '8px', border: '1px solid #fef08a' }}>
+                                                <label className="form-label" style={{ fontWeight: '600', color: '#854d0e', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <span>🏬 Stockroom (보관 장소)</span> <span style={{ color: '#ef4444' }}>*</span>
+                                                </label>
+                                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                    <input 
+                                                        className="form-input"
+                                                        placeholder="예: Korea Stock Room"
+                                                        value={modalData['Stockroom'] !== undefined ? String(modalData['Stockroom']) : 'Korea Stock Room'}
+                                                        onChange={e => setModalData({ ...modalData, Stockroom: e.target.value })}
+                                                        style={{ flex: 1, fontWeight: 'bold' }}
+                                                    />
+                                                    <button 
+                                                        type="button" 
+                                                        className="btn btn-sm"
+                                                        style={{ backgroundColor: '#eab308', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontWeight: 'bold', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                                                        onClick={() => setModalData({ ...modalData, Stockroom: 'Korea Stock Room' })}
+                                                    >
+                                                        📍 Korea Stock Room 선택
+                                                    </button>
+                                                </div>
+                                                <div style={{ fontSize: '0.73rem', color: '#a16207', marginTop: '4px' }}>
+                                                    State가 In stock일 때 ServiceNow 필수 Stockroom 필드에 반영됩니다. (사용자명은 자동으로 'STOCK'으로 설정됩니다)
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* State가 In use일 때: Assigned to (사용자/이메일 선택) 필드 노출 */}
+                                        {modalData['State'] === 'In use' && (
+                                            <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: '#f0fdf4', padding: '12px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                                                <label className="form-label" style={{ fontWeight: '600', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <span>👤 Assigned to (사용자 할당)</span> <span style={{ color: '#ef4444' }}>*</span>
+                                                </label>
+                                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                    <input 
+                                                        className="form-input"
+                                                        list="servicenow-assigned-emails-datalist"
+                                                        placeholder="이메일 주소 또는 사원명 검색/입력 (예: youmee.lee@stryker.com)"
+                                                        value={modalData['email'] || modalData['User'] || ''}
+                                                        onChange={e => {
+                                                            const val = e.target.value
+                                                            const match = (dashboardData || []).find(u => 
+                                                                String(u.email || '').trim().toLowerCase() === val.trim().toLowerCase() ||
+                                                                String(u['이름'] || u['NAME'] || u['USER'] || '').trim().toLowerCase() === val.trim().toLowerCase()
+                                                            )
+                                                            if (match) {
+                                                                handleCopyUserInfo(match, true)
+                                                            } else {
+                                                                setModalData({ ...modalData, email: val, User: modalData['User'] || val })
+                                                            }
+                                                        }}
+                                                        style={{ flex: 1 }}
+                                                    />
+                                                    <button 
+                                                        type="button"
+                                                        className="btn btn-sm"
+                                                        style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontWeight: 'bold', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                                                        onClick={() => { setIsUserSearchOpen(true); setUserSearchQuery(modalData['email'] || modalData['User'] || ''); }}
+                                                    >
+                                                        👥 사원 검색
+                                                    </button>
+                                                </div>
+                                                <datalist id="servicenow-assigned-emails-datalist">
+                                                    {(dashboardData || []).filter(u => u.email).map((u, i) => (
+                                                        <option key={i} value={u.email}>{`${u.이름 || u.NAME || ''} (${u.BU || ''})`}</option>
+                                                    ))}
+                                                </datalist>
+                                                <div style={{ fontSize: '0.73rem', color: '#15803d', marginTop: '4px' }}>
+                                                    현재 할당된 실사용자: <strong>{modalData['User'] || modalData['NAME'] || '미지정'}</strong> {modalData['email'] ? `(${modalData['email']})` : ''} | 부서: {modalData['Department'] || modalData['BU'] || '-'}
+                                                </div>
+                                            </div>
+                                        )}
 
                                         <div className="form-group" style={{ gridColumn: 'span 2' }}>
                                             <label className="form-label" style={{ fontWeight: '600', color: '#0f172a' }}>

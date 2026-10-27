@@ -132,6 +132,7 @@ COLUMN_MAPPING = {
         "state_options": ["State", "상태", "자산상태", "install_status"],
         "substate_options": ["Substate", "하위상태", "substatus"],
         "location_options": ["Location", "위치", "지사"],
+        "stockroom_options": ["Stockroom", "스톡룸", "창고", "보관장소"],
         "department_options": ["Department", "부서"],
         "company_options": ["Company", "회사", "법인"],
     },

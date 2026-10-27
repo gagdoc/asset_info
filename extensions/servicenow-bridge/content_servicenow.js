@@ -107,6 +107,9 @@ async function updateHardwareViaSession(payload) {
   if (updates.assigned_to !== undefined && updates.assigned_to !== "") {
     patchBody.assigned_to = updates.assigned_to;
   }
+  if (updates.stockroom !== undefined && updates.stockroom !== "") {
+    patchBody.stockroom = updates.stockroom;
+  }
   if (updates.location !== undefined && updates.location !== "") {
     patchBody.location = updates.location;
   }
