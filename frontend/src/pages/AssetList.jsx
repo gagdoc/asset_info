@@ -501,7 +501,7 @@ const AssetList = () => {
         if (type === 'Lease') {
             if (!cleanRow['State']) cleanRow['State'] = cleanRow['install_status'] || 'In use'
             if (!cleanRow['Substate']) cleanRow['Substate'] = cleanRow['substatus'] || '-- None --'
-            if (!cleanRow['Location']) cleanRow['Location'] = cleanRow['location'] || 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, Asem Tower'
+            if (!cleanRow['Location']) cleanRow['Location'] = cleanRow['location'] || 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, ASEM Tower - SALES'
             if (!cleanRow['Department']) cleanRow['Department'] = cleanRow['department'] || cleanRow['BU'] || ''
             if (!cleanRow['Company']) cleanRow['Company'] = cleanRow['company'] || 'Asia Pacific'
         }
@@ -520,7 +520,7 @@ const AssetList = () => {
         if (type === 'Lease') {
             initialData['State'] = 'In use'
             initialData['Substate'] = '-- None --'
-            initialData['Location'] = 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, Asem Tower'
+            initialData['Location'] = 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, ASEM Tower - SALES'
             initialData['Department'] = ''
             initialData['Company'] = 'Asia Pacific'
         }
@@ -1697,12 +1697,12 @@ const AssetList = () => {
                                                 value={modalData['State'] || 'In use'}
                                                 onChange={e => setModalData({ ...modalData, State: e.target.value })}
                                             >
-                                                <option value="In use">In use (사용중)</option>
-                                                <option value="In stock">In stock (재고/보관)</option>
-                                                <option value="In transit">In transit (이동중)</option>
-                                                <option value="In maintenance">In maintenance (유지보수/수리)</option>
-                                                <option value="Retired">Retired (폐기/불용)</option>
-                                                <option value="Missing">Missing (분실)</option>
+                                                <option value="On order">On order</option>
+                                                <option value="In stock">In stock</option>
+                                                <option value="In transit">In transit</option>
+                                                <option value="In use">In use</option>
+                                                <option value="Retired">Retired</option>
+                                                <option value="Missing">Missing</option>
                                             </select>
                                             <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>ServiceNow install_status 필드에 반영됩니다.</div>
                                         </div>
@@ -1717,10 +1717,10 @@ const AssetList = () => {
                                                 onChange={e => setModalData({ ...modalData, Substate: e.target.value })}
                                             >
                                                 <option value="-- None --">-- None --</option>
-                                                <option value="Available">Available (출고 가능)</option>
-                                                <option value="Reserved">Reserved (예약됨)</option>
-                                                <option value="Pending install">Pending install (설치 대기)</option>
-                                                <option value="Defective">Defective (불량)</option>
+                                                <option value="Staff">Staff</option>
+                                                <option value="Contractor">Contractor</option>
+                                                <option value="Other">Other</option>
+                                                <option value="Defective">Defective</option>
                                             </select>
                                             <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>ServiceNow substatus 필드에 반영됩니다.</div>
                                         </div>
@@ -1731,11 +1731,43 @@ const AssetList = () => {
                                             </label>
                                             <input 
                                                 className="form-input"
-                                                placeholder="예: Seoul, Seoul 517 Yeongdong-daero, 6th Floor, Asem Tower"
-                                                value={modalData['Location'] !== undefined ? String(modalData['Location']) : 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, Asem Tower'}
+                                                list="servicenow-location-datalist"
+                                                placeholder="ServiceNow 자산 위치 선택 또는 입력"
+                                                value={modalData['Location'] !== undefined ? String(modalData['Location']) : 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, ASEM Tower - SALES'}
                                                 onChange={e => setModalData({ ...modalData, Location: e.target.value })}
                                             />
-                                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>ServiceNow location 필드에 반영됩니다.</div>
+                                            <datalist id="servicenow-location-datalist">
+                                                <option value="Seoul, Seoul 517 Yeongdong-daero, 6th Floor, ASEM Tower - SALES">Seoul, Seoul 517 Yeongdong-daero, 6th Floor, ASEM Tower - SALES</option>
+                                                <option value="Seoul, Seoul 55, Songpa-daero, Songpa-gu - SHARED">Seoul, Seoul 55, Songpa-daero, Songpa-gu - SHARED</option>
+                                                <option value="Seoul, Seoul 78, Arayuk-ro, Gochon-eup, Gimpo-si, Gyeonggi-do - DIST">Seoul, Seoul 78, Arayuk-ro, Gochon-eup, Gimpo-si, Gyeonggi-do - DIST</option>
+                                            </datalist>
+                                            <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
+                                                <button 
+                                                    type="button" 
+                                                    className="btn btn-sm" 
+                                                    style={{ backgroundColor: '#f1f5f9', color: '#334155', fontSize: '0.73rem', padding: '3px 8px', border: '1px solid #cbd5e1', borderRadius: '4px' }}
+                                                    onClick={() => setModalData({ ...modalData, Location: 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, ASEM Tower - SALES' })}
+                                                >
+                                                    📍 ASEM Tower - SALES
+                                                </button>
+                                                <button 
+                                                    type="button" 
+                                                    className="btn btn-sm" 
+                                                    style={{ backgroundColor: '#f1f5f9', color: '#334155', fontSize: '0.73rem', padding: '3px 8px', border: '1px solid #cbd5e1', borderRadius: '4px' }}
+                                                    onClick={() => setModalData({ ...modalData, Location: 'Seoul, Seoul 55, Songpa-daero, Songpa-gu - SHARED' })}
+                                                >
+                                                    📍 Songpa-daero - SHARED
+                                                </button>
+                                                <button 
+                                                    type="button" 
+                                                    className="btn btn-sm" 
+                                                    style={{ backgroundColor: '#f1f5f9', color: '#334155', fontSize: '0.73rem', padding: '3px 8px', border: '1px solid #cbd5e1', borderRadius: '4px' }}
+                                                    onClick={() => setModalData({ ...modalData, Location: 'Seoul, Seoul 78, Arayuk-ro, Gochon-eup, Gimpo-si, Gyeonggi-do - DIST' })}
+                                                >
+                                                    📍 Gimpo-si - DIST
+                                                </button>
+                                            </div>
+                                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px' }}>ServiceNow location 필드에 반영됩니다. 위 버튼 클릭 시 즉시 입력됩니다.</div>
                                         </div>
 
                                         <div className="form-group">
