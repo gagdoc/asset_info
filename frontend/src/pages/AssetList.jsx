@@ -595,12 +595,13 @@ const AssetList = () => {
                     setIsSnowSyncing(true)
                     addToast('🌐 ServiceNow로 데이터 전송 중...', 'info')
                     const isStock = (modalData['State'] || '').toLowerCase() === 'in stock'
+                    const userOrEmail = modalData['email'] || modalData['EMAIL'] || modalData['User'] || modalData['NAME'] || modalData['이름'] || ''
                     const snowPayload = {
                         serial_number: String(sn).trim(),
                         updates: {
                             install_status: modalData['State'] || 'In use',
                             substatus: modalData['Substate'] === '-- None --' ? '' : (modalData['Substate'] || ''),
-                            assigned_to: isStock ? '' : (modalData['User'] || modalData['NAME'] || modalData['이름'] || modalData['email'] || ''),
+                            assigned_to: isStock ? '' : userOrEmail,
                             stockroom: isStock ? (modalData['Stockroom'] || 'Korea Stock Room') : '',
                             location: modalData['Location'] || '',
                             department: modalData['Department'] || modalData['BU'] || '',
@@ -613,8 +614,8 @@ const AssetList = () => {
                     if (snowRes && snowRes.success) {
                         setSnowSyncStatus('success')
                         addToast(`✅ ${snowRes.message || 'ServiceNow 자산 자동 반영 성공!'}`, 'success')
-                        const targetInfo = isStock ? `Stockroom: ${snowPayload.updates.stockroom}` : `Assigned to: ${snowPayload.updates.assigned_to}`
-                        alert(`🎉 구글 시트 저장 및 ServiceNow 자동 반영 성공!\n- S/N: ${sn}\n- State: ${modalData['State']}\n- ${targetInfo}\n- Location: ${modalData['Location']}`)
+                        const targetInfo = isStock ? `Stockroom: ${snowPayload.updates.stockroom}` : `Assigned to: ${userOrEmail}`
+                        alert(`🎉 구글 시트 저장 완료!\n- S/N: ${sn}\n- State: ${modalData['State']}\n- ${targetInfo}\n- Location: ${modalData['Location']}\n\nServiceNow 화면으로 이동하여 정보가 자동 입력됩니다.\n화면의 내용을 확인하신 후 상단 [Save / Update]를 눌러주세요!`)
                     } else {
                         setSnowSyncStatus('error')
                         const errMsg = snowRes?.error || '알 수 없는 오류'
