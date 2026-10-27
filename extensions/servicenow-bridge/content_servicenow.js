@@ -59,7 +59,9 @@ async function updateHardwareViaSession(payload) {
   const token = await extractGlideToken();
   const headers = {
     "Accept": "application/json",
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "X-Requested-With": "XMLHttpRequest",
+    "X-WantSession": "true"
   };
   if (token) {
     headers["X-UserToken"] = token;

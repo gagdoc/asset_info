@@ -487,9 +487,11 @@ const AssetList = () => {
                 type: 'SNOW_NAVIGATE_REQUEST',
                 payload: { url: targetUrl }
             }, '*')
+            addToast(`🌐 ServiceNow 탭에서 '${cleanSn}' 제품 페이지를 열었습니다.`, 'info')
+        } else {
+            // 확장이 없으면 브라우저 새 탭으로 열기
+            window.open(targetUrl, '_blank')
         }
-        // 브라우저 탭으로 즉시 열기
-        window.open(targetUrl, '_blank')
     }
 
     // ── 상세 수정 / 신규 추가 모달 로직 ──
