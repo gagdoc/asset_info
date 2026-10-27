@@ -81,6 +81,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "NAVIGATE_SERVICENOW_TAB") {
     (async () => {
       try {
+        if (request.autoFill) {
+          await chrome.storage.local.set({ pendingAutoFill: request.autoFill });
+          console.log("[SNOW Bridge Background] autoFill 예약 완료:", request.autoFill);
+        }
         const snowTab = await findServiceNowTab();
         if (snowTab) {
           await chrome.tabs.update(snowTab.id, { url: request.url, active: true });

@@ -36,7 +36,8 @@ window.addEventListener("message", (event) => {
   if (event.data.type === "SNOW_NAVIGATE_REQUEST") {
     chrome.runtime.sendMessage({
       action: "NAVIGATE_SERVICENOW_TAB",
-      url: event.data.payload.url
+      url: event.data.payload.url,
+      autoFill: event.data.payload.autoFill
     }, (response) => {
       window.postMessage({ type: "SNOW_NAVIGATE_RESPONSE", result: response }, "*");
     });

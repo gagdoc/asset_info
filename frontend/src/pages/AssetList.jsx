@@ -473,7 +473,7 @@ const AssetList = () => {
         })
     }
 
-    const handleOpenServiceNowPage = (sn) => {
+    const handleOpenServiceNowPage = (sn, customData = null) => {
         if (!sn) {
             alert('시리얼 번호(S/N)가 입력되지 않았습니다.')
             return
@@ -481,13 +481,25 @@ const AssetList = () => {
         const cleanSn = String(sn).trim()
         const targetUrl = `https://strykercorp.service-now.com/now/nav/ui/classic/params/target/alm_hardware.do%3Fsysparm_query%3Dserial_number%3D${encodeURIComponent(cleanSn)}`
         
-        // 확장 프로그램이 준비되어 있으면 열려있는 ServiceNow 탭을 해당 페이지로 즉시 이동
+        const autoFill = customData || {
+            serial_number: cleanSn,
+            state: modalData['State'] || 'In use',
+            substate: modalData['Substate'] || '-- None --',
+            email: modalData['email'] || modalData['EMAIL'] || '',
+            user: modalData['User'] || modalData['NAME'] || modalData['이름'] || '',
+            stockroom: modalData['Stockroom'] || 'Korea Stock Room',
+            location: modalData['Location'] || '',
+            department: modalData['Department'] || modalData['BU'] || '',
+            company: modalData['Company'] || 'Asia Pacific'
+        }
+
+        // 확장 프로그램이 준비되어 있으면 열려있는 ServiceNow 탭을 해당 페이지로 즉시 이동하고 폼 자동채우기 예약
         if (isBridgeReady) {
             window.postMessage({
                 type: 'SNOW_NAVIGATE_REQUEST',
-                payload: { url: targetUrl }
+                payload: { url: targetUrl, autoFill }
             }, '*')
-            addToast(`🌐 ServiceNow 탭에서 '${cleanSn}' 제품 페이지를 열었습니다.`, 'info')
+            addToast(`🌐 ServiceNow '${cleanSn}' 페이지로 이동하며 사용자/정보를 자동 입력합니다.`, 'info')
         } else {
             // 확장이 없으면 브라우저 새 탭으로 열기
             window.open(targetUrl, '_blank')
@@ -1471,7 +1483,17 @@ const AssetList = () => {
                                                                     title={`ServiceNow에서 시리얼번호 '${val}' 제품 열기`}
                                                                     onClick={(e) => {
                                                                         e.stopPropagation()
-                                                                        handleOpenServiceNowPage(val)
+                                                                        handleOpenServiceNowPage(val, {
+                                                                            serial_number: val,
+                                                                            state: row['State'] || 'In use',
+                                                                            substate: row['Substate'] || '-- None --',
+                                                                            email: row['email'] || '',
+                                                                            user: row['User'] || row['NAME'] || '',
+                                                                            stockroom: row['Stockroom'] || 'Korea Stock Room',
+                                                                            location: row['Location'] || 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, ASEM Tower - SALES',
+                                                                            department: row['Department'] || row['BU'] || '',
+                                                                            company: row['Company'] || 'Asia Pacific'
+                                                                        })
                                                                     }}
                                                                 >
                                                                     🔗 SNOW
