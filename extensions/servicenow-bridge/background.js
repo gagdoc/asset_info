@@ -78,6 +78,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // 비동기 응답 대기
   }
 
+  if (request.action === "NAVIGATE_SERVICENOW_TAB") {
+    (async () => {
+      try {
+        const snowTab = await findServiceNowTab();
+        if (snowTab) {
+          await chrome.tabs.update(snowTab.id, { url: request.url, active: true });
+          if (snowTab.windowId) {
+            await chrome.windows.update(snowTab.windowId, { focused: true });
+          }
+          sendResponse({ success: true, tabId: snowTab.id });
+        } else {
+          const newTab = await chrome.tabs.create({ url: request.url, active: true });
+          sendResponse({ success: true, tabId: newTab.id });
+        }
+      } catch (e) {
+        sendResponse({ success: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
   if (request.action === "CHECK_SERVICENOW_SESSION") {
     (async () => {
       try {

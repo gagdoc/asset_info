@@ -473,6 +473,25 @@ const AssetList = () => {
         })
     }
 
+    const handleOpenServiceNowPage = (sn) => {
+        if (!sn) {
+            alert('시리얼 번호(S/N)가 입력되지 않았습니다.')
+            return
+        }
+        const cleanSn = String(sn).trim()
+        const targetUrl = `https://strykercorp.service-now.com/now/nav/ui/classic/params/target/alm_hardware.do%3Fsysparm_query%3Dserial_number%3D${encodeURIComponent(cleanSn)}`
+        
+        // 확장 프로그램이 준비되어 있으면 열려있는 ServiceNow 탭을 해당 페이지로 즉시 이동
+        if (isBridgeReady) {
+            window.postMessage({
+                type: 'SNOW_NAVIGATE_REQUEST',
+                payload: { url: targetUrl }
+            }, '*')
+        }
+        // 브라우저 탭으로 즉시 열기
+        window.open(targetUrl, '_blank')
+    }
+
     // ── 상세 수정 / 신규 추가 모달 로직 ──
     const openEditModal = (row) => {
         setIsCreateMode(false)
@@ -1407,6 +1426,31 @@ const AssetList = () => {
                                                             >
                                                                 {val}
                                                             </span>
+                                                        ) : (type === 'Lease' && (col === 'S/N' || col === 'Serial' || col === '일련번호') && val !== '-' && val !== '') ? (
+                                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                                <span style={{ fontWeight: '600' }}>{val}</span>
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn btn-sm"
+                                                                    style={{
+                                                                        padding: '1px 6px',
+                                                                        fontSize: '0.7rem',
+                                                                        backgroundColor: '#f0f9ff',
+                                                                        color: '#0284c7',
+                                                                        border: '1px solid #bae6fd',
+                                                                        borderRadius: '4px',
+                                                                        cursor: 'pointer',
+                                                                        fontWeight: 'bold'
+                                                                    }}
+                                                                    title={`ServiceNow에서 시리얼번호 '${val}' 제품 열기`}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation()
+                                                                        handleOpenServiceNowPage(val)
+                                                                    }}
+                                                                >
+                                                                    🔗 SNOW
+                                                                </button>
+                                                            </div>
                                                         ) : (
                                                             <span>{val}</span>
                                                         )}
@@ -1611,6 +1655,26 @@ const AssetList = () => {
                                             <span>🌐 ServiceNow (Stryker) 자산 연동 설정</span>
                                         </h4>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <button
+                                                type="button"
+                                                className="btn btn-sm"
+                                                style={{
+                                                    backgroundColor: '#0284c7',
+                                                    color: '#fff',
+                                                    border: 'none',
+                                                    fontSize: '0.8rem',
+                                                    padding: '5px 12px',
+                                                    borderRadius: '6px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '5px',
+                                                    fontWeight: 'bold',
+                                                    cursor: 'pointer'
+                                                }}
+                                                onClick={() => handleOpenServiceNowPage(modalData['S/N'] || modalData['Serial'] || modalData['일련번호'])}
+                                            >
+                                                🔍 ServiceNow에서 이 제품 열기
+                                            </button>
                                             {isBridgeReady ? (
                                                 <span style={{ fontSize: '0.75rem', backgroundColor: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: '9999px', fontWeight: 'bold' }}>
                                                     🟢 Chrome Bridge 연동 준비됨

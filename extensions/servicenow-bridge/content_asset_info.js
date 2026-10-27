@@ -33,6 +33,15 @@ window.addEventListener("message", (event) => {
     );
   }
 
+  if (event.data.type === "SNOW_NAVIGATE_REQUEST") {
+    chrome.runtime.sendMessage({
+      action: "NAVIGATE_SERVICENOW_TAB",
+      url: event.data.payload.url
+    }, (response) => {
+      window.postMessage({ type: "SNOW_NAVIGATE_RESPONSE", result: response }, "*");
+    });
+  }
+
   if (event.data.type === "SNOW_CHECK_STATUS") {
     chrome.runtime.sendMessage({ action: "CHECK_SERVICENOW_SESSION" }, (response) => {
       window.postMessage({ type: "SNOW_STATUS_RESPONSE", result: response }, "*");
