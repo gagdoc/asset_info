@@ -32,7 +32,8 @@
         "https://strykercorp.service-now.com/*"
       ],
       "js": ["content_servicenow.js"],
-      "run_at": "document_end"
+      "run_at": "document_end",
+      "all_frames": true
     }
   ],
   "action": {

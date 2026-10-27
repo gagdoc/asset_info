@@ -16,10 +16,20 @@ function extractGlideToken() {
     // 2. 메인 월드의 window.g_ck 추출을 위해 스크립트 주입
     const script = document.createElement("script");
     script.textContent = `
-      window.postMessage({
-        type: "__SNOW_TOKEN_EXTRACTED__",
-        token: (typeof g_ck !== 'undefined') ? g_ck : (window.g_ck || '')
-      }, '*');
+      (function() {
+        var token = '';
+        if (typeof g_ck !== 'undefined' && g_ck) token = g_ck;
+        else if (window.g_ck) token = window.g_ck;
+        else if (window.NOW && window.NOW.g_ck) token = window.NOW.g_ck;
+        else {
+          var input = document.getElementById("sysparm_ck") || document.querySelector('input[name="sysparm_ck"]');
+          if (input) token = input.value;
+        }
+        window.postMessage({
+          type: "__SNOW_TOKEN_EXTRACTED__",
+          token: token
+        }, '*');
+      })();
     `;
     const handler = (e) => {
       if (e.data && e.data.type === "__SNOW_TOKEN_EXTRACTED__") {

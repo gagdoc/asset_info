@@ -11,6 +11,48 @@ async function findServiceNowTab() {
   return null;
 }
 
+// 탭에 스크립트가 로드되지 않았을 경우 자동 주입 후 메시지 재전송하는 헬퍼
+async function sendToSnowTab(tabId, message) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, message, async (response) => {
+      const err = chrome.runtime.lastError;
+      if (err && err.message && err.message.includes("Could not establish connection")) {
+        console.log("[SNOW Bridge Background] 스크립트 동적 주입 시도...");
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tabId, allFrames: true },
+            files: ["content_servicenow.js"]
+          });
+
+          // 주입 후 잠시 대기 후 재시도
+          setTimeout(() => {
+            chrome.tabs.sendMessage(tabId, message, (retryRes) => {
+              const retryErr = chrome.runtime.lastError;
+              if (retryErr) {
+                resolve({
+                  success: false,
+                  error: `ServiceNow 탭 통신 실패: ${retryErr.message}. ServiceNow 브라우저 탭을 한 번 새로고침(F5)해주세요.`
+                });
+              } else {
+                resolve(retryRes);
+              }
+            });
+          }, 350);
+        } catch (injectErr) {
+          resolve({
+            success: false,
+            error: `스크립트 주입 실패: ${injectErr.message}. ServiceNow 탭을 새로고침해주세요.`
+          });
+        }
+      } else if (err) {
+        resolve({ success: false, error: err.message });
+      } else {
+        resolve(response);
+      }
+    });
+  });
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "SYNC_ASSET_TO_SERVICENOW") {
     (async () => {
@@ -24,22 +66,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           return;
         }
 
-        // 해당 탭으로 업데이트 명령 전달
-        chrome.tabs.sendMessage(
-          snowTab.id,
-          { action: "EXECUTE_SNOW_UPDATE", payload: request.payload },
-          (response) => {
-            const err = chrome.runtime.lastError;
-            if (err) {
-              sendResponse({
-                success: false,
-                error: `ServiceNow 탭과의 통신 오류: ${err.message}. 해당 탭을 새로고침해주세요.`
-              });
-            } else {
-              sendResponse(response);
-            }
-          }
-        );
+        const res = await sendToSnowTab(snowTab.id, {
+          action: "EXECUTE_SNOW_UPDATE",
+          payload: request.payload
+        });
+        sendResponse(res);
       } catch (e) {
         sendResponse({ success: false, error: e.message });
       }
@@ -56,22 +87,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           return;
         }
 
-        chrome.tabs.sendMessage(
-          snowTab.id,
-          { action: "PING_SERVICENOW_TAB" },
-          (response) => {
-            const err = chrome.runtime.lastError;
-            if (err) {
-              sendResponse({ connected: false, message: "응답 없음" });
-            } else {
-              sendResponse({ connected: true, details: response });
-            }
-          }
-        );
+        const res = await sendToSnowTab(snowTab.id, { action: "PING_SERVICENOW_TAB" });
+        if (res && res.success) {
+          sendResponse({ connected: true, details: res });
+        } else {
+          sendResponse({ connected: false, message: res?.error || "응답 없음" });
+        }
       } catch (e) {
         sendResponse({ connected: false, error: e.message });
       }
     })();
-    return true;
+    return true; // 비동기 응답 대기
   }
 });
