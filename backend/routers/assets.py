@@ -597,6 +597,14 @@ def add_manual_history_endpoint(entry: HistoryAddRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ── Asset List (Read) ────────────────────────────────
+# ── System Feature Flags & Config ────────────────────
+@router.get("/features")
+def get_features():
+    return {
+        "enable_servicenow_sync": ENABLE_SERVICENOW_SYNC,
+        "app_env": APP_ENV,
+    }
+
 @router.get("/{asset_type}")
 def get_asset_list(asset_type: str):
     dfs = load_from_db()
@@ -652,14 +660,6 @@ def download_asset_csv(asset_type: str):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={asset_type}.csv"}
     )
-
-# ── System Feature Flags & Config ────────────────────
-@router.get("/features")
-def get_features():
-    return {
-        "enable_servicenow_sync": ENABLE_SERVICENOW_SYNC,
-        "app_env": APP_ENV,
-    }
 
 # ── Row Update (inline editing) ──────────────────────
 @router.put("/row/update")
