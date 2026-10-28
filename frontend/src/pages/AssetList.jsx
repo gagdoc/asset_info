@@ -474,6 +474,31 @@ const AssetList = () => {
         })
     }
 
+    // 사용자 이름이나 이메일 문자열로부터 올바른 이메일 주소 도출
+    const resolveUserEmail = (emailVal, userVal) => {
+        const cleanEmail = String(emailVal || '').trim()
+        if (cleanEmail && cleanEmail.includes('@')) return cleanEmail
+
+        // 이메일이 없거나 @가 없으면 dashboardData(All_User)에서 이름으로 검색
+        const query = cleanEmail || String(userVal || '').trim()
+        if (query) {
+            const found = (dashboardData || []).find(u =>
+                String(u.email || '').trim().toLowerCase() === query.toLowerCase() ||
+                String(u.NAME || '').trim().toLowerCase() === query.toLowerCase() ||
+                String(u['이름'] || '').trim().toLowerCase() === query.toLowerCase() ||
+                String(u.User || '').trim().toLowerCase() === query.toLowerCase()
+            )
+            if (found && found.email) return found.email.trim()
+        }
+
+        // 공백이 있는 영문 이름("Kale Lee")인 경우 "kale.lee@stryker.com"으로 변환 시도
+        if (query && !query.includes('@')) {
+            return query.toLowerCase().replace(/\s+/g, '.') + '@stryker.com'
+        }
+
+        return cleanEmail || userVal || ''
+    }
+
     const handleOpenServiceNowPage = (sn, customData = null, isViewOnly = false) => {
         if (!sn) {
             alert('시리얼 번호(S/N)가 입력되지 않았습니다.')
@@ -482,12 +507,14 @@ const AssetList = () => {
         const cleanSn = String(sn).trim()
         const targetUrl = `https://strykercorp.service-now.com/now/nav/ui/classic/params/target/alm_hardware.do%3Fsysparm_query%3Dserial_number%3D${encodeURIComponent(cleanSn)}`
         
+        const cleanEmail = resolveUserEmail(modalData['email'] || modalData['EMAIL'], modalData['User'] || modalData['NAME'] || modalData['이름'])
+
         // isViewOnly 인 경우 autoFill을 전달하지 않고 페이지만 단순 열람 (수정/입력 없음)
         const autoFill = isViewOnly ? null : (customData || {
             serial_number: cleanSn,
             state: modalData['State'] || 'In use',
             substate: modalData['Substate'] || '-- None --',
-            email: modalData['email'] || modalData['EMAIL'] || '',
+            email: cleanEmail,
             user: modalData['User'] || modalData['NAME'] || modalData['이름'] || '',
             stockroom: modalData['Stockroom'] || 'Korea Stock Room',
             location: modalData['Location'] || '',
@@ -525,6 +552,29 @@ const AssetList = () => {
             if (!cleanRow['Location']) cleanRow['Location'] = cleanRow['location'] || 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, ASEM Tower - SALES'
             if (!cleanRow['Department']) cleanRow['Department'] = cleanRow['department'] || cleanRow['BU'] || ''
             if (!cleanRow['Company']) cleanRow['Company'] = cleanRow['company'] || 'Asia Pacific'
+
+            // 이메일이 없거나 @가 없는 경우 All_User에서 이메일 자동 매칭
+            if (!cleanRow['email'] || !String(cleanRow['email']).includes('@')) {
+                const searchName = cleanRow['User'] || cleanRow['NAME'] || cleanRow['이름'] || cleanRow['email']
+                if (searchName) {
+                    const foundUser = (dashboardData || []).find(u =>
+                        String(u.NAME || '').trim().toLowerCase() === String(searchName).trim().toLowerCase() ||
+                        String(u['이름'] || '').trim().toLowerCase() === String(searchName).trim().toLowerCase()
+                    )
+                    if (foundUser && foundUser.email) {
+                        cleanRow['email'] = foundUser.email.trim()
+                    }
+                }
+            }
+            // 반대로 email은 있는데 User가 비어있는 경우 이름 매칭
+            if (cleanRow['email'] && !cleanRow['User']) {
+                const foundUser = (dashboardData || []).find(u =>
+                    String(u.email || '').trim().toLowerCase() === String(cleanRow['email']).trim().toLowerCase()
+                )
+                if (foundUser) {
+                    cleanRow['User'] = foundUser['이름'] || foundUser['NAME'] || ''
+                }
+            }
         }
         setModalData(cleanRow)
         setSnowSyncStatus(null)
@@ -600,13 +650,13 @@ const AssetList = () => {
                     alert('⚠️ ServiceNow Bridge 확장 프로그램이 준비되지 않았습니다.\n1) Chrome 확장 프로그램이 로드되어 있는지 확인하세요.\n2) 새 탭에서 Stryker ServiceNow(strykercorp.service-now.com)에 로그인해 두어야 합니다.')
                 } else {
                     const isStock = (modalData['State'] || '').toLowerCase() === 'in stock'
-                    const userOrEmail = modalData['email'] || modalData['EMAIL'] || modalData['User'] || modalData['NAME'] || modalData['이름'] || ''
+                    const targetEmail = resolveUserEmail(modalData['email'] || modalData['EMAIL'], modalData['User'] || modalData['NAME'] || modalData['이름'])
                     const autoFillData = {
                         serial_number: String(sn).trim(),
                         state: modalData['State'] || 'In use',
                         substate: modalData['Substate'] === '-- None --' ? '' : (modalData['Substate'] || ''),
-                        email: userOrEmail,
-                        user: userOrEmail,
+                        email: targetEmail,
+                        user: modalData['User'] || modalData['NAME'] || modalData['이름'] || '',
                         stockroom: isStock ? (modalData['Stockroom'] || 'Korea Stock Room') : '',
                         location: modalData['Location'] || '',
                         department: modalData['Department'] || modalData['BU'] || '',
@@ -618,7 +668,7 @@ const AssetList = () => {
                     setIsSnowOpenedForModal(true)
                     setSnowSyncStatus('success')
 
-                    const targetInfo = isStock ? `Stockroom: ${autoFillData.stockroom}` : `Assigned to: ${userOrEmail}`
+                    const targetInfo = isStock ? `Stockroom: ${autoFillData.stockroom}` : `Assigned to: ${targetEmail}`
                     alert(`🎉 구글 시트 저장 완료!\n- S/N: ${sn}\n- State: ${autoFillData.state}\n- ${targetInfo}\n- Location: ${autoFillData.location}\n\nServiceNow 탭으로 이동하여 해당 제품 화면에 변경 내용을 자동 입력했습니다.\nServiceNow 화면의 내용을 확인하신 후 상단 [Save / Update]를 눌러주세요!`)
                 }
             }
@@ -1711,13 +1761,13 @@ const AssetList = () => {
                                                 onClick={() => {
                                                     const sn = modalData['S/N'] || modalData['Serial'] || modalData['일련번호']
                                                     const isStock = (modalData['State'] || '').toLowerCase() === 'in stock'
-                                                    const userOrEmail = modalData['email'] || modalData['EMAIL'] || modalData['User'] || modalData['NAME'] || modalData['이름'] || ''
+                                                    const targetEmail = resolveUserEmail(modalData['email'] || modalData['EMAIL'], modalData['User'] || modalData['NAME'] || modalData['이름'])
                                                     handleOpenServiceNowPage(sn, {
                                                         serial_number: sn,
                                                         state: modalData['State'] || 'In use',
                                                         substate: modalData['Substate'] || '-- None --',
-                                                        email: userOrEmail,
-                                                        user: userOrEmail,
+                                                        email: targetEmail,
+                                                        user: modalData['User'] || modalData['NAME'] || modalData['이름'] || '',
                                                         stockroom: isStock ? (modalData['Stockroom'] || 'Korea Stock Room') : '',
                                                         location: modalData['Location'] || '',
                                                         department: modalData['Department'] || modalData['BU'] || '',
@@ -1817,8 +1867,8 @@ const AssetList = () => {
                                                     <input 
                                                         className="form-input"
                                                         list="servicenow-assigned-emails-datalist"
-                                                        placeholder="이메일 주소 또는 사원명 검색/입력 (예: youmee.lee@stryker.com)"
-                                                        value={modalData['email'] || modalData['User'] || ''}
+                                                        placeholder="ServiceNow 사용자 이메일 (예: kale.lee@stryker.com)"
+                                                        value={modalData['email'] || ''}
                                                         onChange={e => {
                                                             const val = e.target.value
                                                             const match = (dashboardData || []).find(u => 
@@ -1828,7 +1878,14 @@ const AssetList = () => {
                                                             if (match) {
                                                                 handleCopyUserInfo(match, true)
                                                             } else {
-                                                                setModalData({ ...modalData, email: val, User: modalData['User'] || val })
+                                                                const emailMatch = (dashboardData || []).find(u =>
+                                                                    String(u['이름'] || u['NAME'] || '').trim().toLowerCase() === val.trim().toLowerCase()
+                                                                )
+                                                                setModalData({ 
+                                                                    ...modalData, 
+                                                                    email: emailMatch?.email || val, 
+                                                                    User: emailMatch ? (emailMatch['이름'] || emailMatch['NAME'] || '') : (modalData['User'] || '')
+                                                                })
                                                             }
                                                         }}
                                                         style={{ flex: 1 }}
@@ -1844,7 +1901,7 @@ const AssetList = () => {
                                                 </div>
                                                 <datalist id="servicenow-assigned-emails-datalist">
                                                     {(dashboardData || []).filter(u => u.email).map((u, i) => (
-                                                        <option key={i} value={u.email}>{`${u.이름 || u.NAME || ''} (${u.BU || ''})`}</option>
+                                                        <option key={i} value={u.email}>{`${u.NAME || u['이름'] || ''} (${u.email}) - ${u.BU || ''}`}</option>
                                                     ))}
                                                 </datalist>
                                                 <div style={{ fontSize: '0.73rem', color: '#15803d', marginTop: '4px' }}>

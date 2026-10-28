@@ -302,9 +302,19 @@ async function checkAndApplyAutoFill() {
       } else {
         // Assigned to: 사용자 이메일 자동 입력 및 검색 결과 자동 선택!
         const curAssigned = document.getElementById("sys_display.alm_hardware.assigned_to") || assignedInput;
-        const userQuery = autoFill.email || autoFill.user;
+        let userQuery = String(autoFill.email || '').trim();
+        if (!userQuery || !userQuery.includes('@')) {
+          const candidate = String(autoFill.user || '').trim();
+          if (candidate.includes('@')) {
+            userQuery = candidate;
+          } else if (candidate) {
+            // "Kale Lee" 같은 영문 이름인 경우 "kale.lee@stryker.com" 형태로 변환
+            userQuery = candidate.toLowerCase().replace(/\s+/g, '.') + '@stryker.com';
+          }
+        }
+
         if (curAssigned && userQuery) {
-          console.log("[SNOW Bridge] 👤 Assigned to 자동완성 및 검색 선택 진행:", userQuery);
+          console.log("[SNOW Bridge] 👤 Assigned to 이메일 검색 및 선택 진행:", userQuery);
           await fillReferenceFieldWithAutoComplete(curAssigned, userQuery, "assigned_to");
           filledCount++;
         }

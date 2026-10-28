@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Asset Info ➔ ServiceNow Bridge",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "minimum_chrome_version": "106",
   "description": "ASSET_INFO 자산 관리 앱에서 Stryker ServiceNow로 노트북 하드웨어 정보를 브라우저 세션 기반으로 자동 동기화합니다.",
   "permissions": [
