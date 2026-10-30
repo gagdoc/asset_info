@@ -112,10 +112,17 @@ const AssetList = () => {
     const [hiddenColumns, setHiddenColumns] = useState(() => {
         try {
             const saved = localStorage.getItem(`hidden_columns_${type}`)
-            return saved ? JSON.parse(saved) : []
+            const parsed = saved ? JSON.parse(saved) : []
+            return Array.isArray(parsed) ? parsed.filter(col => typeof col === 'string') : []
         } catch {
             return []
         }
+    })
+    const [columnOrder, setColumnOrder] = useState(() => {
+        try {
+            const saved = JSON.parse(localStorage.getItem(`column_order_${type}`) || '[]')
+            return Array.isArray(saved) ? saved.filter(col => typeof col === 'string') : []
+        } catch { return [] }
     })
     const [colDropdownOpen, setColDropdownOpen] = useState(false)
     const colDropdownRef = useRef(null)
@@ -174,10 +181,15 @@ const AssetList = () => {
         setColDropdownOpen(false)
         try {
             const saved = localStorage.getItem(`hidden_columns_${type}`)
-            setHiddenColumns(saved ? JSON.parse(saved) : [])
+            const parsed = saved ? JSON.parse(saved) : []
+            setHiddenColumns(Array.isArray(parsed) ? parsed.filter(col => typeof col === 'string') : [])
         } catch {
             setHiddenColumns([])
         }
+        try {
+            const saved = JSON.parse(localStorage.getItem(`column_order_${type}`) || '[]')
+            setColumnOrder(Array.isArray(saved) ? saved.filter(col => typeof col === 'string') : [])
+        } catch { setColumnOrder([]) }
     }, [type])
 
     const updateHiddenColumns = (newHidden) => {
@@ -246,8 +258,34 @@ const AssetList = () => {
         })
         : []
 
-    // 사용자가 숨김 설정한 열을 제외한 실제 표시할 열 목록
-    const visibleColumns = columns.filter(col => !hiddenColumns.includes(col))
+    // Preserve saved order, remove deleted/duplicate columns, and append new fields.
+    const orderedColumns = [...new Set([...columnOrder.filter(col => columns.includes(col)), ...columns])]
+    const selectedColumns = orderedColumns.filter(col => !hiddenColumns.includes(col))
+    const visibleColumns = selectedColumns.length ? selectedColumns : orderedColumns.slice(0, 1)
+    const hiddenColumnCount = columns.length - visibleColumns.length
+
+    const updateColumnOrder = (nextOrder) => {
+        setColumnOrder(nextOrder)
+        try { localStorage.setItem(`column_order_${type}`, JSON.stringify(nextOrder)) } catch {}
+    }
+    const moveColumn = (col, direction) => {
+        const next = [...orderedColumns]
+        const index = next.indexOf(col)
+        const target = index + direction
+        if (index < 0 || target < 0 || target >= next.length) return
+        ;[next[index], next[target]] = [next[target], next[index]]
+        updateColumnOrder(next)
+    }
+    const toggleColumn = (col) => {
+        if (visibleColumns.includes(col) && visibleColumns.length <= 1) {
+            addToast('최소 1개의 열은 표시해야 합니다.', 'info')
+            return
+        }
+        const nextVisible = visibleColumns.includes(col)
+            ? visibleColumns.filter(value => value !== col)
+            : [...visibleColumns, col]
+        updateHiddenColumns(columns.filter(value => !nextVisible.includes(value)))
+    }
 
     // ── 연도/월 추출 및 데이터 필터링 ──
     const getYear = (row) => {
@@ -1273,87 +1311,52 @@ const AssetList = () => {
                     <button className="btn btn-sm" onClick={handleDownload} style={{ backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #86efac', fontWeight: '600' }}>📥 필터 결과 내보내기</button>
                     <button className="btn btn-sm" onClick={handleDownloadAll}>📋 전체 다운로드</button>
 
-                    {/* 열 숨기기 / 표시 드롭다운 */}
+                    {/* 리스트 열 선택과 순서 — 상세 수정 항목과 독립 */}
                     <div ref={colDropdownRef} style={{ position: 'relative' }}>
                         <button
                             type="button"
                             className="btn btn-sm"
                             onClick={() => setColDropdownOpen(!colDropdownOpen)}
-                            style={{
-                                backgroundColor: hiddenColumns.length > 0 ? '#eff6ff' : '#fff',
-                                color: hiddenColumns.length > 0 ? '#1d4ed8' : '#374151',
-                                border: `1px solid ${hiddenColumns.length > 0 ? '#93c5fd' : '#cbd5e1'}`,
-                                fontWeight: hiddenColumns.length > 0 ? '600' : 'normal',
-                                display: 'flex', alignItems: 'center', gap: '5px'
-                            }}
-                            title="화면에서 숨기거나 표시할 열을 선택합니다"
+                            aria-expanded={colDropdownOpen}
+                            aria-controls="asset-column-settings"
+                            style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', fontWeight: '600' }}
                         >
-                            <span>👁️ 열 숨기기/표시</span>
-                            {hiddenColumns.length > 0 && (
-                                <span style={{
-                                    backgroundColor: '#2563eb', color: '#fff', fontSize: '0.7rem',
-                                    padding: '1px 6px', borderRadius: '10px', fontWeight: 'bold'
-                                }}>
-                                    {hiddenColumns.length}개 숨김
-                                </span>
-                            )}
+                            열 보기·순서 {visibleColumns.length}/{columns.length}
                         </button>
                         {colDropdownOpen && (
-                            <div style={{
+                            <div id="asset-column-settings" style={{
                                 position: 'absolute', top: '100%', right: 0, zIndex: 1100,
+                                width: '340px', maxWidth: 'calc(100vw - 32px)',
                                 background: 'white', border: '1px solid #cbd5e1', borderRadius: '8px',
-                                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)', minWidth: '200px',
-                                maxHeight: '380px', overflowY: 'auto', padding: '10px', marginTop: '6px'
-                            }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px', marginBottom: '8px' }}>
-                                    <span style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#1e293b' }}>열 표시 설정</span>
-                                    {hiddenColumns.length > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => updateHiddenColumns([])}
-                                            style={{ background: 'none', border: 'none', color: '#4f46e5', fontSize: '0.75rem', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
-                                        >
-                                            모두 표시
-                                        </button>
-                                    )}
+                                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)', padding: '12px', marginTop: '6px'
+                            }} onKeyDown={e => { if (e.key === 'Escape') setColDropdownOpen(false) }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <strong style={{ fontSize: '0.9rem' }}>리스트 열 설정</strong>
+                                    <button type="button" className="btn btn-sm" onClick={() => setColDropdownOpen(false)}>완료</button>
                                 </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                    {columns.map(col => {
-                                        const isHidden = hiddenColumns.includes(col)
+                                <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '8px 0' }}>
+                                    체크한 열만 표시합니다. ↑ ↓로 왼쪽부터의 순서를 바꾸세요. 상세 수정 항목은 유지됩니다.
+                                </p>
+                                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                                    <button type="button" className="btn btn-sm" disabled={!hiddenColumnCount} onClick={() => updateHiddenColumns([])}>모두 표시</button>
+                                    <button type="button" className="btn btn-sm" onClick={() => { updateHiddenColumns([]); updateColumnOrder([]) }}>기본 구성으로 복원</button>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: 'min(380px, 50vh)', overflowY: 'auto' }}>
+                                    {orderedColumns.map((col, index) => {
+                                        const isVisible = visibleColumns.includes(col)
                                         return (
-                                            <label
-                                                key={col}
-                                                style={{
-                                                    display: 'flex', alignItems: 'center', gap: '8px',
-                                                    padding: '5px 8px', fontSize: '0.83rem', cursor: 'pointer',
-                                                    borderRadius: '4px', userSelect: 'none',
-                                                    backgroundColor: isHidden ? '#f8fafc' : 'transparent',
-                                                    color: isHidden ? '#94a3b8' : '#1e293b'
-                                                }}
-                                                onMouseEnter={e => e.currentTarget.style.backgroundColor = isHidden ? '#f1f5f9' : '#f8fafc'}
-                                                onMouseLeave={e => e.currentTarget.style.backgroundColor = isHidden ? '#f8fafc' : 'transparent'}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={!isHidden}
-                                                    onChange={() => {
-                                                        if (isHidden) {
-                                                            updateHiddenColumns(hiddenColumns.filter(c => c !== col))
-                                                        } else {
-                                                            if (columns.length - hiddenColumns.length <= 1) {
-                                                                alert('최소 1개의 열은 표시되어야 합니다.')
-                                                                return
-                                                            }
-                                                            updateHiddenColumns([...hiddenColumns, col])
-                                                        }
-                                                    }}
-                                                    style={{ cursor: 'pointer' }}
-                                                />
-                                                <span style={{ textDecoration: isHidden ? 'line-through' : 'none' }}>{col}</span>
-                                            </label>
+                                            <div key={col} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px', background: isVisible ? '#f8fafc' : 'white', borderRadius: '4px' }}>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0, cursor: 'pointer', padding: '6px 2px', fontSize: '0.83rem', color: isVisible ? '#1e293b' : '#64748b' }}>
+                                                    <input type="checkbox" checked={isVisible} disabled={isVisible && visibleColumns.length === 1} onChange={() => toggleColumn(col)} />
+                                                    <span style={{ overflowWrap: 'anywhere' }}>{col}</span>
+                                                </label>
+                                                <button type="button" className="btn btn-sm" disabled={index === 0} aria-label={`${col} 왼쪽으로 이동`} title="왼쪽으로 이동" onClick={() => moveColumn(col, -1)}>↑</button>
+                                                <button type="button" className="btn btn-sm" disabled={index === orderedColumns.length - 1} aria-label={`${col} 오른쪽으로 이동`} title="오른쪽으로 이동" onClick={() => moveColumn(col, 1)}>↓</button>
+                                            </div>
                                         )
                                     })}
                                 </div>
+                                <p style={{ fontSize: '0.72rem', color: '#64748b', margin: '10px 0 0' }}>자산 종류별로 이 브라우저에 자동 저장됩니다.</p>
                             </div>
                         )}
                     </div>
