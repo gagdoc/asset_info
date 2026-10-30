@@ -6,6 +6,12 @@ import { useToast } from '../components/Toast'
 import SearchableSelect from '../components/SearchableSelect'
 import { exportToXLSX, todayStr } from '../utils/exportUtils'
 
+const getSubstateOptions = (state) => {
+    if (state === 'In use') return ['Staff', 'Contractor', 'Other']
+    if (state === 'In stock') return ['Available', 'Pending disposal']
+    return ['Staff', 'Contractor', 'Other', 'Defective']
+}
+
 // 날짜 파싱 헬퍼 (YYYY-MM-DD, YYYY.MM.DD, YYYY/MM/DD, MM/DD/YY, MM/DD/YYYY, YYYYMMDD 지원)
 export const parseFlexibleDate = (dateStr) => {
     if (!dateStr) return null
@@ -548,6 +554,7 @@ const AssetList = () => {
         if (type === 'Lease') {
             if (!cleanRow['State']) cleanRow['State'] = cleanRow['install_status'] || 'In use'
             if (!cleanRow['Substate']) cleanRow['Substate'] = cleanRow['substatus'] || '-- None --'
+            if (!getSubstateOptions(cleanRow['State']).includes(cleanRow['Substate'])) cleanRow['Substate'] = '-- None --'
             if (!cleanRow['Stockroom']) cleanRow['Stockroom'] = cleanRow['stockroom'] || 'Korea Stock Room'
             if (!cleanRow['Location']) cleanRow['Location'] = cleanRow['location'] || 'Seoul, Seoul 517 Yeongdong-daero, 6th Floor, ASEM Tower - SALES'
             if (!cleanRow['Department']) cleanRow['Department'] = cleanRow['department'] || cleanRow['BU'] || ''
@@ -609,15 +616,15 @@ const AssetList = () => {
             updated['User'] = 'STOCK'
             if (updated.hasOwnProperty('NAME')) updated['NAME'] = 'STOCK'
             if (updated.hasOwnProperty('이름')) updated['이름'] = 'STOCK'
-            updated['Substate'] = '-- None --'
         } else if (newState === 'In use') {
             if (updated['User'] === 'STOCK') {
                 updated['User'] = ''
             }
-            if (!updated['Substate'] || updated['Substate'] === '-- None --') {
+            if (!getSubstateOptions(newState).includes(updated['Substate'])) {
                 updated['Substate'] = 'Staff'
             }
         }
+        if (!getSubstateOptions(newState).includes(updated['Substate'])) updated['Substate'] = '-- None --'
         setModalData(updated)
     }
 
@@ -1820,10 +1827,9 @@ const AssetList = () => {
                                                 onChange={e => setModalData({ ...modalData, Substate: e.target.value })}
                                             >
                                                 <option value="-- None --">-- None --</option>
-                                                <option value="Staff">Staff</option>
-                                                <option value="Contractor">Contractor</option>
-                                                <option value="Other">Other</option>
-                                                <option value="Defective">Defective</option>
+                                                {getSubstateOptions(modalData['State'] || 'In use').map(substate => (
+                                                    <option key={substate} value={substate}>{substate}</option>
+                                                ))}
                                             </select>
                                             <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>ServiceNow substatus 필드에 반영됩니다.</div>
                                         </div>
