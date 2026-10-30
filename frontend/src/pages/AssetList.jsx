@@ -8,6 +8,7 @@ import { exportToXLSX, todayStr } from '../utils/exportUtils'
 
 const getSubstateOptions = (state) => {
     if (state === 'In use') return ['Staff', 'Contractor', 'Other']
+    if (state === 'Retired') return ['Reimaged and reissued at Stryker', 'Wiped and lease returned to vendor -HD retained', 'Wiped and lease returned to vendor', 'Wiped and recycled to external vendor', 'Non returned- PC Refresh', 'Non returned- Termination']
     if (state === 'In stock') return ['Available', 'Reserved', 'Pending repair', 'Pending install', 'Pending disposal', 'Pending transfer', 'Legal hold', 'Termination hold']
     return ['Staff', 'Contractor', 'Other', 'Defective']
 }

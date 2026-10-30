@@ -5,3 +5,5 @@ In stock: Available, Reserved, Pending repair, Pending install, Pending disposal
 미선택 항목은 유지한다. State 변경 시 유효한 Substate는 보존하고, 호환되지 않는 값은 초기화한다. In use 전환 시 기존 기본값 Staff를 유지한다.
 
 검증: 프론트엔드 빌드, 상태별 목록 및 상태 전환 실행 검사 통과.
+
+Retired: Reimaged and reissued at Stryker; Wiped and lease returned to vendor -HD retained; Wiped and lease returned to vendor; Wiped and recycled to external vendor; Non returned- PC Refresh; Non returned- Termination.
