@@ -8,7 +8,7 @@ import { exportToXLSX, todayStr } from '../utils/exportUtils'
 
 const getSubstateOptions = (state) => {
     if (state === 'In use') return ['Staff', 'Contractor', 'Other']
-    if (state === 'In stock') return ['Available', 'Pending disposal']
+    if (state === 'In stock') return ['Available', 'Reserved', 'Pending repair', 'Pending install', 'Pending disposal', 'Pending transfer', 'Legal hold', 'Termination hold']
     return ['Staff', 'Contractor', 'Other', 'Defective']
 }
 
